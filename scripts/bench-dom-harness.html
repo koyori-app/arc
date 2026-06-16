@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>koyori-arc DOM bench harness</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #host { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <script type="module">
+    import init, { render_svg } from '../../crates/koyori-arc-core/pkg/koyori_arc_core.js';
+
+    const params = new URLSearchParams(location.search);
+    const fixtureName = params.get('fixture') ?? '100_sparse';
+
+    await init();
+
+  window.__benchReady = true;
+  window.__runBench = async function runBench() {
+    const res = await fetch(`../crates/koyori-arc-core/benches/fixtures/${fixtureName}.json`);
+    const fx = await res.json();
+    const tasksJson = JSON.stringify(fx.tasks);
+    const depsJson = JSON.stringify(fx.deps);
+
+    const t0 = performance.now();
+    const svg = render_svg(tasksJson, depsJson, fx.today);
+    const wasmMs = performance.now() - t0;
+
+    const byteLength = new TextEncoder().encode(svg).length;
+    const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
+
+    const host = document.getElementById('host');
+    host.innerHTML = '';
+
+    const domStart = performance.now();
+    host.innerHTML = svg;
+    // Force layout + paint before measuring DOM cost.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const domMs = performance.now() - domStart;
+
+    return { wasmMs, domMs, byteLength, elementCount, taskCount: fx.tasks.length, depCount: fx.deps.length };
+  };
+  </script>
+</body>
+</html>

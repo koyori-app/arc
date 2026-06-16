@@ -1,0 +1,85 @@
+{
+  "engine": "linkedom-fallback",
+  "results": [
+    {
+      "fixture": "100_sparse",
+      "tasks": 100,
+      "deps": 99,
+      "wasm_in_browser_ms_median": 0.59,
+      "dom_insert_ms_median": 3.89,
+      "svg_bytes": 71252,
+      "svg_elements": 735,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "100_dense",
+      "tasks": 100,
+      "deps": 494,
+      "wasm_in_browser_ms_median": 1.07,
+      "dom_insert_ms_median": 5.14,
+      "svg_bytes": 139892,
+      "svg_elements": 1130,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "500_sparse",
+      "tasks": 500,
+      "deps": 499,
+      "wasm_in_browser_ms_median": 2.19,
+      "dom_insert_ms_median": 13.35,
+      "svg_bytes": 349924,
+      "svg_elements": 3533,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "500_dense",
+      "tasks": 500,
+      "deps": 2534,
+      "wasm_in_browser_ms_median": 4.81,
+      "dom_insert_ms_median": 23.9,
+      "svg_bytes": 709913,
+      "svg_elements": 5568,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "2000_sparse",
+      "tasks": 2000,
+      "deps": 1999,
+      "wasm_in_browser_ms_median": 8.53,
+      "dom_insert_ms_median": 85.67,
+      "svg_bytes": 1401325,
+      "svg_elements": 14018,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "2000_dense",
+      "tasks": 2000,
+      "deps": 10184,
+      "wasm_in_browser_ms_median": 19.23,
+      "dom_insert_ms_median": 181.03,
+      "svg_bytes": 2859890,
+      "svg_elements": 22203,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "5000_sparse",
+      "tasks": 5000,
+      "deps": 4999,
+      "wasm_in_browser_ms_median": 20.91,
+      "dom_insert_ms_median": 190.84,
+      "svg_bytes": 3528651,
+      "svg_elements": 34988,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    },
+    {
+      "fixture": "5000_dense",
+      "tasks": 5000,
+      "deps": 25484,
+      "wasm_in_browser_ms_median": 46.44,
+      "dom_insert_ms_median": 324.99,
+      "svg_bytes": 7214865,
+      "svg_elements": 55473,
+      "dom_engine": "linkedom-parse (Playwright unavailable)"
+    }
+  ]
+}
