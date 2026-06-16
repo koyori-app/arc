@@ -11,6 +11,9 @@ const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
 const PX_PER_DAY: f64 = 30.0;
 const LABEL_W: f64 = 120.0;
 const HEADER_H: f64 = 30.0;
+/// Minimum horizontal run before the dependency arrowhead, so `marker-end`
+/// always has a non-degenerate (non-zero-length) final segment to orient on.
+const ARROW_LEAD: f64 = 10.0;
 
 const COLOR_BAR_BG: &str = "#d1d5db";
 const COLOR_BAR_FG: &str = "#6366f1";
@@ -145,7 +148,12 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         let y1 = HEADER_H + from_r.row as f64 * ROW_H + ROW_H / 2.0;
         let x2 = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY;
         let y2 = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
-        let mx = (x1 + x2) / 2.0;
+        // Keep the final (arrowhead-bearing) segment at least ARROW_LEAD long so
+        // marker-end's orient="auto" always has a real direction to follow — a
+        // zero-length last segment (e.g. when the blocker ends exactly when the
+        // blocked task starts, x1 == x2) leaves the rotation undefined.
+        let mx_mid = (x1 + x2) / 2.0;
+        let mx = if x2 - mx_mid < ARROW_LEAD { x2 - ARROW_LEAD } else { mx_mid };
 
         svg.push_str(&format!(
             r#"<polyline points="{x1},{y1} {mx},{y1} {mx},{y2} {x2},{y2}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" marker-end="url(#arr)"/>"#
@@ -251,6 +259,33 @@ mod tests {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None);
         assert!(svg.contains("stroke-dasharray"));
+    }
+
+    #[test]
+    fn dependency_arrow_final_segment_is_non_degenerate() {
+        // task-1 ends exactly when task-2 starts (x1 == x2), which used to
+        // collapse the polyline's last segment to zero length and leave the
+        // marker-end arrowhead orientation undefined.
+        let (t, d) = two_tasks();
+        let svg = render(&t, &d, None);
+        let points = svg
+            .split("<polyline points=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("dependency polyline present");
+        let coords: Vec<(f64, f64)> = points
+            .split(' ')
+            .map(|p| {
+                let (x, y) = p.split_once(',').unwrap();
+                (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect();
+        let last = coords[coords.len() - 1];
+        let second_last = coords[coords.len() - 2];
+        assert_ne!(
+            last.0, second_last.0,
+            "final segment must have non-zero horizontal length for orient=\"auto\" to work: {coords:?}"
+        );
     }
 
     #[test]
