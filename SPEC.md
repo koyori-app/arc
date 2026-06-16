@@ -94,8 +94,10 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
 - `end < start` ガード: 負の幅バーを生成しない（幅 0 扱い）
 - 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）
 - 進捗ステータスライン: 全タスクの進捗ポイントを結ぶ赤破線ジグザグ（`class="progress-status-line"`）— **設計意図どおり温存**
-  - **today 指定かつチャート範囲内**: 端点を today 縦線上に固定。最上段行の `y_top` で today の x から開始 → 各タスク行の進捗到達点 `start + (end - start) × progress` へジグザグ → 最下段行の `y_bottom` で today の x に終端
-  - **today 未指定、または today が範囲外**: 従来挙動（レガシー）。各タスクの進捗到達点のみを順に結び、today 縦線へのアンカーは行わない
+  - **1 タスク = 1 代表点**: `(progress_x, y_mid)`。`progress_x = start + (end - start) × progress`、`y_mid = (y_top + y_bottom) / 2`
+  - **斜め直線結線**: 連続する代表点は斜め直線で結ぶ。バー縦貫（`y_top`→`y_bottom` の垂直線）や水平ジョグ（直角エルボー）は禁止
+  - **today 指定かつチャート範囲内**: 端点を today 縦線上に固定。`(today_x, 最上段 y_top)` から開始 → 各タスクの代表点へ斜め接続 → `(today_x, 最下段 y_bottom)` で終端
+  - **today 未指定、または today が範囲外**: レガシー。各タスクの代表点のみを斜め直線で順に結び、today 縦線へのアンカーは行わない
 - 今日マーカー: オレンジ色の破線縦線（`today` が範囲内の場合のみ）
 - XML 特殊文字（`&`, `<`, `>`）はタイトル等でエスケープ済み
 
