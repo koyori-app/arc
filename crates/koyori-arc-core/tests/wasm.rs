@@ -55,6 +55,20 @@ fn render_svg_has_a11y_and_progress_labels() {
 }
 
 #[wasm_bindgen_test]
+fn render_svg_progress_line_today_anchored() {
+    let svg = koyori_arc_core::render_svg(TASKS, DEPS, Some("2026-06-03".to_string()));
+    let poly = svg
+        .split(r#"class="progress-status-line" points=""#)
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("progress polyline");
+    assert!(poly.starts_with("180,"));
+    let last_pt = poly.split(' ').next_back().expect("last point");
+    assert!(last_pt.starts_with("180,"));
+    assert!(svg.contains("bar-tier-done"));
+}
+
+#[wasm_bindgen_test]
 fn render_svg_milestone_and_tooltip() {
     let tasks = r#"[{"id":"ms","title":"Ship","progress_pct":100,"start":"2026-06-03","end":"2026-06-03"}]"#;
     let svg = koyori_arc_core::render_svg(tasks, "[]", None);

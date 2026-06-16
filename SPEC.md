@@ -94,6 +94,8 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
 - `end < start` ガード: 負の幅バーを生成しない（幅 0 扱い）
 - 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）
 - 進捗ステータスライン: 全タスクの進捗ポイントを結ぶ赤破線ジグザグ（`class="progress-status-line"`）— **設計意図どおり温存**
+  - **today 指定かつチャート範囲内**: 端点を today 縦線上に固定。最上段行の `y_top` で today の x から開始 → 各タスク行の進捗到達点 `start + (end - start) × progress` へジグザグ → 最下段行の `y_bottom` で today の x に終端
+  - **today 未指定、または today が範囲外**: 従来挙動（レガシー）。各タスクの進捗到達点のみを順に結び、today 縦線へのアンカーは行わない
 - 今日マーカー: オレンジ色の破線縦線（`today` が範囲内の場合のみ）
 - XML 特殊文字（`&`, `<`, `>`）はタイトル等でエスケープ済み
 
@@ -139,8 +141,8 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
 
 ## テスト
 
-- ネイティブ: `cargo nextest run`（`crates/koyori-arc-core/src/render.rs` 内の `#[cfg(test)] mod tests`、21本）
-- Wasm: `wasm-pack test --node`（`crates/koyori-arc-core/tests/wasm.rs`、`wasm_bindgen_test_configure!(run_in_node_experimental)`、7本）
+- ネイティブ: `cargo nextest run`（`crates/koyori-arc-core/src/render.rs` 内の `#[cfg(test)] mod tests`、24本 + `progress.rs` 9本）
+- Wasm: `wasm-pack test --node`（`crates/koyori-arc-core/tests/wasm.rs`、`wasm_bindgen_test_configure!(run_in_node_experimental)`、8本）
 - ビジュアル確認: `cargo run --example preview`（`target/preview/index.html` を生成し、WSL2 では `explorer.exe` で自動オープン）
 
 ## CI / リリース

@@ -258,14 +258,19 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         ));
     }
 
-    // Today marker
-    if let Some(today) = today {
+    // Today marker + progress-line anchor share the same in-range x.
+    let today_x = today.and_then(|today| {
         let x = LABEL_W + (today - epoch).num_days() as f64 * PX_PER_DAY;
         if x >= LABEL_W && x <= chart_w {
-            svg.push_str(&format!(
-                r#"<line x1="{x}" y1="0" x2="{x}" y2="{chart_h}" stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3"/>"#
-            ));
+            Some(x)
+        } else {
+            None
         }
+    });
+    if let Some(x) = today_x {
+        svg.push_str(&format!(
+            r#"<line x1="{x}" y1="0" x2="{x}" y2="{chart_h}" stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3"/>"#
+        ));
     }
 
     // Progress line
@@ -286,7 +291,7 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         })
         .collect();
 
-    let pts = progress_line(&prog_input);
+    let pts = progress_line(&prog_input, today_x);
     if pts.len() >= 2 {
         let pts_str: String =
             pts.iter().map(|(x, y)| format!("{x},{y}")).collect::<Vec<_>>().join(" ");
@@ -702,6 +707,57 @@ mod tests {
         assert!(svg.contains("progress-line-legend"));
         assert!(svg.contains("進捗ステータスライン"));
         assert!(svg.contains("bar-tier-legend"));
+    }
+
+    #[test]
+    fn progress_line_legacy_when_today_absent() {
+        let (t, d) = two_tasks();
+        let svg = render(&t, &d, None);
+        let poly = svg
+            .split(r#"class="progress-status-line" points=""#)
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("progress polyline");
+        // Legacy: first point x is first task progress (100% of task-1 → end of bar).
+        assert!(poly.starts_with("210,"), "legacy start at progress x, got: {poly}");
+    }
+
+    #[test]
+    fn progress_line_today_anchored_when_today_in_range() {
+        let (t, d) = two_tasks();
+        let today = date(2026, 6, 3);
+        let svg = render(&t, &d, Some(today));
+        let poly = svg
+            .split(r#"class="progress-status-line" points=""#)
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("progress polyline");
+        // today x = LABEL_W(120) + 2 days * 30 = 180
+        assert!(poly.starts_with("180,"), "anchored start at today x, got: {poly}");
+        let last_pt = poly.split(' ').next_back().expect("last point");
+        assert!(
+            last_pt.starts_with("180,"),
+            "anchored end at today x, got last: {last_pt}"
+        );
+        // Tier fills and progress line coexist.
+        assert!(svg.contains(r#"class="bar-progress bar-tier-done""#));
+        assert!(svg.contains(r#"class="bar-progress bar-tier-mid""#));
+    }
+
+    #[test]
+    fn progress_line_legacy_when_today_out_of_range() {
+        let (t, d) = two_tasks();
+        let today = date(2020, 1, 1);
+        let svg = render(&t, &d, Some(today));
+        let poly = svg
+            .split(r#"class="progress-status-line" points=""#)
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("progress polyline");
+        assert!(poly.starts_with("210,"), "out-of-range today falls back to legacy");
+        assert!(!svg.contains(&format!(
+            r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
+        )));
     }
 
     #[test]
