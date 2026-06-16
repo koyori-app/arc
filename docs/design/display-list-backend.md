@@ -3,14 +3,22 @@
 | 項目 | 値 |
 |------|-----|
 | 文書ID | `design/display-list-backend` |
-| 親cmd | cmd_264, cmd_265（下限端末ファースト追補） |
+| 親cmd | cmd_264, cmd_265（下限端末ファースト追補）, cmd_266（ネイティブ背追補） |
 | 状態 | 設計（実装なし） |
 | 参照ベンチ | cmd_263 `benches/results/render-pipeline-3layer-report.md` @ `bench/render-pipeline-3layer` `4eddd96` |
-| レビュー | 軍師設計レビュー反映済み（cmd_264: 2026-06-17, cmd_265: 2026-06-17） |
+| レビュー | 軍師設計レビュー反映済み（cmd_264: 2026-06-17, cmd_265: 2026-06-17, cmd_266: 2026-06-17） |
 
 ## 1. 要約
 
-koyori-arc の描画パイプラインを **幾何計算 → ディスプレイリスト（中間表現, IR）→ バックエンド** の3段に分離する。現行 `render()` は L1 で SVG 文字列を直接生成しており、L3 の `innerHTML` 挿入が支配的ボトルネックである（cmd_263）。同一 IR を **SVG バックエンド**（既存互換・印刷/SEO/a11y）と **Canvas バックエンド**（大規模時の DOM ノード排除）が消費する。
+koyori-arc の描画パイプラインを **幾何計算 → ディスプレイリスト（中間表現, IR）→ バックエンド** の3段に分離する。現行 `render()` は L1 で SVG 文字列を直接生成しており、L3 の `innerHTML` 挿入が支配的ボトルネックである（cmd_263）。同一 IR を **3つのバックエンドターゲット** が消費する:
+
+| # | ターゲット | 消費者 | 主用途 |
+|---|-----------|--------|--------|
+| ① | **SVG-DOM** | ブラウザ `innerHTML` / v-html | 既存互換・印刷/SEO/a11y |
+| ② | **Canvas2D / WebGL2** | ブラウザ `<canvas>` replay | 大規模時の DOM ノード排除 |
+| ③ | **ネイティブ背** | Rust クライアント（GPUI/egui/Slint/iced 等、framework 未定） | no-DOM 環境。IR を crate 直リンク + native GPU |
+
+Electron 系クライアントは WebView = DOM のため ①② で充足する。Rust 製ネイティブクライアントは DOM が存在しないため ③ が必須であり、Wasm/JS 境界（L2）とブラウザ DOM（L3）を **構造的に消滅** させる。
 
 **対策は2軸で評価する（軍師指摘 #1）:**
 
@@ -63,9 +71,10 @@ GanttTask[] + GanttDep[]
 
 ### 3.1 設計原則
 
-- **バックエンド非依存**: SVG / Canvas2D / 将来 WebGL2 が同一 IR を消費する。
+- **バックエンド非依存（framework 非依存の中立スキーマ）**: SVG-DOM / Canvas2D / WebGL2 / ネイティブ背が **同一 `DisplayList` IR** を消費する。IR に DOM 固有概念（`data-task-id`, `innerHTML`, `v-html`, `role="img"` 等）は **一切含めない**（§3.7）。
+- **FFI / 直列化可**: `DisplayList` は `serde` + `bincode`（または同等のコンパクトバイナリ）で **境界を越えられる粒度** に設計する。Wasm 経路・将来の IPC/FFI 経路で同一バイト列を共有する（§3.7, §7）。
 - **決定論**: 座標は `Coord` 型で **小数1桁固定**（`round(x * 10) / 10`）。現行テストが `"210,"` 等に依存するため、IR 段階で丸め規約を固定しバックエンド間の座標乖離を防ぐ（軍師 #9）。
-- **パレット参照**: 色は文字列の再掲を禁止し `ColorId` enum で参照（軍師 #2）。
+- **パレット参照**: 色は文字列の再掲を禁止し `ColorId` enum で参照（軍師 #2）。SVG の `#rrggbb` 文字列は `Palette` 解決時のみ生成し、IR 本体には `ColorId` のみ保持する。
 
 ### 3.2 ルート構造
 
@@ -173,9 +182,85 @@ pub struct TaskBBox {
 
 Canvas バックエンドでは `data-task-id` が存在しないため、**空間インデックス（行単位の矩形リスト + 必要時 R-tree）** を IR から構築する（軍師 #4）。
 
+### 3.7 中立スキーマ不変条件と FFI 境界
+
+#### 3.7.1 不変条件（invariant）
+
+| ID | 不変条件 | 検証方法 |
+|----|----------|----------|
+| **IR-N1** | IR 型に HTML/SVG/DOM/Canvas API 名を含めない | `DisplayList` の derive/enum に DOM 漏れがないことをコンパイル時 + レビューで確認 |
+| **IR-N2** | 色は `ColorId` のみ。`#rrggbb` は `Palette` 解決時 | `SvgBackend` / `NativeBackend` が同一 palette から独立に色を解決 |
+| **IR-N3** | ヒットテストは `TaskBBox`（論理座標）で表現。`data-task-id` は SVG バックエンド出力時のみ付与 | IR 本体に属性名を持たない |
+| **IR-N4** | a11y 文言は `ChartMetadata` に保持。DOM ロールはバックエンド責務 | Canvas/Native は各アダプタが sr-only DOM または platform a11y API で投影 |
+| **IR-S1** | `DisplayList` + `Palette` は `serde` 直列化可能 | roundtrip テスト（§9） |
+| **IR-S2** | bincode エンコード後も決定論的デコード | 同一入力 → 同一バイト列（ゴールデン） |
+
+#### 3.7.2 FFI / 直列化境界
+
+```text
+GanttTask[] + GanttDep[]  ──build──►  DisplayList (Rust, in-process)
+                                              │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    │                         │                         │
+              SvgBackend              CanvasBackend              NativeBackend
+                    │                         │                         │
+              String (SVG)            CommandBuffer              GPU primitives
+                    │                    (bincode)                  (in-process)
+                    ▼                         ▼                         ▼
+              DOM insert               canvas replay              GPUI/egui/...
+              (L2/L3 あり)             (L2/L3 あり)              (L2/L3 なし)
+```
+
+- **Web 経路**: Wasm は `DisplayList` または `CommandBuffer` を **1 回の bincode 転送** で JS に渡す（§7）。
+- **ネイティブ経路**: 同一 crate 内で `DisplayList` を **参照渡し**（ゼロコピー）。プロセス分離が必要な場合のみ bincode/IPC。
+- **禁止**: IR を JSON 配列でプリミティブ毎に渡す（境界往復爆発、§4.3.1）。
+
+#### 3.7.3 中立性証明 — 2 消費者検証の踏み絵
+
+**目的**: display-list が本当に framework 非依存か（SVG/DOM 漏れがないか）を、**SVG バックエンド + ネイティブ背** の 2 消費者で検証する。
+
+| 段階 | 手順 | 合格条件 |
+|------|------|----------|
+| **P0** | 固定 fixture（100_sparse, 2000_dense）で `build_display_list()` → IR ゴールデン | 決定論的スナップショット一致 |
+| **P1** | 同一 IR → `SvgBackend::render()` → 現行 SVG ゴールデン | バイト級互換（Phase 0 gate） |
+| **P2** | 同一 IR → `NativeBackend::render()`（スタブ: プリミティブ列挙のみ） | プリミティブ数・bbox・palette 参照が SVG 経路と一致 |
+| **P3** | IR を bincode → decode → 両バックエンド再実行 | roundtrip 後も P1/P2 出力不変 |
+| **P4** | IR に DOM 概念を意図的に混入する negative test | コンパイル失敗または lint 違反 |
+
+**ネイティブ背スタブ**（Phase 0〜2）: GPU 描画は未実装でもよい。`NativeBackend` は `Vec<NativeDrawOp>` を返し、プリミティブ種別・座標・`ColorId` の列を検証する。framework（GPUI/egui 等）の選択は **この検証の外** — IR が framework を知らないことの証明が目的である。
+
 ---
 
 ## 4. バックエンド抽象
+
+### 4.0 3 ターゲット再定義と同一 IR 消費図（cmd_266）
+
+```text
+                    build_display_list()
+GanttTask[] + GanttDep[] ──────────────────────► DisplayList (IR)
+                                                         │
+         ┌───────────────────────────────────────────────┼───────────────────────────────────────────────┐
+         │                                               │                                               │
+         ▼                                               ▼                                               ▼
+  ① SVG-DOM バックエンド                    ② Canvas2D / WebGL2 バックエンド              ③ ネイティブ背
+  SvgBackend::render()                      CanvasBackend::render()                      NativeBackend::render()
+         │                                               │                                               │
+         ▼                                               ▼                                               ▼
+  SVG 文字列 → innerHTML                   CommandBuffer → canvas replay              native GPU draw list
+  (ブラウザ L2/L3)                         (ブラウザ L2/L3)                              (L2/L3 消滅)
+         │                                               │                                               │
+         ▼                                               ▼                                               ▼
+  arc-vue / arc-react                      arc-vue (canvas mode)                          koyori-arc-native-*
+  (Wasm 出口)                              (Wasm + JS replay)                             (crate 直リンク)
+```
+
+| ターゲット | ランタイム前提 | cmd_265 下限端末 NFR | 採用トリガ |
+|-----------|---------------|---------------------|-----------|
+| ① SVG-DOM | DOM あり | **適用**（§6.0〜6.7） | 小規模・a11y strict・印刷 |
+| ② Canvas2D/WebGL2 | DOM + Canvas | **適用**（overlay/a11y 含む） | elems 閾値超過（実測確定後） |
+| ③ ネイティブ背 | DOM なし | **L2/L3 壁は構造的不成立**（別 NFR: GPU フレーム予算） | Rust ネイティブクライアント確定時 |
+
+**cmd_265 との関係**: 下限端末ファースト・DOM_CAP・スロットリング CI は **Web 経路（①②）専用の NFR** である。ネイティブ背は DOM 壁を持たないため §6 の DOM 指標は適用外だが、**IR の中立性（§3.7）と仮想化思想（可視行のみ描画）は共有** する。矛盾なし。
 
 ### 4.1 トレイト
 
@@ -188,6 +273,7 @@ pub trait RenderBackend {
 pub enum BackendOutput {
   Svg(String),
   CanvasCommands(CommandBuffer),
+  NativeDrawList(NativeDrawList),   // ③ ネイティブ背（framework 非依存の描画命令列）
 }
 ```
 
@@ -246,6 +332,98 @@ pub enum DrawOp {
 | フォールバック負担 | WebGPU → WebGL2 → Canvas2D の3段フォールバックは npm ライブラリとして保守不能 |
 
 **結論**: WebGPU は本プロジェクトのスコープ外。将来、10万タスク級で WebGL2 も不足した場合に再評価（別 design doc）。
+
+### 4.6 ネイティブ背バックエンド（第三ターゲット — cmd_266）
+
+#### 4.6.1 位置づけ
+
+消費側 task プロジェクトがネイティブクライアント化する見込みがある（Rust: GPUI/egui/Slint/iced 等 **未定** / Electron 系）。
+
+| クライアント種別 | DOM | 採用バックエンド | 理由 |
+|-----------------|-----|-----------------|------|
+| **Electron / WebView** | あり | ① SVG-DOM または ② Canvas | WebView = DOM。既存経路で充足 |
+| **Rust ネイティブ** | **なし** | **③ ネイティブ背** | IR を crate 直リンク。L2（Wasm/JS）と L3（DOM insert）が存在しない |
+
+#### 4.6.2 NativeDrawList
+
+```rust
+/// framework 非依存の描画命令列。GPUI/egui/Slint/iced への変換は per-framework アダプタの責務。
+pub struct NativeDrawList {
+    pub viewport: Viewport,
+    pub palette: Palette,
+    pub ops: Vec<NativeDrawOp>,
+}
+
+pub enum NativeDrawOp {
+    FillRect { x: Coord, y: Coord, w: Coord, h: Coord, color_id: ColorId, radius: Coord },
+    StrokePath { path: Vec<CoordPair>, color_id: ColorId, width: Coord },
+    FillPath { path: Vec<CoordPair>, color_id: ColorId },
+    StrokePolyline { points: Vec<CoordPair>, color_id: ColorId, width: Coord, dash: Option<Dash> },
+    FillPolygon { points: Vec<CoordPair>, color_id: ColorId },
+    DrawText { x: Coord, y: Coord, text: String, color_id: ColorId, anchor: TextAnchor, size: Coord, weight: u16 },
+}
+```
+
+- `NativeDrawOp` は Canvas `DrawOp`（§4.3.1）と **同型に近い** が、JS 型・Canvas API 名を含まない。
+- テキストは IR の `TextPrim` から **Rust `String` として保持**（ネイティブは DOM オーバーレイ不要。各 framework のテキスト API で描画）。
+- ヒットテスト: `TaskBBox` をそのまま利用。framework の hit-test API に投影。
+
+#### 4.6.3 L2/L3 消滅の意味
+
+| 層 | Web (①②) | ネイティブ (③) |
+|----|----------|---------------|
+| L1 幾何計算 | `build_display_list()` | 同一 |
+| L2 Wasm/JS 境界 | bincode 転送 ~20–50 ms | **なし**（in-process） |
+| L3 DOM insert | 76–87% 壁（cmd_263） | **なし** |
+| 描画 | ブラウザレイアウト/ペイント | native GPU（framework 依存） |
+
+ネイティブ背の性能 NFR は **GPU フレーム予算**（16 ms / 60 fps）で別途定義する。DOM_CAP（§6.5）は Web 専用。
+
+#### 4.6.4 実装スコープ
+
+- **Phase 0〜4（本 doc）**: `NativeBackend` スタブ + 2 消費者検証（§3.7.3）のみ。
+- **framework バインディング**: **実装対象外**（§4.8）。需要駆動・凍結。
+
+### 4.8 per-framework アダプタ方針（需要駆動・凍結 — cmd_266）
+
+`arc-vue` / `arc-react` と同様、**framework 固有のアダプタは需要駆動で 1 本だけ起こす**。本設計フェーズでは **実装対象外**。
+
+| アダプタ | 状態 | 出口 | 備考 |
+|----------|------|------|------|
+| `@koyori-app/arc-vue` | 実装済み | Wasm → SVG 文字列 → Vue `v-html` | ① SVG-DOM 経路 |
+| `@koyori-app/arc-react` | **凍結** | （予定）Wasm → SVG | 需要・メンテナ見込み発生時のみ |
+| `koyori-arc-native-gpui`（仮称） | **未着手・凍結** | crate 直リンク → GPUI 描画 | framework 確定後に 1 本 |
+| `koyori-arc-native-egui`（仮称） | **未着手・凍結** | crate 直リンク → egui 描画 | 同上 |
+
+#### 4.8.1 アダプタ層の違い
+
+```text
+【Web 経路 — arc-vue】
+  koyori-arc-core (Wasm)
+       │ render_svg() / render_commands()
+       ▼
+  JS 文字列 or ArrayBuffer
+       ▼
+  GanttChart.vue — DOM 投影（SVG innerHTML or canvas replay + overlay）
+
+【ネイティブ経路 — koyori-arc-native-*】
+  koyori-arc-core (rlib, 同一プロセス)
+       │ build_display_list() → NativeBackend::render()
+       ▼
+  NativeDrawList (in-process, 参照渡し)
+       ▼
+  framework アダプタ — GPUI Scene / egui::Painter 等へ変換
+```
+
+| 観点 | arc-vue（Web） | native アダプタ（Rust） |
+|------|---------------|------------------------|
+| リンク方式 | Wasm npm パッケージ | **crate 直リンク**（`koyori-arc-core` を dep） |
+| IR 受け渡し | bincode over Wasm boundary | **参照渡し**（ゼロコピー） |
+| 出口 | SVG 文字列 or CommandBuffer | `NativeDrawList` → framework draw API |
+| DOM / overlay | 必須（IME, a11y, ラベル） | **不要**（framework ネイティブ入力/a11y） |
+| 起動条件 | 既存（npm 需要） | **消費側 task が framework 確定 + 需要確認後** |
+
+**原則**: display-list / NativeDrawList は framework を知らない。GPUI と egui の両方を同時に実装しない — **確定した 1 framework に対しアダプタ 1 本**。
 
 ---
 
@@ -525,8 +703,9 @@ scripts/run-3layer-bench.sh --dom-throttle 4   # 追加予定フラグ
 | SVG 文字列（現行） | 1 | 7.2 MB @ 5000_dense | L3 で破綻 |
 | CommandBuffer (bincode) | 1 | ~1.3 MB 推定 | **Canvas 推奨** |
 | DisplayList (bincode) | 1 | ~1.5 MB 推定 | SVG バックエンドを JS 側で実行する場合 |
+| DisplayList (bincode) | 0（in-process） | ~1.5 MB 推定 | **ネイティブ背: 直列化不要**（参照渡し）。IPC 時のみ |
 
-Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする。
+Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする（Web 経路のみ。ネイティブは L2 不成立）。
 
 ---
 
@@ -567,6 +746,29 @@ Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする。
 - `backend="auto"` + ヒステリシス。
 - 性能回帰テストを CI に追加（**native + 4× スロットリング**、§6.6）。
 
+### Phase 5: ネイティブ背スタブ + 2 消費者検証（cmd_266）
+
+- `NativeBackend` スタブ実装（`NativeDrawList` 出力）。
+- §3.7.3 の P0〜P4 検証（SVG + Native 2 消費者）。
+- **per-framework アダプタは着手しない**（§4.8 凍結）。
+
+### Phase 6: ネイティブクライアント統合（需要駆動）
+
+- 消費側 task が **Rust ネイティブ vs Electron** を確定。
+- **Electron 確定** → Phase 5 までで完了。①② のみ。追加アダプタ不要。
+- **Rust ネイティブ確定** → framework（GPUI/egui/Slint/iced）を **1 つ** 選定 → `koyori-arc-native-*` アダプタ **1 本** のみ起こす。
+- いずれの場合も **display-list IR は変更しない**。吸収はアダプタ 1 本で完結。
+
+```text
+移行分岐（消費側 task 確定後）:
+
+  Electron ──► WebView ──► ① SVG-DOM or ② Canvas（既存 arc-vue）
+                                    └── アダプタ追加不要
+
+  Rust native ──► ③ NativeBackend ──► koyori-arc-native-{framework} × 1
+                                    └── crate 直リンク、IR 不変
+```
+
 ### SVG 温存方針
 
 | 用途 | バックエンド |
@@ -586,6 +788,8 @@ Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする。
 | IR | ゴールデンスナップショット（決定論的座標） |
 | SVG バックエンド | 現行文字列テストを維持 |
 | Canvas バックエンド | CommandBuffer スナップショット（ピクセル diff は CI 不安定のため二次） |
+| ネイティブ背 | `NativeDrawList` スナップショット + §3.7.3 2 消費者検証 |
+| IR 直列化 | bincode roundtrip（Web 経路） |
 | 統合 | Playwright: クリック → taskClick、仮想化スクロール |
 
 ---
@@ -621,6 +825,13 @@ Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする。
 | 15 | 6.2 閾値の高性能機但し書き | §6.2 |
 | 16 | メモリ崖と invariant の関係 | §6.7 |
 | 17 | 低スペック合否保証の抜け道封じ | §6.5.2 |
+| 18 | 3 バックエンドターゲット再定義 + 同一 IR 消費図 | §1, §4.0 |
+| 19 | 中立スキーマ不変条件（IR-N*, IR-S*） | §3.7.1 |
+| 20 | FFI/bincode 境界 + 2 消費者中立性証明 | §3.7.2, §3.7.3 |
+| 21 | ネイティブ背（L2/L3 消滅） | §4.6 |
+| 22 | per-framework アダプタ凍結・arc-vue との層差 | §4.8 |
+| 23 | 移行ロードマップ（Electron/Rust 分岐） | §8 Phase 5-6 |
+| 24 | cmd_265 との非矛盾（Web NFR / Native 別 NFR） | §4.0, §4.6.3 |
 
 ---
 
@@ -631,6 +842,8 @@ Phase 2 spike で L2 コストを計測し、L2 < 30 ms を gate とする。
 3. 横スクロール時の仮想化（列方向カリング）の要否
 4. `DOM_CAP`・`ELEMS_PER_ROW_MAX` の fixture 実測による校正
 5. `scripts/run-3layer-bench.sh --dom-throttle` フラグ実装
+6. ネイティブクライアントの framework 選定（GPUI/egui/Slint/iced）— 消費側 task 依存
+7. `NativeBackend` の GPU フレーム予算 NFR 数値（framework 確定後）
 
 ---
 
