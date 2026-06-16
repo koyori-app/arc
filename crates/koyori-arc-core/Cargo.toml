@@ -1,0 +1,20 @@
+[package]
+name = "koyori-arc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Gantt chart dependency graph renderer — Rust core (Wasm target)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2.125"
+serde = { version = "1.0.228", features = ["derive"] }
+serde-wasm-bindgen = "0.6.5"
+serde_json = "1.0.150"
+chrono = { version = "0.4.39", features = ["serde"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.75"
