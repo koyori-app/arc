@@ -148,15 +148,24 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         let y1 = HEADER_H + from_r.row as f64 * ROW_H + ROW_H / 2.0;
         let x2 = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY;
         let y2 = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
-        // Keep the final (arrowhead-bearing) segment at least ARROW_LEAD long so
-        // marker-end's orient="auto" always has a real direction to follow — a
-        // zero-length last segment (e.g. when the blocker ends exactly when the
-        // blocked task starts, x1 == x2) leaves the rotation undefined.
-        let mx_mid = (x1 + x2) / 2.0;
-        let mx = if x2 - mx_mid < ARROW_LEAD { x2 - ARROW_LEAD } else { mx_mid };
+        // x1 == x2 (blocker ends exactly when the blocked task starts) is a
+        // purely vertical connector — draw a single straight line and let
+        // marker-end's orient="auto" point it up/down. Forcing a horizontal
+        // elbow here would have to jog backward past x1 to reach a
+        // non-degenerate final segment, which looks like a zigzag.
+        let points = if (x2 - x1).abs() < f64::EPSILON {
+            format!("{x1},{y1} {x2},{y2}")
+        } else {
+            // Elbow midpoint, pulled in just enough that the final
+            // (arrowhead-bearing) segment is at least ARROW_LEAD long —
+            // but never past x1, so the line never jogs backward.
+            let mx_mid = (x1 + x2) / 2.0;
+            let mx = mx_mid.clamp(x1, (x2 - ARROW_LEAD).max(x1));
+            format!("{x1},{y1} {mx},{y1} {mx},{y2} {x2},{y2}")
+        };
 
         svg.push_str(&format!(
-            r#"<polyline points="{x1},{y1} {mx},{y1} {mx},{y2} {x2},{y2}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" marker-end="url(#arr)"/>"#
+            r#"<polyline points="{points}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" marker-end="url(#arr)"/>"#
         ));
     }
 
@@ -282,9 +291,10 @@ mod tests {
             .collect();
         let last = coords[coords.len() - 1];
         let second_last = coords[coords.len() - 2];
-        assert_ne!(
-            last.0, second_last.0,
-            "final segment must have non-zero horizontal length for orient=\"auto\" to work: {coords:?}"
+        assert!(
+            (last.0 - second_last.0).abs() > f64::EPSILON
+                || (last.1 - second_last.1).abs() > f64::EPSILON,
+            "final segment must be non-zero length for orient=\"auto\" to work: {coords:?}"
         );
     }
 
