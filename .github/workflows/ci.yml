@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
+
+      - name: Install wasm-pack
+        run: cargo install --locked wasm-pack
+
+      - name: Native tests
+        run: cargo nextest run
+
+      - name: Wasm tests
+        working-directory: crates/koyori-arc-core
+        run: wasm-pack test --node
+
+      - name: Build npm package
+        run: bash scripts/build-npm.sh
+
+  vue:
+    runs-on: ubuntu-latest
+    needs: rust  # pkg/ が必要なので rust job の後
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install --locked wasm-pack
+
+      - name: Build npm package (pkg/ を生成)
+        run: bash scripts/build-npm.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+        working-directory: packages/arc-vue
+
+      - name: Typecheck
+        run: pnpm typecheck
+        working-directory: packages/arc-vue
+
+      - name: Build
+        run: pnpm build
+        working-directory: packages/arc-vue
