@@ -4,11 +4,16 @@
 /// passes through each task bar at the point corresponding to its `progress` value.
 /// A task ahead of schedule causes the line to jag right; behind schedule jags left.
 ///
-/// When `today_x` is `Some`, endpoints are anchored on the today vertical line:
-/// top row's `y_top` → each task's progress point → bottom row's `y_bottom`.
+/// Each task contributes exactly one representative point at `(progress_x, y_mid)`.
+/// Consecutive points are joined by diagonal straight segments — no horizontal jogs
+/// or vertical bar-penetration (right-angle elbows).
 ///
-/// When `today_x` is `None`, the legacy path connects all task progress points
-/// without today anchoring (see SPEC.md).
+/// When `today_x` is `Some`, endpoints are anchored on the today vertical line:
+/// `(today_x, y_top)` of the first row → task midpoints → `(today_x, y_bottom)` of
+/// the last row. Connections from/to anchors are diagonal when `progress_x ≠ today_x`.
+///
+/// When `today_x` is `None`, the legacy path connects task midpoints only
+/// (see SPEC.md).
 ///
 /// Returns a list of (x, y) pixel coordinates for an SVG `<polyline>`.
 pub fn progress_line(
@@ -25,65 +30,91 @@ pub fn progress_line(
     }
 }
 
+fn progress_x(start: f64, end: f64, p: f64) -> f64 {
+    start + (end - start) * p
+}
+
+fn y_mid(y_top: f64, y_bottom: f64) -> f64 {
+    (y_top + y_bottom) / 2.0
+}
+
+fn task_midpoint(start: f64, end: f64, y_top: f64, y_bottom: f64, p: f64) -> (f64, f64) {
+    (progress_x(start, end, p), y_mid(y_top, y_bottom))
+}
+
 fn progress_line_legacy(tasks: &[(f64, f64, f64, f64, f64)]) -> Vec<(f64, f64)> {
-    let mut pts = Vec::with_capacity(tasks.len() * 2);
-    for (i, &(start, end, y_top, y_bottom, p)) in tasks.iter().enumerate() {
-        let x = start + (end - start) * p;
-        if i == 0 {
-            pts.push((x, y_top));
-        } else {
-            let prev_x = pts.last().map(|p| p.0).unwrap_or(x);
-            pts.push((prev_x, y_top));
-        }
-        pts.push((x, y_bottom));
-    }
-    pts
+    tasks
+        .iter()
+        .map(|&(start, end, y_top, y_bottom, p)| task_midpoint(start, end, y_top, y_bottom, p))
+        .collect()
 }
 
 fn progress_line_today_anchored(
     tasks: &[(f64, f64, f64, f64, f64)],
     today_x: f64,
 ) -> Vec<(f64, f64)> {
-    let mut pts = Vec::with_capacity(tasks.len() * 2 + 2);
+    let mut pts = Vec::with_capacity(tasks.len() + 2);
     let &(start0, end0, y_top0, y_bottom0, p0) = &tasks[0];
-    let x0 = start0 + (end0 - start0) * p0;
+    let (x0, mid0) = task_midpoint(start0, end0, y_top0, y_bottom0, p0);
 
     pts.push((today_x, y_top0));
-    if (today_x - x0).abs() > f64::EPSILON {
-        pts.push((x0, y_top0));
-    }
-    pts.push((x0, y_bottom0));
+    pts.push((x0, mid0));
 
     for &(start, end, y_top, y_bottom, p) in tasks.iter().skip(1) {
-        let x = start + (end - start) * p;
-        let prev_x = pts.last().map(|p| p.0).unwrap_or(today_x);
-        if (prev_x - x).abs() > f64::EPSILON || pts.last().map(|p| p.1) != Some(y_top) {
-            if pts.last().map(|p| p.1) != Some(y_top) {
-                pts.push((prev_x, y_top));
-            }
-            if (prev_x - x).abs() > f64::EPSILON {
-                pts.push((x, y_top));
-            }
-        }
-        pts.push((x, y_bottom));
+        pts.push(task_midpoint(start, end, y_top, y_bottom, p));
     }
 
     let last_y = tasks.last().map(|t| t.3).unwrap_or(y_bottom0);
-    let last_x = pts.last().map(|p| p.0).unwrap_or(today_x);
-    if (last_x - today_x).abs() > f64::EPSILON {
-        pts.push((today_x, last_y));
-    } else if pts.last().map(|p| p.1) != Some(last_y) {
-        pts.push((today_x, last_y));
-    }
+    pts.push((today_x, last_y));
 
     pts
+}
+
+/// True when segment a→b is horizontal or vertical (axis-aligned).
+#[cfg(test)]
+fn segment_is_axis_aligned(a: (f64, f64), b: (f64, f64)) -> bool {
+    (a.0 - b.0).abs() < f64::EPSILON || (a.1 - b.1).abs() < f64::EPSILON
+}
+
+/// True when any interior segment between consecutive task midpoints is axis-aligned.
+#[cfg(test)]
+fn interior_segments_are_diagonal(pts: &[(f64, f64)]) -> bool {
+    if pts.len() < 3 {
+        return true;
+    }
+    // Skip first and last segments (today anchor legs may be vertical on today_x).
+    pts.windows(2)
+        .skip(1)
+        .take(pts.len().saturating_sub(2))
+        .all(|w| !segment_is_axis_aligned(w[0], w[1]))
+}
+
+/// True when any segment vertically spans a full task row (bar penetration).
+#[cfg(test)]
+fn has_vertical_bar_penetration(
+    pts: &[(f64, f64)],
+    tasks: &[(f64, f64, f64, f64, f64)],
+) -> bool {
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if (a.0 - b.0).abs() >= f64::EPSILON {
+            continue;
+        }
+        let min_y = a.1.min(b.1);
+        let max_y = a.1.max(b.1);
+        for &(_, _, y_top, y_bottom, _) in tasks {
+            if (min_y - y_top).abs() < f64::EPSILON && (max_y - y_bottom).abs() < f64::EPSILON {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // helper: single task spanning px 0–100, rows y 0–40
     fn one(progress: f64) -> Vec<(f64, f64)> {
         progress_line(&[(0.0, 100.0, 0.0, 40.0, progress)], None)
     }
@@ -101,34 +132,33 @@ mod tests {
     #[test]
     fn single_task_not_started_legacy() {
         let pts = one(0.0);
-        assert_eq!(pts, vec![(0.0, 0.0), (0.0, 40.0)]);
+        assert_eq!(pts, vec![(0.0, 20.0)]);
     }
 
     #[test]
     fn single_task_complete_legacy() {
         let pts = one(1.0);
-        assert_eq!(pts, vec![(100.0, 0.0), (100.0, 40.0)]);
+        assert_eq!(pts, vec![(100.0, 20.0)]);
     }
 
     #[test]
     fn single_task_halfway_legacy() {
         let pts = one(0.5);
-        assert_eq!(pts, vec![(50.0, 0.0), (50.0, 40.0)]);
+        assert_eq!(pts, vec![(50.0, 20.0)]);
     }
 
     #[test]
-    fn two_tasks_vertical_segment_connects_rows_legacy() {
-        let pts = progress_line(
-            &[
-                (0.0, 100.0, 0.0, 40.0, 0.5),
-                (0.0, 100.0, 40.0, 80.0, 0.75),
-            ],
-            None,
-        );
-        assert_eq!(pts[0], (50.0, 0.0));
-        assert_eq!(pts[1], (50.0, 40.0));
-        assert_eq!(pts[2], (50.0, 40.0));
-        assert_eq!(pts[3], (75.0, 80.0));
+    fn two_tasks_diagonal_segment_between_midpoints_legacy() {
+        let tasks = [
+            (0.0, 100.0, 0.0, 40.0, 0.5),
+            (0.0, 100.0, 40.0, 80.0, 0.75),
+        ];
+        let pts = progress_line(&tasks, None);
+        assert_eq!(pts.len(), 2);
+        assert_eq!(pts[0], (50.0, 20.0));
+        assert_eq!(pts[1], (75.0, 60.0));
+        assert!(!segment_is_axis_aligned(pts[0], pts[1]));
+        assert!(!has_vertical_bar_penetration(&pts, &tasks));
     }
 
     #[test]
@@ -136,31 +166,28 @@ mod tests {
         let pts = one_today(0.5, 30.0);
         assert_eq!(pts.first(), Some(&(30.0, 0.0)));
         assert_eq!(pts.last(), Some(&(30.0, 40.0)));
-        assert!(pts.contains(&(50.0, 0.0)));
-        assert!(pts.contains(&(50.0, 40.0)));
+        assert_eq!(pts[1], (50.0, 20.0));
     }
 
     #[test]
-    fn single_task_today_anchored_at_progress_point_skips_redundant_top() {
-        // progress at x=30 equals today_x — no extra horizontal at row top
+    fn single_task_today_anchored_at_progress_point_uses_midpoint() {
         let pts = one_today(0.3, 30.0);
-        assert_eq!(pts, vec![(30.0, 0.0), (30.0, 40.0)]);
+        assert_eq!(pts, vec![(30.0, 0.0), (30.0, 20.0), (30.0, 40.0)]);
     }
 
     #[test]
-    fn two_tasks_today_anchored_zigzag_through_progress_points() {
-        let pts = progress_line(
-            &[
-                (0.0, 100.0, 0.0, 40.0, 0.5),
-                (0.0, 100.0, 40.0, 80.0, 0.75),
-            ],
-            Some(20.0),
-        );
+    fn two_tasks_today_anchored_diagonal_through_midpoints() {
+        let tasks = [
+            (0.0, 100.0, 0.0, 40.0, 0.5),
+            (0.0, 100.0, 40.0, 80.0, 0.75),
+        ];
+        let pts = progress_line(&tasks, Some(20.0));
         assert_eq!(pts.first(), Some(&(20.0, 0.0)));
         assert_eq!(pts.last(), Some(&(20.0, 80.0)));
-        assert!(pts.contains(&(50.0, 0.0)));
-        assert!(pts.contains(&(50.0, 40.0)));
-        assert!(pts.contains(&(75.0, 80.0)));
+        assert_eq!(pts[1], (50.0, 20.0));
+        assert_eq!(pts[2], (75.0, 60.0));
+        assert!(interior_segments_are_diagonal(&pts));
+        assert!(!has_vertical_bar_penetration(&pts, &tasks));
     }
 
     #[test]
@@ -170,5 +197,32 @@ mod tests {
         let expected_x = 10.0 + (110.0 - 10.0) * 0.25;
         assert_eq!(legacy[0].0, expected_x);
         assert!(anchored.iter().any(|(x, _)| (*x - expected_x).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn legacy_multi_task_has_no_right_angle_elbows() {
+        let tasks = [
+            (0.0, 100.0, 0.0, 40.0, 0.2),
+            (0.0, 100.0, 40.0, 80.0, 0.5),
+            (0.0, 100.0, 80.0, 120.0, 0.9),
+        ];
+        let pts = progress_line(&tasks, None);
+        assert_eq!(pts.len(), 3);
+        for w in pts.windows(2) {
+            assert!(!segment_is_axis_aligned(w[0], w[1]));
+        }
+        assert!(!has_vertical_bar_penetration(&pts, &tasks));
+    }
+
+    #[test]
+    fn today_anchored_has_no_bar_penetration() {
+        let tasks = [
+            (0.0, 200.0, 10.0, 50.0, 0.4),
+            (0.0, 200.0, 50.0, 90.0, 0.6),
+            (0.0, 200.0, 90.0, 130.0, 0.8),
+        ];
+        let pts = progress_line(&tasks, Some(80.0));
+        assert!(!has_vertical_bar_penetration(&pts, &tasks));
+        assert!(interior_segments_are_diagonal(&pts));
     }
 }
