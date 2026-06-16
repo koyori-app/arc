@@ -5,7 +5,7 @@
   "license": "MPL-2.0 OR GPL-2.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/koyori-app/koyori-arc"
+    "url": "https://github.com/koyori-app/arc"
   },
   "publishConfig": {
     "access": "public"

@@ -5,7 +5,7 @@ body = """
 {% if group == "Features" or group == "Bug Fixes" or group == "Performance" or group == "Refactor" or group == "Documentation" %}
 ### {{ group }}
 {% for commit in commits %}
-- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/koyori-arc/commit/{{ commit.id }}))
+- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/arc/commit/{{ commit.id }}))
 {%- endfor %}
 {% endif %}
 {%- endfor %}
@@ -15,7 +15,7 @@ body = """
 <details><summary>Other changes</summary>
 
 {% for commit in other %}
-- {{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/koyori-arc/commit/{{ commit.id }}))
+- {{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/arc/commit/{{ commit.id }}))
 {%- endfor %}
 
 </details>
