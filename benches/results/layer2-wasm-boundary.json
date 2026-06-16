@@ -1,0 +1,66 @@
+[
+  {
+    "fixture": "100_sparse",
+    "tasks": 100,
+    "deps": 99,
+    "wasm_boundary_ms_median": 0.94,
+    "svg_bytes": 71252,
+    "svg_elements": 735
+  },
+  {
+    "fixture": "100_dense",
+    "tasks": 100,
+    "deps": 494,
+    "wasm_boundary_ms_median": 1.1,
+    "svg_bytes": 139892,
+    "svg_elements": 1130
+  },
+  {
+    "fixture": "500_sparse",
+    "tasks": 500,
+    "deps": 499,
+    "wasm_boundary_ms_median": 2.22,
+    "svg_bytes": 349924,
+    "svg_elements": 3533
+  },
+  {
+    "fixture": "500_dense",
+    "tasks": 500,
+    "deps": 2534,
+    "wasm_boundary_ms_median": 4.83,
+    "svg_bytes": 709913,
+    "svg_elements": 5568
+  },
+  {
+    "fixture": "2000_sparse",
+    "tasks": 2000,
+    "deps": 1999,
+    "wasm_boundary_ms_median": 8.62,
+    "svg_bytes": 1401325,
+    "svg_elements": 14018
+  },
+  {
+    "fixture": "2000_dense",
+    "tasks": 2000,
+    "deps": 10184,
+    "wasm_boundary_ms_median": 19.3,
+    "svg_bytes": 2859890,
+    "svg_elements": 22203
+  },
+  {
+    "fixture": "5000_sparse",
+    "tasks": 5000,
+    "deps": 4999,
+    "wasm_boundary_ms_median": 21.4,
+    "svg_bytes": 3528651,
+    "svg_elements": 34988
+  },
+  {
+    "fixture": "5000_dense",
+    "tasks": 5000,
+    "deps": 25484,
+    "wasm_boundary_ms_median": 47.16,
+    "svg_bytes": 7214865,
+    "svg_elements": 55473
+  }
+]
