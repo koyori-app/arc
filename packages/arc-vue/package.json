@@ -1,0 +1,42 @@
+{
+  "name": "@koyori-app/arc-vue",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MPL-2.0 OR GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koyori-app/koyori-arc"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/arc-vue.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@koyori-app/arc": "^0.1.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@koyori-app/arc": "workspace:*",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4",
+    "vue": "^3.5.35",
+    "vue-tsc": "^2.2.10"
+  }
+}
