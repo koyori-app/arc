@@ -11,12 +11,15 @@ const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
 const PX_PER_DAY: f64 = 30.0;
 const LABEL_W: f64 = 120.0;
 const HEADER_H: f64 = 30.0;
-/// Gap left between the arrow's end point and the blocked task's bar.
-const ARROW_LEAD: f64 = 10.0;
+/// Gap left between the arrow's end point and the blocked task's bar (frappe-gantt's literal `13`).
+const ARROW_LEAD: f64 = 13.0;
 /// Radius of the rounded elbow on dependency arrows (frappe-gantt's `arrow_curve`).
 const ARROW_CURVE: f64 = 4.0;
 /// Half-size of the open chevron arrowhead.
 const ARROW_HEAD: f64 = 4.0;
+/// Vertical gap between rows, used as frappe-gantt's `padding` for both the
+/// row gap and the horizontal "is the blocked task too close/behind" threshold.
+const ROW_PADDING: f64 = ROW_H - BAR_H;
 
 const COLOR_BAR_BG: &str = "#d1d5db";
 const COLOR_BAR_FG: &str = "#6366f1";
@@ -142,33 +145,57 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         let Some(from_r) = row_map.get(dep.blocker_task_id.as_str()) else { continue };
         let Some(to_r) = row_map.get(dep.blocked_task_id.as_str()) else { continue };
 
-        // frappe-gantt style elbow: leave from the bottom-center of the
-        // blocker bar, drop/rise to just shy of the blocked row, round the
-        // corner, then run a short straight stretch into the blocked bar's
-        // vertical center (open chevron arrowhead, no filled marker).
+        // Ported from frappe-gantt's Arrow.calculate_path(): leave from the
+        // bottom-center of the blocker bar (nudged left in 10px steps while
+        // it overhangs the blocked bar's column), then either a simple
+        // rounded elbow (blocked bar is comfortably to the right) or a
+        // backward route that dips under the blocker and comes back up/down
+        // into the blocked bar's left edge (blocked bar starts at/before the
+        // blocker's left edge + padding).
         let from_x = LABEL_W + from_t.start_days(epoch) * PX_PER_DAY;
         let from_w = (from_t.end_days(epoch) - from_t.start_days(epoch)) * PX_PER_DAY;
-        let start_x = from_x + from_w / 2.0;
+        let to_x = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY;
+
+        let mut start_x = from_x + from_w / 2.0;
+        while to_x < start_x + ROW_PADDING && start_x > from_x + ROW_PADDING {
+            start_x -= 10.0;
+        }
+        start_x -= 10.0;
+
         let start_y = HEADER_H + from_r.row as f64 * ROW_H + BAR_PAD + BAR_H;
-        let end_x = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY - ARROW_LEAD;
+        let end_x = to_x - ARROW_LEAD;
         let end_y = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
 
-        let curve = if end_x < start_x + ARROW_CURVE {
-            (end_x - start_x).max(0.0)
-        } else {
-            ARROW_CURVE
-        };
-        let start_x = start_x.min(end_x - curve);
-
         let from_is_below_to = from_r.row > to_r.row;
-        let offset = if from_is_below_to { end_y + curve } else { end_y - curve };
+        let mut curve = ARROW_CURVE;
         let clockwise = if from_is_below_to { 1 } else { 0 };
-        // Vertical delta of the rounded corner must point toward end_y: down
-        // when the blocker is above (offset = end_y - curve), up when below.
-        let dy = if from_is_below_to { -curve } else { curve };
+        let mut curve_y = if from_is_below_to { -curve } else { curve };
+
+        let path = if to_x <= from_x + ROW_PADDING {
+            let mut down_1 = ROW_PADDING / 2.0 - curve;
+            if down_1 < 0.0 {
+                down_1 = 0.0;
+                curve = ROW_PADDING / 2.0;
+                curve_y = if from_is_below_to { -curve } else { curve };
+            }
+            let down_2 = end_y - curve_y;
+            let left = to_x - ROW_PADDING;
+            let neg_curve = -curve;
+            format!(
+                "M {start_x} {start_y} v {down_1} a {curve} {curve} 0 0 1 {neg_curve} {curve} H {left} a {curve} {curve} 0 0 {clockwise} {neg_curve} {curve_y} V {down_2} a {curve} {curve} 0 0 {clockwise} {curve} {curve_y} L {end_x} {end_y} m -{ARROW_HEAD} -{ARROW_HEAD} l {ARROW_HEAD} {ARROW_HEAD} l -{ARROW_HEAD} {ARROW_HEAD}"
+            )
+        } else {
+            if end_x < start_x + curve {
+                curve = end_x - start_x;
+            }
+            let offset = if from_is_below_to { end_y + curve } else { end_y - curve };
+            format!(
+                "M {start_x} {start_y} V {offset} a {curve} {curve} 0 0 {clockwise} {curve} {curve_y} L {end_x} {end_y} m -{ARROW_HEAD} -{ARROW_HEAD} l {ARROW_HEAD} {ARROW_HEAD} l -{ARROW_HEAD} {ARROW_HEAD}"
+            )
+        };
 
         svg.push_str(&format!(
-            r#"<path d="M {start_x} {start_y} V {offset} a {curve} {curve} 0 0 {clockwise} {curve} {dy} L {end_x} {end_y} m -{ARROW_HEAD} -{ARROW_HEAD} l {ARROW_HEAD} {ARROW_HEAD} l -{ARROW_HEAD} {ARROW_HEAD}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>"#
+            r#"<path d="{path}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>"#
         ));
     }
 
@@ -283,6 +310,44 @@ mod tests {
         assert!(svg.contains("<path d=\"M "));
         assert!(svg.contains(&format!("m -{ARROW_HEAD} -{ARROW_HEAD}")));
         assert!(!svg.contains("<marker"));
+    }
+
+    #[test]
+    fn dependency_arrow_routes_backward_when_blocked_starts_before_blocker_exit() {
+        // task-2 starts only 1 day after task-1 but task-1 spans 3 days, so
+        // the natural exit point (task-1's bar center) sits to the right of
+        // where the arrow must enter task-2 — this used to collapse the
+        // rounded elbow into a flat right-angle corner (curve == 0).
+        let tasks = vec![
+            GanttTask {
+                id: "t1".to_string(),
+                title: "Design".to_string(),
+                progress_pct: 100,
+                start: date(2026, 6, 1),
+                end: Some(date(2026, 6, 4)),
+            },
+            GanttTask {
+                id: "t2".to_string(),
+                title: "Backend".to_string(),
+                progress_pct: 60,
+                start: date(2026, 6, 2),
+                end: Some(date(2026, 6, 8)),
+            },
+        ];
+        let deps = vec![GanttDep {
+            blocker_task_id: "t1".to_string(),
+            blocked_task_id: "t2".to_string(),
+        }];
+        let svg = render(&tasks, &deps, None);
+        let path = svg
+            .split("<path d=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("dependency path present");
+        assert!(
+            path.contains(&format!("a {ARROW_CURVE} {ARROW_CURVE}")),
+            "expected a non-degenerate rounded elbow, got: {path}"
+        );
     }
 
     #[test]
