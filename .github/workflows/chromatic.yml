@@ -38,7 +38,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build Storybook
-        run: pnpm build-storybook
+        run: pnpm build-storybook --stats-json
         working-directory: packages/arc-vue
 
       - name: Publish to Chromatic
