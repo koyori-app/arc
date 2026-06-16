@@ -11,9 +11,12 @@ const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
 const PX_PER_DAY: f64 = 30.0;
 const LABEL_W: f64 = 120.0;
 const HEADER_H: f64 = 30.0;
-/// Minimum horizontal run before the dependency arrowhead, so `marker-end`
-/// always has a non-degenerate (non-zero-length) final segment to orient on.
+/// Gap left between the arrow's end point and the blocked task's bar.
 const ARROW_LEAD: f64 = 10.0;
+/// Radius of the rounded elbow on dependency arrows (frappe-gantt's `arrow_curve`).
+const ARROW_CURVE: f64 = 4.0;
+/// Half-size of the open chevron arrowhead.
+const ARROW_HEAD: f64 = 4.0;
 
 const COLOR_BAR_BG: &str = "#d1d5db";
 const COLOR_BAR_FG: &str = "#6366f1";
@@ -67,11 +70,6 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
     let mut svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{chart_w}" height="{chart_h}" font-family="sans-serif" font-size="12">"#
     );
-
-    // Arrowhead marker definition
-    svg.push_str(&format!(
-        r#"<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="{COLOR_DEP}"/></marker></defs>"#
-    ));
 
     // Header background
     svg.push_str(&format!(
@@ -144,28 +142,33 @@ fn render_graph(graph: &GanttGraph, epoch: NaiveDate, today: Option<NaiveDate>) 
         let Some(from_r) = row_map.get(dep.blocker_task_id.as_str()) else { continue };
         let Some(to_r) = row_map.get(dep.blocked_task_id.as_str()) else { continue };
 
-        let x1 = LABEL_W + from_t.end_days(epoch) * PX_PER_DAY;
-        let y1 = HEADER_H + from_r.row as f64 * ROW_H + ROW_H / 2.0;
-        let x2 = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY;
-        let y2 = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
-        // x1 == x2 (blocker ends exactly when the blocked task starts) is a
-        // purely vertical connector — draw a single straight line and let
-        // marker-end's orient="auto" point it up/down. Forcing a horizontal
-        // elbow here would have to jog backward past x1 to reach a
-        // non-degenerate final segment, which looks like a zigzag.
-        let points = if (x2 - x1).abs() < f64::EPSILON {
-            format!("{x1},{y1} {x2},{y2}")
+        // frappe-gantt style elbow: leave from the bottom-center of the
+        // blocker bar, drop/rise to just shy of the blocked row, round the
+        // corner, then run a short straight stretch into the blocked bar's
+        // vertical center (open chevron arrowhead, no filled marker).
+        let from_x = LABEL_W + from_t.start_days(epoch) * PX_PER_DAY;
+        let from_w = (from_t.end_days(epoch) - from_t.start_days(epoch)) * PX_PER_DAY;
+        let start_x = from_x + from_w / 2.0;
+        let start_y = HEADER_H + from_r.row as f64 * ROW_H + BAR_PAD + BAR_H;
+        let end_x = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY - ARROW_LEAD;
+        let end_y = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
+
+        let curve = if end_x < start_x + ARROW_CURVE {
+            (end_x - start_x).max(0.0)
         } else {
-            // Elbow midpoint, pulled in just enough that the final
-            // (arrowhead-bearing) segment is at least ARROW_LEAD long —
-            // but never past x1, so the line never jogs backward.
-            let mx_mid = (x1 + x2) / 2.0;
-            let mx = mx_mid.clamp(x1, (x2 - ARROW_LEAD).max(x1));
-            format!("{x1},{y1} {mx},{y1} {mx},{y2} {x2},{y2}")
+            ARROW_CURVE
         };
+        let start_x = start_x.min(end_x - curve);
+
+        let from_is_below_to = from_r.row > to_r.row;
+        let offset = if from_is_below_to { end_y + curve } else { end_y - curve };
+        let clockwise = if from_is_below_to { 1 } else { 0 };
+        // Vertical delta of the rounded corner must point toward end_y: down
+        // when the blocker is above (offset = end_y - curve), up when below.
+        let dy = if from_is_below_to { -curve } else { curve };
 
         svg.push_str(&format!(
-            r#"<polyline points="{points}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" marker-end="url(#arr)"/>"#
+            r#"<path d="M {start_x} {start_y} V {offset} a {curve} {curve} 0 0 {clockwise} {curve} {dy} L {end_x} {end_y} m -{ARROW_HEAD} -{ARROW_HEAD} l {ARROW_HEAD} {ARROW_HEAD} l -{ARROW_HEAD} {ARROW_HEAD}" fill="none" stroke="{COLOR_DEP}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>"#
         ));
     }
 
@@ -271,39 +274,15 @@ mod tests {
     }
 
     #[test]
-    fn dependency_arrow_final_segment_is_non_degenerate() {
-        // task-1 ends exactly when task-2 starts (x1 == x2), which used to
-        // collapse the polyline's last segment to zero length and leave the
-        // marker-end arrowhead orientation undefined.
+    fn dependency_arrow_ends_with_open_chevron() {
+        // task-1 ends exactly when task-2 starts (x1 == x2). The arrow is now
+        // a frappe-gantt-style elbow path with an open chevron drawn via
+        // relative move/line commands, not a <marker>/<polyline> pair.
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None);
-        let points = svg
-            .split("<polyline points=\"")
-            .nth(1)
-            .and_then(|s| s.split('"').next())
-            .expect("dependency polyline present");
-        let coords: Vec<(f64, f64)> = points
-            .split(' ')
-            .map(|p| {
-                let (x, y) = p.split_once(',').unwrap();
-                (x.parse().unwrap(), y.parse().unwrap())
-            })
-            .collect();
-        let last = coords[coords.len() - 1];
-        let second_last = coords[coords.len() - 2];
-        assert!(
-            (last.0 - second_last.0).abs() > f64::EPSILON
-                || (last.1 - second_last.1).abs() > f64::EPSILON,
-            "final segment must be non-zero length for orient=\"auto\" to work: {coords:?}"
-        );
-    }
-
-    #[test]
-    fn dependency_arrow_has_marker() {
-        let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
-        assert!(svg.contains("marker-end=\"url(#arr)\""));
-        assert!(svg.contains("<marker id=\"arr\""));
+        assert!(svg.contains("<path d=\"M "));
+        assert!(svg.contains(&format!("m -{ARROW_HEAD} -{ARROW_HEAD}")));
+        assert!(!svg.contains("<marker"));
     }
 
     #[test]
