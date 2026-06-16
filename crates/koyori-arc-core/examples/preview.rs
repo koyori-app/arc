@@ -82,8 +82,11 @@ fn main() {
   <h1>koyori-arc — visual preview</h1>
   <div class="chart">{svg}</div>
   <div class="legend">
-    <span><span class="dot" style="background:#6366f1"></span>progress</span>
-    <span><span class="dot" style="background:#d1d5db"></span>remaining</span>
+    <span><span class="dot" style="background:#d1d5db"></span>未達</span>
+    <span><span class="dot" style="background:#f59e0b"></span>低 (1–33%)</span>
+    <span><span class="dot" style="background:#6366f1"></span>中 (34–66%)</span>
+    <span><span class="dot" style="background:#0ea5e9"></span>高 (67–99%)</span>
+    <span><span class="dot" style="background:#22c55e"></span>完了 (100%)</span>
     <span><span class="dot" style="background:#9ca3af"></span>dependency</span>
     <span><span class="dot" style="background:#ef4444;opacity:.7"></span>progress line</span>
   </div>
