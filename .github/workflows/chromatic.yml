@@ -49,5 +49,5 @@ jobs:
           storybookBuildDir: storybook-static
           onlyChanged: true
           exitZeroOnChanges: true
-          autoAcceptChanges: main
+          autoAcceptChanges: master
           skip: ${{ github.event.pull_request.draft == true }}
