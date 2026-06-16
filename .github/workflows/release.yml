@@ -1,0 +1,56 @@
+name: Release
+
+# 初版は手動 publish 後、npmjs.com でこのリポジトリ + workflow を
+# Trusted Publisher として登録すること。以降は GitHub Release 公開で自動 publish。
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # OIDC trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install --locked wasm-pack
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # pnpm 9 delegates publish to the system npm, and trusted publishing (OIDC)
+      # requires npm >= 11.5.1 (the npm bundled with Actions' Node is 10.x and
+      # fails with a misleading E404). Upgrade npm before publishing.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Build npm package
+        run: bash scripts/build-npm.sh
+
+      # No NODE_AUTH_TOKEN needed — OIDC id-token is exchanged automatically.
+      - name: Publish to npm
+        working-directory: crates/koyori-arc-core/pkg
+        run: npm publish --provenance --access public
+
+      # crates.io Trusted Publisher (OIDC) — no stored token needed.
+      # Register this repo + workflow on crates.io before the first publish.
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p koyori-arc-core

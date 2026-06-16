@@ -1,0 +1,41 @@
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") -%}
+{% if group == "Features" or group == "Bug Fixes" or group == "Performance" or group == "Refactor" or group == "Documentation" %}
+### {{ group }}
+{% for commit in commits %}
+- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/koyori-arc/commit/{{ commit.id }}))
+{%- endfor %}
+{% endif %}
+{%- endfor %}
+
+{% set other = commits | filter(attribute="group", value="Maintenance") %}
+{% if other %}
+<details><summary>Other changes</summary>
+
+{% for commit in other %}
+- {{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/koyori-app/koyori-arc/commit/{{ commit.id }}))
+{%- endfor %}
+
+</details>
+{% endif %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat",     group = "Features" },
+  { message = "^fix",      group = "Bug Fixes" },
+  { message = "^perf",     group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^docs",     group = "Documentation" },
+  { message = "^chore",    group = "Maintenance" },
+  { message = "^ci",       group = "Maintenance" },
+  { message = "^style",    group = "Maintenance" },
+  { message = "^test",     group = "Maintenance" },
+]
+filter_commits = true
+tag_pattern = "v[0-9].*"
