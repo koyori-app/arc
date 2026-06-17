@@ -55,13 +55,20 @@ fn progress_line_today_anchored(
 ) -> Vec<(f64, f64)> {
     let mut pts = Vec::with_capacity(tasks.len() + 2);
     let &(start0, end0, y_top0, y_bottom0, p0) = &tasks[0];
-    let (x0, mid0) = task_midpoint(start0, end0, y_top0, y_bottom0, p0);
+    let (mut x0, mid0) = task_midpoint(start0, end0, y_top0, y_bottom0, p0);
+    if p0 == 0.0 {
+        x0 = x0.min(today_x);
+    }
 
     pts.push((today_x, y_top0));
     pts.push((x0, mid0));
 
     for &(start, end, y_top, y_bottom, p) in tasks.iter().skip(1) {
-        pts.push(task_midpoint(start, end, y_top, y_bottom, p));
+        let (mut x, y) = task_midpoint(start, end, y_top, y_bottom, p);
+        if p == 0.0 {
+            x = x.min(today_x);
+        }
+        pts.push((x, y));
     }
 
     let last_y = tasks.last().map(|t| t.3).unwrap_or(y_bottom0);
@@ -224,5 +231,35 @@ mod tests {
         let pts = progress_line(&tasks, Some(80.0));
         assert!(!has_vertical_bar_penetration(&pts, &tasks));
         assert!(interior_segments_are_diagonal(&pts));
+    }
+
+    #[test]
+    fn today_anchored_future_not_started_clamps_to_today() {
+        let today_x = 30.0;
+        let tasks = [(50.0, 100.0, 0.0, 40.0, 0.0)];
+        let pts = progress_line(&tasks, Some(today_x));
+        assert_eq!(pts[1].0, today_x);
+    }
+
+    #[test]
+    fn today_anchored_progress_positive_not_clamped_when_start_after_today() {
+        let today_x = 30.0;
+        let start = 50.0;
+        let end = 100.0;
+        let p = 0.05;
+        let tasks = [(start, end, 0.0, 40.0, p)];
+        let pts = progress_line(&tasks, Some(today_x));
+        let expected_x = progress_x(start, end, p);
+        assert_eq!(pts[1].0, expected_x);
+        assert!(expected_x > today_x);
+    }
+
+    #[test]
+    fn today_anchored_overdue_not_started_stays_at_start() {
+        let today_x = 50.0;
+        let start = 10.0;
+        let tasks = [(start, 100.0, 0.0, 40.0, 0.0)];
+        let pts = progress_line(&tasks, Some(today_x));
+        assert_eq!(pts[1].0, start);
     }
 }
