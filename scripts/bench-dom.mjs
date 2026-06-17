@@ -7,8 +7,9 @@
  * Usage:
  *   node scripts/bench-dom.mjs [--virtualize] [--dom-throttle N] [--out layer3-dom-native.json]
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { createServer } from 'node:http';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { dirname, join, extname, normalize } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,54 @@ const FIXTURES = [
 const WARMUP = 1;
 const ITERS = 5;
 const DOM_CAP = 500;
+
+const MIME_BY_EXT = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json',
+};
+
+function startStaticServer(rootDir) {
+  const rootNorm = normalize(rootDir);
+  return new Promise((resolve, reject) => {
+    const server = createServer((req, res) => {
+      try {
+        const urlPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
+        const filePath = normalize(join(rootNorm, urlPath));
+        if (!filePath.startsWith(rootNorm)) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
+        if (!existsSync(filePath)) {
+          res.writeHead(404);
+          res.end('Not Found');
+          return;
+        }
+        const body = readFileSync(filePath);
+        const ext = extname(filePath).toLowerCase();
+        res.writeHead(200, { 'Content-Type': MIME_BY_EXT[ext] ?? 'application/octet-stream' });
+        res.end(body);
+      } catch (err) {
+        res.writeHead(500);
+        res.end(String(err));
+      }
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({ server, baseUrl: `http://127.0.0.1:${port}` });
+    });
+    server.on('error', reject);
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
 
 function parseArgs(argv) {
   const opts = {
@@ -78,36 +127,40 @@ async function benchWithPlaywright(chromium, opts) {
   );
   initSync(wasmBytes);
 
+  const { server, baseUrl } = await startStaticServer(root);
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-  await applyCpuThrottle(page, opts.domThrottle);
-  const harnessUrl = pathToFileURL(join(root, 'scripts/bench-dom-harness.html')).href;
+  try {
+    const page = await browser.newPage();
+    await applyCpuThrottle(page, opts.domThrottle);
 
-  const results = [];
-  for (const name of FIXTURES) {
-    const q = harnessQuery(opts);
-    q.set('fixture', name);
-    await page.goto(`${harnessUrl}?${q.toString()}`);
-    await page.waitForFunction(() => window.__benchReady === true);
+    const results = [];
+    for (const name of FIXTURES) {
+      const q = harnessQuery(opts);
+      q.set('fixture', name);
+      await page.goto(`${baseUrl}/scripts/bench-dom-harness.html?${q.toString()}`);
+      await page.waitForFunction(() => window.__benchReady === true);
 
-    for (let i = 0; i < WARMUP; i++) await page.evaluate(() => window.__runBench());
+      for (let i = 0; i < WARMUP; i++) await page.evaluate(() => window.__runBench());
 
-    const samples = [];
-    let meta = null;
-    for (let i = 0; i < ITERS; i++) {
-      const row = await page.evaluate(() => window.__runBench());
-      samples.push(row.domMs);
-      meta = row;
+      const samples = [];
+      let meta = null;
+      for (let i = 0; i < ITERS; i++) {
+        const row = await page.evaluate(() => window.__runBench());
+        samples.push(row.domMs);
+        meta = row;
+      }
+
+      const sorted = [...samples].sort((a, b) => a - b);
+      results.push(
+        makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], 'playwright-chromium', opts),
+      );
     }
 
-    const sorted = [...samples].sort((a, b) => a - b);
-    results.push(
-      makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], 'playwright-chromium', opts),
-    );
+    return results;
+  } finally {
+    await browser.close();
+    await closeServer(server);
   }
-
-  await browser.close();
-  return results;
 }
 
 async function benchWithLinkedom(opts) {
