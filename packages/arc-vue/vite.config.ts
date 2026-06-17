@@ -12,10 +12,16 @@ export default defineConfig({
       entry: 'src/index.ts',
       name: 'ArcVue',
       fileName: 'arc-vue',
-      formats: ['es'],
+      formats: ['es', 'umd'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ['vue', '@koyori-app/arc'],
+      output: {
+        globals: {
+          vue: 'Vue',
+          '@koyori-app/arc': 'KoyoriArc',
+        },
+      },
     },
   },
 });
