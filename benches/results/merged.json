@@ -6,13 +6,13 @@
     "l1_rust_ms": 0.22,
     "l2_native_render_svg_ms": 0.26,
     "l2_wasm_node_ms": 0.94,
-    "l3_dom_ms": 3.89,
+    "l3_dom_ms": 1.47,
     "svg_bytes": 71252,
     "svg_elements": 735,
-    "total_estimated_ms": 5.05,
+    "total_estimated_ms": 2.63,
     "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 3.89,
-    "wall_pct": 77.06
+    "wall_ms": 1.47,
+    "wall_pct": 55.89
   },
   {
     "fixture": "100_dense",
@@ -21,13 +21,13 @@
     "l1_rust_ms": 0.5,
     "l2_native_render_svg_ms": 0.57,
     "l2_wasm_node_ms": 1.1,
-    "l3_dom_ms": 5.14,
+    "l3_dom_ms": 1.76,
     "svg_bytes": 139892,
     "svg_elements": 1130,
-    "total_estimated_ms": 6.74,
+    "total_estimated_ms": 3.36,
     "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 5.14,
-    "wall_pct": 76.25
+    "wall_ms": 1.76,
+    "wall_pct": 52.38
   },
   {
     "fixture": "500_sparse",
@@ -36,13 +36,13 @@
     "l1_rust_ms": 1.13,
     "l2_native_render_svg_ms": 1.28,
     "l2_wasm_node_ms": 2.22,
-    "l3_dom_ms": 13.35,
+    "l3_dom_ms": 0.84,
     "svg_bytes": 349924,
     "svg_elements": 3533,
-    "total_estimated_ms": 16.7,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 13.35,
-    "wall_pct": 79.94
+    "total_estimated_ms": 4.19,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 2.22,
+    "wall_pct": 52.98
   },
   {
     "fixture": "500_dense",
@@ -51,13 +51,13 @@
     "l1_rust_ms": 2.55,
     "l2_native_render_svg_ms": 2.86,
     "l2_wasm_node_ms": 4.83,
-    "l3_dom_ms": 23.9,
+    "l3_dom_ms": 1.39,
     "svg_bytes": 709913,
     "svg_elements": 5568,
-    "total_estimated_ms": 31.28,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 23.9,
-    "wall_pct": 76.4
+    "total_estimated_ms": 8.77,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 4.83,
+    "wall_pct": 55.07
   },
   {
     "fixture": "2000_sparse",
@@ -66,13 +66,13 @@
     "l1_rust_ms": 4.48,
     "l2_native_render_svg_ms": 5.02,
     "l2_wasm_node_ms": 8.62,
-    "l3_dom_ms": 85.67,
+    "l3_dom_ms": 0.85,
     "svg_bytes": 1401325,
     "svg_elements": 14018,
-    "total_estimated_ms": 98.77,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 85.67,
-    "wall_pct": 86.74
+    "total_estimated_ms": 13.95,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 8.62,
+    "wall_pct": 61.79
   },
   {
     "fixture": "2000_dense",
@@ -81,13 +81,13 @@
     "l1_rust_ms": 10.23,
     "l2_native_render_svg_ms": 11.4,
     "l2_wasm_node_ms": 19.3,
-    "l3_dom_ms": 181.03,
+    "l3_dom_ms": 2.93,
     "svg_bytes": 2859890,
     "svg_elements": 22203,
-    "total_estimated_ms": 210.56,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 181.03,
-    "wall_pct": 85.98
+    "total_estimated_ms": 32.46,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 19.3,
+    "wall_pct": 59.46
   },
   {
     "fixture": "5000_sparse",
@@ -96,13 +96,13 @@
     "l1_rust_ms": 11.07,
     "l2_native_render_svg_ms": 12.47,
     "l2_wasm_node_ms": 21.4,
-    "l3_dom_ms": 190.84,
+    "l3_dom_ms": 0.92,
     "svg_bytes": 3528651,
     "svg_elements": 34988,
-    "total_estimated_ms": 223.31,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 190.84,
-    "wall_pct": 85.46
+    "total_estimated_ms": 33.39,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 21.4,
+    "wall_pct": 64.09
   },
   {
     "fixture": "5000_dense",
@@ -111,12 +111,12 @@
     "l1_rust_ms": 25.55,
     "l2_native_render_svg_ms": 28.71,
     "l2_wasm_node_ms": 47.16,
-    "l3_dom_ms": 324.99,
+    "l3_dom_ms": 3.18,
     "svg_bytes": 7214865,
     "svg_elements": 55473,
-    "total_estimated_ms": 397.7,
-    "wall_layer": "L3 DOM insert (browser)",
-    "wall_ms": 324.99,
-    "wall_pct": 81.72
+    "total_estimated_ms": 75.89,
+    "wall_layer": "L2 Wasm boundary (Node)",
+    "wall_ms": 47.16,
+    "wall_pct": 62.14
   }
 ]

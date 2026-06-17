@@ -15,34 +15,51 @@
 
     const params = new URLSearchParams(location.search);
     const fixtureName = params.get('fixture') ?? '100_sparse';
+    const virtualize = params.get('virtualize') !== '0';
+    const scrollY = Number(params.get('scroll_y') ?? '0');
+    const clientHeight = Number(params.get('client_height') ?? '600');
 
     await init();
 
-  window.__benchReady = true;
-  window.__runBench = async function runBench() {
-    const res = await fetch(`../crates/koyori-arc-core/benches/fixtures/${fixtureName}.json`);
-    const fx = await res.json();
-    const tasksJson = JSON.stringify(fx.tasks);
-    const depsJson = JSON.stringify(fx.deps);
+    const viewportJson = virtualize
+      ? JSON.stringify({ scroll_y: scrollY, client_height: clientHeight })
+      : undefined;
 
-    const t0 = performance.now();
-    const svg = render_svg(tasksJson, depsJson, fx.today);
-    const wasmMs = performance.now() - t0;
+    window.__benchReady = true;
+    window.__runBench = async function runBench() {
+      const res = await fetch(`../crates/koyori-arc-core/benches/fixtures/${fixtureName}.json`);
+      const fx = await res.json();
+      const tasksJson = JSON.stringify(fx.tasks);
+      const depsJson = JSON.stringify(fx.deps);
 
-    const byteLength = new TextEncoder().encode(svg).length;
-    const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
+      const t0 = performance.now();
+      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
+      const wasmMs = performance.now() - t0;
 
-    const host = document.getElementById('host');
-    host.innerHTML = '';
+      const byteLength = new TextEncoder().encode(svg).length;
+      const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
 
-    const domStart = performance.now();
-    host.innerHTML = svg;
-    // Force layout + paint before measuring DOM cost.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const domMs = performance.now() - domStart;
+      const host = document.getElementById('host');
+      host.innerHTML = '';
 
-    return { wasmMs, domMs, byteLength, elementCount, taskCount: fx.tasks.length, depCount: fx.deps.length };
-  };
+      const domStart = performance.now();
+      host.innerHTML = svg;
+      // Force layout + paint before measuring DOM cost.
+      const liveElems = host.querySelectorAll('*').length;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const domMs = performance.now() - domStart;
+
+      return {
+        wasmMs,
+        domMs,
+        byteLength,
+        elementCount,
+        liveElems,
+        virtualize,
+        taskCount: fx.tasks.length,
+        depCount: fx.deps.length,
+      };
+    };
   </script>
 </body>
 </html>

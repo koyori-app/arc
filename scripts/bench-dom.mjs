@@ -3,6 +3,9 @@
  * Layer 3: SVG-DOM benchmark.
  * Prefers Playwright headless Chromium; falls back to linkedom DOM parse
  * when Playwright browsers are unavailable (e.g. ubuntu26.04).
+ *
+ * Usage:
+ *   node scripts/bench-dom.mjs [--virtualize] [--dom-throttle N] [--out layer3-dom-native.json]
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -20,6 +23,28 @@ const FIXTURES = [
 
 const WARMUP = 1;
 const ITERS = 5;
+const DOM_CAP = 500;
+
+function parseArgs(argv) {
+  const opts = {
+    virtualize: true,
+    domThrottle: 1,
+    out: 'layer3-dom.json',
+  };
+  for (let i = 2; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--virtualize') {
+      opts.virtualize = true;
+    } else if (arg === '--no-virtualize') {
+      opts.virtualize = false;
+    } else if (arg === '--dom-throttle') {
+      opts.domThrottle = Number(argv[++i]);
+    } else if (arg === '--out') {
+      opts.out = argv[++i];
+    }
+  }
+  return opts;
+}
 
 async function tryPlaywright() {
   try {
@@ -32,21 +57,37 @@ async function tryPlaywright() {
   }
 }
 
-async function benchWithPlaywright(chromium) {
-  const { readFileSync: _ } = await import('node:fs');
+function harnessQuery(opts) {
+  const q = new URLSearchParams({ fixture: 'PLACEHOLDER' });
+  q.set('virtualize', opts.virtualize ? '1' : '0');
+  q.set('scroll_y', '0');
+  q.set('client_height', '600');
+  return q;
+}
+
+async function applyCpuThrottle(page, rate) {
+  if (!rate || rate <= 1) return;
+  const client = await page.context().newCDPSession(page);
+  await client.send('Emulation.setCPUThrottlingRate', { rate });
+}
+
+async function benchWithPlaywright(chromium, opts) {
   const wasmBytes = readFileSync(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core_bg.wasm'));
-  const { initSync, render_svg } = await import(
+  const { initSync } = await import(
     pathToFileURL(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core.js')).href
   );
   initSync(wasmBytes);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  await applyCpuThrottle(page, opts.domThrottle);
   const harnessUrl = pathToFileURL(join(root, 'scripts/bench-dom-harness.html')).href;
 
   const results = [];
   for (const name of FIXTURES) {
-    await page.goto(`${harnessUrl}?fixture=${name}`);
+    const q = harnessQuery(opts);
+    q.set('fixture', name);
+    await page.goto(`${harnessUrl}?${q.toString()}`);
     await page.waitForFunction(() => window.__benchReady === true);
 
     for (let i = 0; i < WARMUP; i++) await page.evaluate(() => window.__runBench());
@@ -60,20 +101,26 @@ async function benchWithPlaywright(chromium) {
     }
 
     const sorted = [...samples].sort((a, b) => a - b);
-    results.push(makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], 'playwright-chromium'));
+    results.push(
+      makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], 'playwright-chromium', opts),
+    );
   }
 
   await browser.close();
   return results;
 }
 
-async function benchWithLinkedom() {
+async function benchWithLinkedom(opts) {
   const { parseHTML } = await import('linkedom');
   const wasmBytes = readFileSync(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core_bg.wasm'));
   const { initSync, render_svg } = await import(
     pathToFileURL(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core.js')).href
   );
   initSync(wasmBytes);
+
+  const viewportJson = opts.virtualize
+    ? JSON.stringify({ scroll_y: 0, client_height: 600 })
+    : undefined;
 
   const results = [];
   for (const name of FIXTURES) {
@@ -86,7 +133,7 @@ async function benchWithLinkedom() {
     const host = document.getElementById('host');
 
     for (let i = 0; i < WARMUP; i++) {
-      const svg = render_svg(tasksJson, depsJson, fx.today);
+      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
       host.innerHTML = svg;
     }
 
@@ -94,7 +141,7 @@ async function benchWithLinkedom() {
     let meta = null;
     for (let i = 0; i < ITERS; i++) {
       const tWasm = performance.now();
-      const svg = render_svg(tasksJson, depsJson, fx.today);
+      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
       const wasmMs = performance.now() - tWasm;
       const byteLength = Buffer.byteLength(svg, 'utf8');
       const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
@@ -102,27 +149,32 @@ async function benchWithLinkedom() {
       host.innerHTML = '';
       const tDom = performance.now();
       host.innerHTML = svg;
-      // Simulate layout flush (linkedom has no paint; measures parse+tree build).
-      void host.querySelectorAll('*').length;
+      const liveElems = host.querySelectorAll('*').length;
+      void liveElems;
       domSamples.push(performance.now() - tDom);
 
       meta = {
         wasmMs,
         byteLength,
         elementCount,
+        liveElems,
+        virtualize: opts.virtualize,
         taskCount: fx.tasks.length,
         depCount: fx.deps.length,
       };
     }
 
     const sorted = [...domSamples].sort((a, b) => a - b);
-    results.push(makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], 'linkedom-parse (Playwright unavailable)'));
+    const note = opts.domThrottle > 1
+      ? `linkedom-parse (CPU throttle ${opts.domThrottle}x not emulated)`
+      : 'linkedom-parse (Playwright unavailable)';
+    results.push(makeRow(name, meta, sorted[Math.floor(sorted.length / 2)], note, opts));
   }
 
   return results;
 }
 
-function makeRow(name, meta, domMedian, engine) {
+function makeRow(name, meta, domMedian, engine, opts) {
   const row = {
     fixture: name,
     tasks: meta.taskCount,
@@ -131,10 +183,18 @@ function makeRow(name, meta, domMedian, engine) {
     dom_insert_ms_median: round(domMedian),
     svg_bytes: meta.byteLength,
     svg_elements: meta.elementCount,
+    live_svg_elems: meta.liveElems ?? meta.elementCount,
+    virtualize: meta.virtualize ?? opts.virtualize,
+    dom_cap_pass: opts.virtualize
+      ? (meta.liveElems ?? meta.elementCount) <=
+        ((meta.taskCount ?? 0) <= 2000 ? DOM_CAP : DOM_CAP * 4)
+      : null,
     dom_engine: engine,
+    dom_throttle: opts.domThrottle,
   };
   console.log(
-    `${name}: wasm ${row.wasm_in_browser_ms_median}ms, dom ${row.dom_insert_ms_median}ms (${engine}), ${row.svg_bytes} bytes`,
+    `${name}: wasm ${row.wasm_in_browser_ms_median}ms, dom ${row.dom_insert_ms_median}ms ` +
+      `(${engine}, virtualize=${row.virtualize}, elems=${row.live_svg_elems})`,
   );
   return row;
 }
@@ -144,13 +204,14 @@ function round(n) {
 }
 
 async function main() {
+  const opts = parseArgs(process.argv);
   let results;
   let engineNote;
 
   const chromium = await tryPlaywright();
   if (chromium) {
     engineNote = 'playwright-chromium';
-    results = await benchWithPlaywright(chromium);
+    results = await benchWithPlaywright(chromium, opts);
   } else {
     console.warn('Playwright Chromium unavailable — using linkedom DOM parse fallback.');
     try {
@@ -161,17 +222,22 @@ async function main() {
       execSync('npm install --no-save linkedom@0.18.12', { cwd: root, stdio: 'inherit' });
     }
     engineNote = 'linkedom-fallback';
-    results = await benchWithLinkedom();
+    results = await benchWithLinkedom(opts);
   }
 
   const outDir = join(root, 'benches/results');
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, 'layer3-dom.json');
-  writeFileSync(
-    outPath,
-    JSON.stringify({ engine: engineNote, results }, null, 2),
-  );
-  writeFileSync(join(outDir, 'layer3-dom-flat.json'), JSON.stringify(results, null, 2));
+  const outPath = join(outDir, opts.out);
+  const payload = {
+    engine: engineNote,
+    virtualize: opts.virtualize,
+    dom_throttle: opts.domThrottle,
+    dom_cap: DOM_CAP,
+    results,
+  };
+  writeFileSync(outPath, JSON.stringify(payload, null, 2));
+  const flatName = opts.out.replace(/\.json$/, '-flat.json');
+  writeFileSync(join(outDir, flatName), JSON.stringify(results, null, 2));
   console.log(`\nWrote ${outPath}`);
 }
 

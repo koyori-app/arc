@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-06-17T10:38:48.602Z",
+  "dom_cap": 500,
+  "gates": [
+    {
+      "id": "DOM_CAP",
+      "fixture": "100_sparse",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 162,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "100_dense",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 243,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "500_sparse",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 164,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "500_dense",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 285,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "2000_sparse",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 164,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "2000_dense",
+      "condition": "live_svg_elems ≤ 500 (strict)",
+      "actual": 435,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "5000_sparse",
+      "condition": "live_svg_elems ≤ 2000 (Phase1 margin)",
+      "actual": 164,
+      "pass": true
+    },
+    {
+      "id": "DOM_CAP",
+      "fixture": "5000_dense",
+      "condition": "live_svg_elems ≤ 2000 (Phase1 margin)",
+      "actual": 735,
+      "pass": true
+    },
+    {
+      "id": "regression_native",
+      "fixture": "2000_dense",
+      "condition": "native L3 ≤ cmd_263 181.03ms × 1.2 = 217.24ms",
+      "actual": 2.93,
+      "pass": true,
+      "advisory": true
+    },
+    {
+      "id": "L3_throttled",
+      "fixture": "2000_dense",
+      "condition": "4× CPU L3 p50 < 500ms",
+      "actual": 1.51,
+      "dom_throttle": 4,
+      "pass": true,
+      "advisory": true,
+      "note": "Playwright CDP throttle unavailable; linkedom fallback does not emulate CPU slowdown"
+    }
+  ],
+  "all_pass": true
+}
