@@ -1,26 +1,19 @@
-use crate::display_list::DisplayList;
+use serde::{Deserialize, Serialize};
 
-pub enum BackendOutput {
-    Svg(String),
-    CanvasCommands(super::command_buffer::CommandBuffer),
-    NativeDrawList(NativeDrawList),
-}
+use crate::display_list::types::Palette;
 
-pub trait RenderBackend {
-    fn render(&self, list: &DisplayList) -> BackendOutput;
-    fn name(&self) -> &'static str;
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct NativeDrawList {
+/// Compact draw commands for Canvas2D replay (§4.3.1).
+/// Variants mirror `NativeDrawOp` for in-process parity; IDs are inlined for Phase 2.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommandBuffer {
     pub viewport_width: f64,
     pub viewport_height: f64,
-    pub ops: Vec<NativeDrawOp>,
-    pub palette_refs: Vec<(u8, String)>,
+    pub ops: Vec<DrawOp>,
+    pub palette: Palette,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum NativeDrawOp {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DrawOp {
     FillRect {
         x: f64,
         y: f64,

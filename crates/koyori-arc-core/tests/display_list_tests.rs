@@ -4,9 +4,9 @@ use bincode::config;
 use chrono::NaiveDate;
 use koyori_arc_core::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
 use koyori_arc_core::{
-    build_display_list, compute_row_window, BackendOutput, DOM_CAP, GanttDep, GanttGraph,
-    GanttTask, HEADER_H, NativeBackend, NativeDrawOp, RenderBackend, ROW_H, ScrollViewport,
-    SvgBackend,
+    build_display_list, compute_row_window, BackendOutput, CanvasBackend, CommandBuffer,
+    DOM_CAP, DrawOp, GanttDep, GanttGraph, GanttTask, HEADER_H, NativeBackend, NativeDrawOp,
+    RenderBackend, ROW_H, ScrollViewport, SvgBackend,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -240,6 +240,74 @@ fn p4_ir_contains_no_dom_concepts() {
     }
 }
 
+// --- Phase 2: CanvasBackend + CommandBuffer ---
+
+#[test]
+fn p2_canvas_command_buffer_golden_two_tasks() {
+    let graph = two_task_graph();
+    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let buffer = match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
+        _ => panic!("expected canvas commands"),
+    };
+    let json = serde_json::to_string_pretty(&buffer).expect("serialize");
+    let golden = include_str!("fixtures/canvas_golden/two_tasks.json");
+    assert_eq!(
+        json, golden,
+        "CommandBuffer snapshot drift — update fixtures if intentional"
+    );
+}
+
+#[test]
+fn p2_canvas_matches_native_op_count_and_viewport() {
+    let graph = two_task_graph();
+    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let canvas = match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
+        _ => panic!("expected canvas"),
+    };
+    let native = match NativeBackend.render(&list) {
+        BackendOutput::NativeDrawList(n) => n,
+        _ => panic!("expected native"),
+    };
+    assert_eq!(canvas.ops.len(), native.ops.len());
+    assert_eq!(canvas.viewport_width, native.viewport_width);
+    assert_eq!(canvas.viewport_height, native.viewport_height);
+}
+
+#[test]
+fn p2_canvas_bincode_roundtrip_preserves_ops() {
+    let graph = two_task_graph();
+    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let before = match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
+        _ => panic!("expected canvas"),
+    };
+    let cfg = config::standard();
+    let bytes = bincode::serde::encode_to_vec(&before, cfg).expect("encode");
+    let (after, _): (CommandBuffer, usize) =
+        bincode::serde::decode_from_slice(&bytes, cfg).expect("decode");
+    assert_eq!(before, after);
+    assert!(!after.ops.is_empty());
+    assert!(after
+        .ops
+        .iter()
+        .any(|op| matches!(op, DrawOp::FillRect { .. })));
+}
+
+#[test]
+fn p2_canvas_serde_json_roundtrip_preserves_ops() {
+    let graph = two_task_graph();
+    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let before = match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
+        _ => panic!("expected canvas"),
+    };
+    let json = serde_json::to_string(&before).expect("serialize");
+    let after: CommandBuffer = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(before, after);
+}
+
 /// Regenerate golden fixtures (run with --ignored).
 #[test]
 #[ignore]
@@ -250,6 +318,7 @@ fn write_golden_fixtures() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     fs::create_dir_all(base.join("svg_golden")).unwrap();
     fs::create_dir_all(base.join("ir_golden")).unwrap();
+    fs::create_dir_all(base.join("canvas_golden")).unwrap();
 
     // SVG goldens from direct render (pre-refactor baseline path)
     let graph = two_task_graph();
@@ -289,6 +358,16 @@ fn write_golden_fixtures() {
     fs::write(
         base.join("ir_golden/two_tasks.json"),
         serde_json::to_string_pretty(&list).unwrap(),
+    )
+    .unwrap();
+
+    let canvas = match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
+        _ => panic!("expected canvas"),
+    };
+    fs::write(
+        base.join("canvas_golden/two_tasks.json"),
+        serde_json::to_string_pretty(&canvas).unwrap(),
     )
     .unwrap();
 

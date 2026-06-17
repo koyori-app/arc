@@ -1,0 +1,393 @@
+{
+  "viewport_width": 350.0,
+  "viewport_height": 160.0,
+  "ops": [
+    {
+      "FillRect": {
+        "x": 120.0,
+        "y": 0.0,
+        "w": 230.0,
+        "h": 30.0,
+        "color_id": 9,
+        "radius": 0.0
+      }
+    },
+    {
+      "StrokePolyline": {
+        "points": [
+          [
+            120.0,
+            30.0
+          ],
+          [
+            120.0,
+            160.0
+          ]
+        ],
+        "color_id": 7,
+        "width": 1.0,
+        "dash": null
+      }
+    },
+    {
+      "DrawText": {
+        "x": 120.0,
+        "y": 19.0,
+        "text": "6/1",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 11.0,
+        "weight": 400
+      }
+    },
+    {
+      "StrokePolyline": {
+        "points": [
+          [
+            330.0,
+            30.0
+          ],
+          [
+            330.0,
+            160.0
+          ]
+        ],
+        "color_id": 7,
+        "width": 1.0,
+        "dash": null
+      }
+    },
+    {
+      "DrawText": {
+        "x": 330.0,
+        "y": 19.0,
+        "text": "6/8",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 11.0,
+        "weight": 400
+      }
+    },
+    {
+      "GroupStart": {
+        "task_id": "task-1"
+      }
+    },
+    {
+      "FillRect": {
+        "x": 120.0,
+        "y": 40.0,
+        "w": 90.0,
+        "h": 20.0,
+        "color_id": 0,
+        "radius": 4.0
+      }
+    },
+    {
+      "FillRect": {
+        "x": 120.0,
+        "y": 40.0,
+        "w": 90.0,
+        "h": 20.0,
+        "color_id": 4,
+        "radius": 4.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 165.0,
+        "y": 50.0,
+        "text": "100%",
+        "color_id": 11,
+        "anchor": 1,
+        "size": 11.0,
+        "weight": 600
+      }
+    },
+    {
+      "DrawText": {
+        "x": 116.0,
+        "y": 50.0,
+        "text": "Design",
+        "color_id": 255,
+        "anchor": 2,
+        "size": 12.0,
+        "weight": 400
+      }
+    },
+    "GroupEnd",
+    {
+      "GroupStart": {
+        "task_id": "task-2"
+      }
+    },
+    {
+      "FillRect": {
+        "x": 210.0,
+        "y": 80.0,
+        "w": 120.0,
+        "h": 20.0,
+        "color_id": 0,
+        "radius": 4.0
+      }
+    },
+    {
+      "FillRect": {
+        "x": 210.0,
+        "y": 80.0,
+        "w": 60.0,
+        "h": 20.0,
+        "color_id": 2,
+        "radius": 4.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 270.0,
+        "y": 90.0,
+        "text": "50%",
+        "color_id": 11,
+        "anchor": 1,
+        "size": 11.0,
+        "weight": 600
+      }
+    },
+    {
+      "DrawText": {
+        "x": 116.0,
+        "y": 90.0,
+        "text": "Build",
+        "color_id": 255,
+        "anchor": 2,
+        "size": 12.0,
+        "weight": 400
+      }
+    },
+    "GroupEnd",
+    {
+      "StrokePath": {
+        "d": "M 155 60 V 86 a 4 4 0 0 0 4 4 L 197 90 m -4 -4 l 4 4 l -4 4",
+        "color_id": 5,
+        "width": 1.5
+      }
+    },
+    {
+      "StrokePolyline": {
+        "points": [
+          [
+            210.0,
+            50.0
+          ],
+          [
+            270.0,
+            90.0
+          ]
+        ],
+        "color_id": 6,
+        "width": 2.0,
+        "dash": "6,3"
+      }
+    },
+    {
+      "GroupStart": {
+        "task_id": null
+      }
+    },
+    {
+      "StrokePolyline": {
+        "points": [
+          [
+            128.0,
+            134.0
+          ],
+          [
+            156.0,
+            134.0
+          ]
+        ],
+        "color_id": 6,
+        "width": 2.0,
+        "dash": "6,3"
+      }
+    },
+    {
+      "DrawText": {
+        "x": 162.0,
+        "y": 138.0,
+        "text": "進捗ステータスライン（各タスクの完了位置を結ぶ）",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 10.0,
+        "weight": 400
+      }
+    },
+    "GroupEnd",
+    {
+      "GroupStart": {
+        "task_id": null
+      }
+    },
+    {
+      "FillRect": {
+        "x": 128.0,
+        "y": 145.0,
+        "w": 10.0,
+        "h": 10.0,
+        "color_id": 0,
+        "radius": 2.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 140.0,
+        "y": 153.0,
+        "text": "未達",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 9.0,
+        "weight": 400
+      }
+    },
+    {
+      "FillRect": {
+        "x": 208.0,
+        "y": 145.0,
+        "w": 10.0,
+        "h": 10.0,
+        "color_id": 1,
+        "radius": 2.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 220.0,
+        "y": 153.0,
+        "text": "低",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 9.0,
+        "weight": 400
+      }
+    },
+    {
+      "FillRect": {
+        "x": 261.0,
+        "y": 145.0,
+        "w": 10.0,
+        "h": 10.0,
+        "color_id": 2,
+        "radius": 2.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 273.0,
+        "y": 153.0,
+        "text": "中",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 9.0,
+        "weight": 400
+      }
+    },
+    {
+      "FillRect": {
+        "x": 314.0,
+        "y": 145.0,
+        "w": 10.0,
+        "h": 10.0,
+        "color_id": 3,
+        "radius": 2.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 326.0,
+        "y": 153.0,
+        "text": "高",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 9.0,
+        "weight": 400
+      }
+    },
+    {
+      "FillRect": {
+        "x": 367.0,
+        "y": 145.0,
+        "w": 10.0,
+        "h": 10.0,
+        "color_id": 4,
+        "radius": 2.0
+      }
+    },
+    {
+      "DrawText": {
+        "x": 379.0,
+        "y": 153.0,
+        "text": "完了",
+        "color_id": 10,
+        "anchor": 0,
+        "size": 9.0,
+        "weight": 400
+      }
+    },
+    "GroupEnd"
+  ],
+  "palette": {
+    "colors": [
+      [
+        "BarBg",
+        "#d1d5db"
+      ],
+      [
+        "TierLow",
+        "#f59e0b"
+      ],
+      [
+        "TierMid",
+        "#6366f1"
+      ],
+      [
+        "TierHigh",
+        "#0ea5e9"
+      ],
+      [
+        "TierDone",
+        "#22c55e"
+      ],
+      [
+        "Dep",
+        "#9ca3af"
+      ],
+      [
+        "Progress",
+        "#ef4444"
+      ],
+      [
+        "Grid",
+        "#e5e7eb"
+      ],
+      [
+        "Today",
+        "#f59e0b"
+      ],
+      [
+        "HeaderBg",
+        "#f3f4f6"
+      ],
+      [
+        "GridLabel",
+        "#6b7280"
+      ],
+      [
+        "ProgressTextOnFg",
+        "#ffffff"
+      ],
+      [
+        "ProgressTextOnBg",
+        "#374151"
+      ]
+    ]
+  }
+}
