@@ -2,11 +2,16 @@ use chrono::NaiveDate;
 use wasm_bindgen::prelude::*;
 
 use crate::backend::{BackendOutput, RenderBackend, SvgBackend};
-use crate::display_list::build_display_list;
+use crate::display_list::{build_display_list, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
 
 /// Native entry point — accepts typed structs directly.
-pub fn render(tasks: &[GanttTask], deps: &[GanttDep], today: Option<NaiveDate>) -> String {
+pub fn render(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    today: Option<NaiveDate>,
+    scroll_viewport: Option<ScrollViewport>,
+) -> String {
     if tasks.is_empty() {
         return crate::backend::svg::empty_svg();
     }
@@ -16,7 +21,7 @@ pub fn render(tasks: &[GanttTask], deps: &[GanttDep], today: Option<NaiveDate>) 
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list(&graph, epoch, today);
+    let list = build_display_list(&graph, epoch, today, scroll_viewport);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => unreachable!(),
@@ -25,8 +30,14 @@ pub fn render(tasks: &[GanttTask], deps: &[GanttDep], today: Option<NaiveDate>) 
 
 /// Wasm entry point — accepts JSON strings matching the task project's API response shape.
 /// `today_iso` is an optional ISO 8601 date string (e.g. "2026-06-16") for the today marker.
+/// `viewport_json` is an optional `{"scroll_y":f64,"client_height":f64}` for row virtualization.
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) -> String {
+pub fn render_svg(
+    tasks_json: &str,
+    deps_json: &str,
+    today_iso: Option<String>,
+    viewport_json: Option<String>,
+) -> String {
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
         Err(e) => return format!("<!-- parse error: {e} -->"),
@@ -36,7 +47,8 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
         Err(e) => return format!("<!-- parse error: {e} -->"),
     };
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
-    render(&tasks, &deps, today)
+    let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
+    render(&tasks, &deps, today, scroll_viewport)
 }
 
 // Constants used by unit tests in this module
@@ -84,7 +96,7 @@ mod tests {
     #[test]
     fn output_is_valid_svg_root() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.starts_with("<svg "), "expected <svg ...>, got: {svg:.80}");
         assert!(svg.ends_with("</svg>"));
     }
@@ -92,7 +104,7 @@ mod tests {
     #[test]
     fn contains_task_titles() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("Design"));
         assert!(svg.contains("Build"));
     }
@@ -100,14 +112,14 @@ mod tests {
     #[test]
     fn contains_progress_polyline() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("stroke-dasharray"));
     }
 
     #[test]
     fn dependency_arrow_ends_with_open_chevron() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("<path d=\"M "));
         assert!(svg.contains(&format!("m -{ARROW_HEAD} -{ARROW_HEAD}")));
         assert!(!svg.contains("<marker"));
@@ -135,7 +147,7 @@ mod tests {
             blocker_task_id: "t1".to_string(),
             blocked_task_id: "t2".to_string(),
         }];
-        let svg = render(&tasks, &deps, None);
+        let svg = render(&tasks, &deps, None, None);
         let path = svg
             .split("<path d=\"")
             .nth(1)
@@ -150,7 +162,7 @@ mod tests {
     #[test]
     fn task_bars_have_data_task_id() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains(r#"data-task-id="task-1""#));
         assert!(svg.contains(r#"data-task-id="task-2""#));
     }
@@ -159,14 +171,14 @@ mod tests {
     fn today_marker_rendered_when_in_range() {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
-        let svg = render(&t, &d, Some(today));
+        let svg = render(&t, &d, Some(today), None);
         assert!(svg.contains(COLOR_TODAY));
     }
 
     #[test]
     fn today_marker_absent_when_none() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(!svg.contains(&format!(
             r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
         )));
@@ -175,13 +187,13 @@ mod tests {
     #[test]
     fn date_header_present() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains(COLOR_HEADER_BG));
     }
 
     #[test]
     fn parse_error_returns_comment() {
-        let svg = render_svg("not json", "[]", None);
+        let svg = render_svg("not json", "[]", None, None);
         assert!(svg.starts_with("<!-- parse error:"));
     }
 
@@ -194,14 +206,14 @@ mod tests {
             start: date(2026, 6, 1),
             end: Some(date(2026, 6, 2)),
         }];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(svg.contains("A &amp; B &lt; C"));
         assert!(!svg.contains("A & B"));
     }
 
     #[test]
     fn empty_tasks_returns_empty_svg() {
-        let svg = render(&[], &[], None);
+        let svg = render(&[], &[], None, None);
         assert!(svg.contains("width=\"0\""));
         assert!(svg.contains("viewBox=\"0 0 0 0\""));
         assert!(svg.contains(r#"role="img""#));
@@ -210,7 +222,7 @@ mod tests {
     #[test]
     fn svg_has_viewbox_and_a11y() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("viewBox="));
         assert!(svg.contains(r#"role="img""#));
         assert!(svg.contains(r#"aria-label="Gantt chart""#));
@@ -221,7 +233,7 @@ mod tests {
     #[test]
     fn each_bar_shows_progress_percent() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("100%"));
         assert!(svg.contains("50%"));
     }
@@ -244,7 +256,7 @@ mod tests {
                 end: Some(date(2026, 6, 5)),
             },
         ];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(svg.contains("0%"));
         assert!(svg.contains("100%"));
     }
@@ -252,7 +264,7 @@ mod tests {
     #[test]
     fn task_group_has_hover_title_tooltip() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("<title>Design: 2026-06-01 – 2026-06-04 (100%)</title>"));
         assert!(svg.contains("<title>Build: 2026-06-04 – 2026-06-08 (50%)</title>"));
     }
@@ -266,7 +278,7 @@ mod tests {
             start: date(2026, 6, 1),
             end: Some(date(2026, 6, 5)),
         }];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(svg.contains("Very Long Task …"));
         assert!(svg.contains(
             "<title>Very Long Task Title That Should Be Truncated: 2026-06-01 – 2026-06-05 (25%)</title>"
@@ -284,7 +296,7 @@ mod tests {
             start: date(2026, 6, 5),
             end: Some(date(2026, 6, 1)),
         }];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(!svg.contains("width=\"-"));
         assert!(svg.contains("50%"));
     }
@@ -298,7 +310,7 @@ mod tests {
             start: date(2026, 6, 3),
             end: Some(date(2026, 6, 3)),
         }];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(svg.contains("<polygon"));
         assert!(svg.contains("0%"));
         assert!(!svg.contains(r#"width="0.0""#));
@@ -307,7 +319,7 @@ mod tests {
     #[test]
     fn progress_line_legend_present() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         assert!(svg.contains("progress-line-legend"));
         assert!(svg.contains("進捗ステータスライン"));
         assert!(svg.contains("bar-tier-legend"));
@@ -316,7 +328,7 @@ mod tests {
     #[test]
     fn progress_line_legacy_when_today_absent() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None);
+        let svg = render(&t, &d, None, None);
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -329,7 +341,7 @@ mod tests {
     fn progress_line_today_anchored_when_today_in_range() {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
-        let svg = render(&t, &d, Some(today));
+        let svg = render(&t, &d, Some(today), None);
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -349,7 +361,7 @@ mod tests {
     fn progress_line_legacy_when_today_out_of_range() {
         let (t, d) = two_tasks();
         let today = date(2020, 1, 1);
-        let svg = render(&t, &d, Some(today));
+        let svg = render(&t, &d, Some(today), None);
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -393,7 +405,7 @@ mod tests {
                 end: Some(date(2026, 6, 9)),
             },
         ];
-        let svg = render(&tasks, &[], None);
+        let svg = render(&tasks, &[], None, None);
         assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_LOW}""#)));
         assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_MID}""#)));
         assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_HIGH}""#)));

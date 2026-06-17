@@ -55,7 +55,7 @@ fn main() {
     ];
 
     let today = date(2026, 6, 6);
-    let svg = render(&tasks, &deps, Some(today));
+    let svg = render(&tasks, &deps, Some(today), None);
 
     // go up two levels (crates/koyori-arc-core → workspace root) to share target/
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

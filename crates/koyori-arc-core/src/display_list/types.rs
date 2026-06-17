@@ -94,6 +94,13 @@ pub struct Viewport {
     pub row_height: Coord,
 }
 
+/// Vertical scroll window for row virtualization (Phase 1 axis A).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ScrollViewport {
+    pub scroll_y: Coord,
+    pub client_height: Coord,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BBox {
     pub x: Coord,
