@@ -214,6 +214,21 @@ function main() {
     md.push('');
   }
 
+  if (domEngine.includes('linkedom')) {
+    md.push('## linkedom フォールバック（advisory）');
+    md.push('');
+    md.push(
+      '> Playwright Chromium が利用できず linkedom による DOM パース代替を使用しています。',
+    );
+    md.push(
+      '> linkedom は **HTML パース速度のみ** を計測しており、レイアウト・描画・CDP CPU スロットルは再現しません。',
+    );
+    md.push(
+      '> 4× スロットル列および L3_throttled 判定は **advisory** です。正規の実 Chromium 実証は workflow `Bench 3-Layer`（workflow_dispatch）で行ってください。',
+    );
+    md.push('');
+  }
+
   if (gatesMeta) {
     md.push('## §6.6.2 CI ゲート結果');
     md.push('');
