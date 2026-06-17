@@ -1,0 +1,14 @@
+{
+  "source": "cmd_263 benches/results/render-pipeline-3layer-report.md @ bench/render-pipeline-3layer 4eddd96",
+  "note": "Non-virtualized L3 DOM insert (native, linkedom-fallback on 9800X3D)",
+  "l3_dom_ms": {
+    "100_sparse": 3.89,
+    "100_dense": 5.14,
+    "500_sparse": 13.35,
+    "500_dense": 23.9,
+    "2000_sparse": 85.67,
+    "2000_dense": 181.03,
+    "5000_sparse": 190.84,
+    "5000_dense": 324.99
+  }
+}

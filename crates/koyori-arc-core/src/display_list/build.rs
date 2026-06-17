@@ -8,10 +8,50 @@ use crate::progress::progress_line;
 use super::constants::*;
 use super::types::*;
 
+/// Compute inclusive row index window `[first, last]` for virtualization.
+/// Returns `None` when all rows should be rendered (`scroll_viewport` absent).
+pub fn compute_row_window(
+    scroll_viewport: Option<ScrollViewport>,
+    total_rows: usize,
+) -> Option<(usize, usize)> {
+    let scroll = scroll_viewport?;
+    if total_rows == 0 {
+        return Some((0, 0));
+    }
+    let max_row = total_rows - 1;
+    let first_visible = ((scroll.scroll_y - HEADER_H).max(0.0) / ROW_H).floor() as usize;
+    let last_visible = ((scroll.scroll_y + scroll.client_height - HEADER_H).max(0.0) / ROW_H)
+        .ceil() as usize;
+    let first = first_visible.saturating_sub(ROW_BUFFER as usize);
+    let last = (last_visible + ROW_BUFFER as usize).min(max_row);
+    Some((first, last))
+}
+
+fn row_in_window(row: usize, window: Option<(usize, usize)>) -> bool {
+    match window {
+        None => true,
+        Some((first, last)) => row >= first && row <= last,
+    }
+}
+
+fn dep_incident_to_window(
+    from_row: usize,
+    to_row: usize,
+    window: Option<(usize, usize)>,
+) -> bool {
+    match window {
+        None => true,
+        Some((first, last)) => {
+            (from_row >= first && from_row <= last) || (to_row >= first && to_row <= last)
+        }
+    }
+}
+
 pub fn build_display_list(
     graph: &GanttGraph,
     epoch: NaiveDate,
     today: Option<NaiveDate>,
+    scroll_viewport: Option<ScrollViewport>,
 ) -> DisplayList {
     let rows = assign_rows(&graph.tasks);
 
@@ -32,6 +72,8 @@ pub fn build_display_list(
         header_height: HEADER_H,
         row_height: ROW_H,
     };
+
+    let row_window = compute_row_window(scroll_viewport, rows.len());
 
     let mut layers = Vec::new();
     let mut task_bboxes = Vec::new();
@@ -91,9 +133,12 @@ pub fn build_display_list(
         primitives: grid_prims,
     });
 
-    // Bars layer
+    // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
     for (task, row) in graph.tasks.iter().zip(rows.iter()) {
+        if !row_in_window(row.row, row_window) {
+            continue;
+        }
         let y = HEADER_H + row.row as f64 * ROW_H + BAR_PAD;
         let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
         let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
@@ -245,6 +290,9 @@ pub fn build_display_list(
         let Some(to_r) = row_map.get(dep.blocked_task_id.as_str()) else {
             continue;
         };
+        if !dep_incident_to_window(from_r.row, to_r.row, row_window) {
+            continue;
+        }
 
         let from_x = LABEL_W + from_t.start_days(epoch) * PX_PER_DAY;
         let from_w = task_bar_width_days(from_t, epoch) * PX_PER_DAY;

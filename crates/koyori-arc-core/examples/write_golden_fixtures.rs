@@ -43,12 +43,12 @@ fn main() {
     let graph = two_task_graph();
     fs::write(
         base.join("svg_golden/two_tasks.svg"),
-        render(&graph.tasks, &graph.deps, None),
+        render(&graph.tasks, &graph.deps, None, None),
     )
     .unwrap();
     fs::write(
         base.join("svg_golden/two_tasks_today.svg"),
-        render(&graph.tasks, &graph.deps, Some(date(2026, 6, 3))),
+        render(&graph.tasks, &graph.deps, Some(date(2026, 6, 3)), None),
     )
     .unwrap();
 
@@ -64,17 +64,17 @@ fn main() {
     };
     fs::write(
         base.join("svg_golden/milestone.svg"),
-        render(&ms.tasks, &ms.deps, None),
+        render(&ms.tasks, &ms.deps, None, None),
     )
     .unwrap();
     fs::write(
         base.join("svg_golden/empty.svg"),
-        render(&[], &[], None),
+        render(&[], &[], None, None),
     )
     .unwrap();
 
     let epoch = graph.tasks.iter().map(|t| t.start).min().unwrap();
-    let list = build_display_list(&graph, epoch, None);
+    let list = build_display_list(&graph, epoch, None, None);
     fs::write(
         base.join("ir_golden/two_tasks.json"),
         serde_json::to_string_pretty(&list).unwrap(),

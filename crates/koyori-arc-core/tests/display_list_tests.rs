@@ -4,8 +4,9 @@ use bincode::config;
 use chrono::NaiveDate;
 use koyori_arc_core::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
 use koyori_arc_core::{
-    build_display_list, BackendOutput, GanttDep, GanttGraph, GanttTask, NativeBackend,
-    NativeDrawOp, RenderBackend, SvgBackend,
+    build_display_list, compute_row_window, BackendOutput, DOM_CAP, GanttDep, GanttGraph,
+    GanttTask, HEADER_H, NativeBackend, NativeDrawOp, RenderBackend, ROW_H, ScrollViewport,
+    SvgBackend,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -42,7 +43,7 @@ fn epoch(graph: &GanttGraph) -> NaiveDate {
 }
 
 fn render_via_ir(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
-    let list = build_display_list(graph, epoch(graph), today);
+    let list = build_display_list(graph, epoch(graph), today, None);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => panic!("expected svg"),
@@ -50,7 +51,7 @@ fn render_via_ir(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
 }
 
 fn render_direct(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
-    koyori_arc_core::render(&graph.tasks, &graph.deps, today)
+    koyori_arc_core::render(&graph.tasks, &graph.deps, today, None)
 }
 
 // --- P0: IR golden (deterministic snapshot) ---
@@ -58,7 +59,7 @@ fn render_direct(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
 #[test]
 fn p0_ir_golden_two_tasks() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     let json = serde_json::to_string_pretty(&list).expect("serialize");
     let golden = include_str!("fixtures/ir_golden/two_tasks.json");
     assert_eq!(json, golden, "IR snapshot drift — update fixtures if intentional");
@@ -72,8 +73,8 @@ fn p0_ir_golden_100_sparse() {
         deps: fixture.deps,
     };
     let ep = epoch(&graph);
-    let list_a = build_display_list(&graph, ep, None);
-    let list_b = build_display_list(&graph, ep, None);
+    let list_a = build_display_list(&graph, ep, None, None);
+    let list_b = build_display_list(&graph, ep, None, None);
     let json_a = serde_json::to_string(&list_a).expect("serialize");
     let json_b = serde_json::to_string(&list_b).expect("serialize");
     assert_eq!(json_a, json_b, "100_sparse IR must be deterministic");
@@ -89,8 +90,8 @@ fn p0_ir_golden_2000_dense() {
         deps: fixture.deps,
     };
     let ep = epoch(&graph);
-    let list_a = build_display_list(&graph, ep, None);
-    let list_b = build_display_list(&graph, ep, None);
+    let list_a = build_display_list(&graph, ep, None, None);
+    let list_b = build_display_list(&graph, ep, None, None);
     let json_a = serde_json::to_string(&list_a).expect("serialize");
     let json_b = serde_json::to_string(&list_b).expect("serialize");
     assert_eq!(json_a, json_b, "2000_dense IR must be deterministic");
@@ -128,7 +129,7 @@ fn p1_svg_byte_compat_milestone() {
 #[test]
 fn p1_svg_byte_compat_empty() {
     let golden = include_str!("fixtures/svg_golden/empty.svg");
-    let svg = koyori_arc_core::render(&[], &[], None);
+    let svg = koyori_arc_core::render(&[], &[], None, None);
     assert_eq!(svg, golden);
 }
 
@@ -152,7 +153,7 @@ fn p1_render_matches_ir_path() {
 #[test]
 fn p2_native_stub_primitive_counts_match() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     let native = match NativeBackend.render(&list) {
         BackendOutput::NativeDrawList(n) => n,
         _ => panic!("expected native"),
@@ -169,7 +170,7 @@ fn p2_native_stub_primitive_counts_match() {
 #[test]
 fn p2_native_and_svg_same_task_bbox_count() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     assert_eq!(list.metadata.task_bboxes.len(), 2);
     let native = match NativeBackend.render(&list) {
         BackendOutput::NativeDrawList(n) => n,
@@ -188,7 +189,7 @@ fn p2_native_and_svg_same_task_bbox_count() {
 #[test]
 fn p3_bincode_roundtrip_preserves_svg() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     let cfg = config::standard();
     let bytes = bincode::serde::encode_to_vec(&list, cfg).expect("encode");
     let (decoded, _): (koyori_arc_core::DisplayList, usize) =
@@ -220,7 +221,7 @@ fn p3_bincode_roundtrip_preserves_svg() {
 #[test]
 fn p4_ir_contains_no_dom_concepts() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     let json = serde_json::to_string(&list).expect("serialize");
     let forbidden = [
         "innerHTML",
@@ -280,11 +281,11 @@ fn write_golden_fixtures() {
     .unwrap();
     fs::write(
         base.join("svg_golden/empty.svg"),
-        koyori_arc_core::render(&[], &[], None),
+        koyori_arc_core::render(&[], &[], None, None),
     )
     .unwrap();
 
-    let list = build_display_list(&graph, epoch(&graph), None);
+    let list = build_display_list(&graph, epoch(&graph), None, None);
     fs::write(
         base.join("ir_golden/two_tasks.json"),
         serde_json::to_string_pretty(&list).unwrap(),
@@ -292,4 +293,141 @@ fn write_golden_fixtures() {
     .unwrap();
 
     eprintln!("Golden fixtures written to {:?}", base);
+}
+
+// --- Phase 1: row virtualization ---
+
+fn test_viewport() -> ScrollViewport {
+    ScrollViewport {
+        scroll_y: 0.0,
+        client_height: 800.0,
+    }
+}
+
+fn graph_from_fixture(count: TaskCount, density: DepDensity) -> GanttGraph {
+    let fixture = generate_fixture(count, density);
+    GanttGraph {
+        tasks: fixture.tasks,
+        deps: fixture.deps,
+    }
+}
+
+fn count_svg_open_tags(svg: &str) -> usize {
+    svg.split('<')
+        .skip(1)
+        .filter(|s| !s.starts_with('/') && !s.starts_with('!'))
+        .count()
+}
+
+fn extract_task_groups(svg: &str) -> Vec<String> {
+    let mut groups = Vec::new();
+    let mut rest = svg;
+    while let Some(idx) = rest.find(r#"data-task-id=""#) {
+        let slice = &rest[idx..];
+        if let Some(end) = slice.find("</g>") {
+            groups.push(slice[..end + 4].to_string());
+            rest = &slice[end + 4..];
+        } else {
+            break;
+        }
+    }
+    groups.sort();
+    groups
+}
+
+#[test]
+fn p1_viewport_none_matches_full_render() {
+    let graph = two_task_graph();
+    let ep = epoch(&graph);
+    let full = build_display_list(&graph, ep, None, None);
+    let via_none = build_display_list(&graph, ep, None, None);
+    assert_eq!(
+        serde_json::to_string(&full).unwrap(),
+        serde_json::to_string(&via_none).unwrap()
+    );
+}
+
+#[test]
+fn p1_viewport_row_fragments_match_full_svg() {
+    let graph = two_task_graph();
+    let ep = epoch(&graph);
+    let full_svg = render_via_ir(&graph, None);
+    let vp = ScrollViewport {
+        scroll_y: 0.0,
+        client_height: 200.0,
+    };
+    let list = build_display_list(&graph, ep, None, Some(vp));
+    let vp_svg = match SvgBackend.render(&list) {
+        BackendOutput::Svg(s) => s,
+        _ => panic!(),
+    };
+    let full_groups = extract_task_groups(&full_svg);
+    let vp_groups = extract_task_groups(&vp_svg);
+    assert_eq!(full_groups, vp_groups);
+}
+
+#[test]
+fn p1_dom_cap_invariant_independent_of_n() {
+    let vp = test_viewport();
+    let mut counts = Vec::new();
+    for count in [TaskCount::N100, TaskCount::N2000, TaskCount::N5000] {
+        let graph = graph_from_fixture(count, DepDensity::Dense);
+        let ep = epoch(&graph);
+        let list = build_display_list(&graph, ep, None, Some(vp));
+        let full = build_display_list(&graph, ep, None, None);
+        let svg = match SvgBackend.render(&list) {
+            BackendOutput::Svg(s) => s,
+            _ => panic!(),
+        };
+        let elems = count_svg_open_tags(&svg);
+        counts.push(elems);
+        assert!(
+            list.metadata.primitive_count <= DOM_CAP * 4,
+            "primitive_count {} exceeds DOM_CAP margin for {:?}",
+            list.metadata.primitive_count,
+            count
+        );
+        assert!(
+            elems <= DOM_CAP as usize * 4,
+            "svg elems {elems} exceeds DOM_CAP margin for {:?}",
+            count
+        );
+        if count.get() >= 2000 {
+            assert!(
+                list.metadata.primitive_count < full.metadata.primitive_count / 5,
+                "virtualized primitives should be ≪ full for {:?}",
+                count
+            );
+        }
+    }
+    let max = *counts.iter().max().unwrap();
+    let min = *counts.iter().min().unwrap();
+    // Grid chrome scales with timeline span; deps incident to visible rows may vary.
+    // Invariant: sub-linear growth in N (not O(N)).
+    assert!(
+        max <= min * 4,
+        "DOM elem count should be sub-linear in N: min={min} max={max}"
+    );
+}
+
+#[test]
+fn p1_virtualized_primitive_count_much_smaller_than_full() {
+    let graph = graph_from_fixture(TaskCount::N5000, DepDensity::Dense);
+    let ep = epoch(&graph);
+    let full = build_display_list(&graph, ep, None, None);
+    let virt = build_display_list(&graph, ep, None, Some(test_viewport()));
+    assert!(virt.metadata.primitive_count < full.metadata.primitive_count / 10);
+}
+
+#[test]
+fn p1_compute_row_window_buffer() {
+    let window = compute_row_window(
+        Some(ScrollViewport {
+            scroll_y: HEADER_H + ROW_H * 10.0,
+            client_height: ROW_H * 5.0,
+        }),
+        100,
+    )
+    .unwrap();
+    assert_eq!(window, (8, 17));
 }

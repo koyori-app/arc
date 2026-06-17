@@ -16,21 +16,49 @@ function readJson(name) {
   return Array.isArray(raw) ? raw : raw.results;
 }
 
-function parseCriterionEstimates() {
-  const log = readFileSync(join(resultsDir, 'criterion.log'), 'utf8');
-  const rows = [];
-  const re =
-    /(layer\d+_\w+)\/\w+\/(\d+)\/(\w+)\s*\n\s+time:\s+\[[^\]]*?([\d.]+)\s*(µs|ms)[^\]]*?\s+([\d.]+)\s*(µs|ms)[^\]]*?\s+([\d.]+)\s*(µs|ms)/g;
-  let m;
-  while ((m = re.exec(log)) !== null) {
-    const unit = m[5] === 'µs' ? 0.001 : 1;
-    rows.push({
-      group: m[1],
-      fixture: `${m[2]}_${m[3]}`,
-      median_ms: parseFloat(m[6]) * unit,
-    });
+function readBenchMeta(name) {
+  try {
+    return JSON.parse(readFileSync(join(resultsDir, name), 'utf8'));
+  } catch {
+    return null;
   }
-  return rows;
+}
+
+function parseCriterionEstimates() {
+  const logPath = join(resultsDir, 'criterion.log');
+  try {
+    const log = readFileSync(logPath, 'utf8');
+    const rows = [];
+    const re =
+      /(layer\d+_\w+)\/\w+\/(\d+)\/(\w+)\s*\n\s+time:\s+\[[^\]]*?([\d.]+)\s*(µs|ms)[^\]]*?\s+([\d.]+)\s*(µs|ms)[^\]]*?\s+([\d.]+)\s*(µs|ms)/g;
+    let m;
+    while ((m = re.exec(log)) !== null) {
+      const unit = m[5] === 'µs' ? 0.001 : 1;
+      rows.push({
+        group: m[1],
+        fixture: `${m[2]}_${m[3]}`,
+        median_ms: parseFloat(m[6]) * unit,
+      });
+    }
+    if (rows.length > 0) return rows;
+  } catch {
+    // fall through to merged.json
+  }
+  try {
+    const merged = JSON.parse(readFileSync(join(resultsDir, 'merged.json'), 'utf8'));
+    const rows = [];
+    for (const r of merged) {
+      rows.push({ group: 'layer1_rust_render', fixture: r.fixture, median_ms: r.l1_rust_ms });
+      rows.push({
+        group: 'layer2_render_svg_native',
+        fixture: r.fixture,
+        median_ms: r.l2_native_render_svg_ms,
+      });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
 }
 
 function cpuInfo() {
@@ -114,8 +142,14 @@ function main() {
   mkdirSync(resultsDir, { recursive: true });
   const criterion = parseCriterionEstimates();
   const layer2 = readJson('layer2-wasm-boundary.json');
-  const layer3Raw = JSON.parse(readFileSync(join(resultsDir, 'layer3-dom.json'), 'utf8'));
-  const layer3 = Array.isArray(layer3Raw) ? layer3Raw : layer3Raw.results;
+  const layer3NativeMeta = readBenchMeta('layer3-dom-native.json');
+  const layer3Native = layer3NativeMeta?.results ?? readJson('layer3-dom.json');
+  const layer3ThrottleMeta = readBenchMeta('layer3-dom-throttle-4x.json');
+  const layer3Throttle = layer3ThrottleMeta?.results ?? null;
+  const gatesMeta = readBenchMeta('bench-gates.json');
+
+  const layer3Raw = layer3NativeMeta ?? { results: layer3Native, engine: 'unknown' };
+  const layer3 = layer3Native;
   const domEngine = layer3Raw.engine ?? layer3[0]?.dom_engine ?? 'unknown';
   const rows = mergeRows(criterion, layer2, layer3);
   const { maxRow, dominant } = overallConclusion(rows);
@@ -131,6 +165,10 @@ function main() {
   md.push(`| Rust | ${rustcVersion()} |`);
   md.push(`| ビルド | \`cargo bench --release\`, \`wasm-pack build --release\` |`);
   md.push(`| ブラウザ/DOM | ${domEngine} |`);
+  md.push(`| L3 仮想化 | ON（viewport scroll_y=0, client_height=600） |`);
+  if (layer3ThrottleMeta) {
+    md.push(`| CPU スロットル | native + ${layer3ThrottleMeta.dom_throttle}× CDP |`);
+  }
   md.push(`| 日付 | ${new Date().toISOString().slice(0, 10)} |`);
   md.push('');
   md.push('### 3層の定義');
@@ -154,6 +192,57 @@ function main() {
     );
   }
   md.push('');
+
+  if (layer3Native && layer3Throttle) {
+    md.push('## Phase 1 仮想化 L3 — native / 4× 併記（§6.6.2）');
+    md.push('');
+    md.push('| fixture | L3 native (ms) | L3 4× throttle (ms) | live elems (native) | DOM_CAP pass |');
+    md.push('|---------|---------------:|--------------------:|--------------------:|:------------:|');
+    const fixtures = [
+      '100_sparse', '100_dense', '500_sparse', '500_dense',
+      '2000_sparse', '2000_dense', '5000_sparse', '5000_dense',
+    ];
+    for (const fx of fixtures) {
+      const nat = layer3Native.find((r) => r.fixture === fx);
+      const thr = layer3Throttle.find((r) => r.fixture === fx);
+      const elems = nat?.live_svg_elems ?? nat?.svg_elements ?? '-';
+      const capPass = nat?.dom_cap_pass === true ? '✓' : nat?.dom_cap_pass === false ? '✗' : '-';
+      md.push(
+        `| ${fx} | ${nat?.dom_insert_ms_median ?? '-'} | ${thr?.dom_insert_ms_median ?? '-'} | ${elems} | ${capPass} |`,
+      );
+    }
+    md.push('');
+  }
+
+  if (domEngine.includes('linkedom')) {
+    md.push('## linkedom フォールバック（advisory）');
+    md.push('');
+    md.push(
+      '> Playwright Chromium が利用できず linkedom による DOM パース代替を使用しています。',
+    );
+    md.push(
+      '> linkedom は **HTML パース速度のみ** を計測しており、レイアウト・描画・CDP CPU スロットルは再現しません。',
+    );
+    md.push(
+      '> 4× スロットル列および L3_throttled 判定は **advisory** です。正規の実 Chromium 実証は workflow `Bench 3-Layer`（workflow_dispatch）で行ってください。',
+    );
+    md.push('');
+  }
+
+  if (gatesMeta) {
+    md.push('## §6.6.2 CI ゲート結果');
+    md.push('');
+    md.push(`Overall: **${gatesMeta.all_pass ? 'PASS' : 'FAIL'}**`);
+    md.push('');
+    md.push('| Gate | Fixture | Actual | Condition | Result |');
+    md.push('|------|---------|-------:|-----------|--------|');
+    for (const g of gatesMeta.gates) {
+      const result = g.skipped ? 'SKIP' : g.pass ? 'PASS' : 'FAIL';
+      md.push(`| ${g.id} | ${g.fixture} | ${g.actual ?? 'n/a'} | ${g.condition} | ${result} |`);
+    }
+    md.push('');
+  }
+
   md.push('## 壁の位置 — 結論');
   md.push('');
   md.push(`- **支配的な壁（全8ケース中最多）**: ${dominant}`);
@@ -173,7 +262,7 @@ function main() {
   md.push('## 再現手順');
   md.push('');
   md.push('```bash');
-  md.push('bash scripts/run-3layer-bench.sh');
+  md.push('bash scripts/run-3layer-bench.sh --dom-throttle 4');
   md.push('```');
   md.push('');
 

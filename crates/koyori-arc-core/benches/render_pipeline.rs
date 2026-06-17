@@ -25,6 +25,7 @@ fn bench_rust_render(c: &mut Criterion) {
                         black_box(&fx.tasks),
                         black_box(&fx.deps),
                         Some(today),
+                        None,
                     ))
                 });
             });
@@ -56,6 +57,7 @@ fn bench_render_svg_native(c: &mut Criterion) {
                             black_box(tj.as_str()),
                             black_box(dj.as_str()),
                             Some(black_box(td.clone())),
+                            None,
                         ))
                     });
                 },
