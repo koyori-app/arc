@@ -51,3 +51,36 @@ export const NoDependencies: Story = {
     tasks,
   },
 };
+
+// Progress-line (イナズマ線) edge cases, anchored at today = 2026-06-06.
+// The status line should encode schedule variance at "today". The fix keys on
+// progress == 0, NOT on "start is in the future":
+//   - behind:   started, low progress      → jags LEFT (behind). Keep.
+//   - on-track: straddles today            → near the today vertical. Keep.
+//   - future0:  starts later, 0% (ANOMALY) → not started & not due ⇒ zero variance ⇒
+//               should sit ON the today line. Currently jags RIGHT, falsely "ahead".
+//               This is the only point the 形状是正 fix moves.
+//   - future5:  starts later, 5% (CONTROL) → real work done early ⇒ genuinely ahead.
+//               Must STAY to the right; the fix must NOT touch progress > 0.
+// Pins current behavior as a visual baseline: after the fix, future0 moves to the
+// today line while future5 stays put, proving the correction is surgical.
+const progressLineTasks: GanttTask[] = [
+  { id: 'behind', title: 'Behind schedule', progress_pct: 20, start: '2026-06-02', end: '2026-06-10' },
+  { id: 'ontrack', title: 'On track', progress_pct: 50, start: '2026-06-03', end: '2026-06-09' },
+  { id: 'future0', title: 'Future, not started', progress_pct: 0, start: '2026-06-10', end: '2026-06-14' },
+  { id: 'future5', title: 'Future, 5% done', progress_pct: 5, start: '2026-06-11', end: '2026-06-16' },
+];
+
+export const ProgressLineEdgeCases: Story = {
+  args: {
+    tasks: progressLineTasks,
+    today: '2026-06-06',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};
