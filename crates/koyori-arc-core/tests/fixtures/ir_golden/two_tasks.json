@@ -1,0 +1,523 @@
+{
+  "viewport": {
+    "width": 350.0,
+    "height": 160.0,
+    "label_width": 120.0,
+    "header_height": 30.0,
+    "row_height": 40.0
+  },
+  "palette": {
+    "colors": [
+      [
+        "BarBg",
+        "#d1d5db"
+      ],
+      [
+        "TierLow",
+        "#f59e0b"
+      ],
+      [
+        "TierMid",
+        "#6366f1"
+      ],
+      [
+        "TierHigh",
+        "#0ea5e9"
+      ],
+      [
+        "TierDone",
+        "#22c55e"
+      ],
+      [
+        "Dep",
+        "#9ca3af"
+      ],
+      [
+        "Progress",
+        "#ef4444"
+      ],
+      [
+        "Grid",
+        "#e5e7eb"
+      ],
+      [
+        "Today",
+        "#f59e0b"
+      ],
+      [
+        "HeaderBg",
+        "#f3f4f6"
+      ],
+      [
+        "GridLabel",
+        "#6b7280"
+      ],
+      [
+        "ProgressTextOnFg",
+        "#ffffff"
+      ],
+      [
+        "ProgressTextOnBg",
+        "#374151"
+      ]
+    ]
+  },
+  "layers": [
+    {
+      "kind": "Background",
+      "primitives": [
+        {
+          "Rect": {
+            "x": 120.0,
+            "y": 0.0,
+            "width": 230.0,
+            "height": 30.0,
+            "fill": "HeaderBg",
+            "rx": null,
+            "semantic": "HeaderBackground"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "Grid",
+      "primitives": [
+        {
+          "Line": {
+            "x1": 120.0,
+            "y1": 30.0,
+            "x2": 120.0,
+            "y2": 160.0,
+            "stroke": "Grid",
+            "stroke_width": 1.0,
+            "stroke_dash": null,
+            "semantic": "Grid"
+          }
+        },
+        {
+          "Text": {
+            "x": 120.0,
+            "y": 19.0,
+            "content": "6/1",
+            "fill": "GridLabel",
+            "font_size": 11.0,
+            "font_weight": null,
+            "anchor": null,
+            "baseline": "Auto",
+            "semantic": "GridLabel"
+          }
+        },
+        {
+          "Line": {
+            "x1": 330.0,
+            "y1": 30.0,
+            "x2": 330.0,
+            "y2": 160.0,
+            "stroke": "Grid",
+            "stroke_width": 1.0,
+            "stroke_dash": null,
+            "semantic": "Grid"
+          }
+        },
+        {
+          "Text": {
+            "x": 330.0,
+            "y": 19.0,
+            "content": "6/8",
+            "fill": "GridLabel",
+            "font_size": 11.0,
+            "font_weight": null,
+            "anchor": null,
+            "baseline": "Auto",
+            "semantic": "GridLabel"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "Bars",
+      "primitives": [
+        {
+          "Group": {
+            "task_id": "task-1",
+            "tooltip": "Design: 2026-06-01 – 2026-06-04 (100%)",
+            "bbox": {
+              "x": 16.0,
+              "y": 40.0,
+              "width": 194.0,
+              "height": 20.0
+            },
+            "children": [
+              {
+                "Rect": {
+                  "x": 120.0,
+                  "y": 40.0,
+                  "width": 90.0,
+                  "height": 20.0,
+                  "fill": "BarBg",
+                  "rx": 4.0,
+                  "semantic": "BarBackground"
+                }
+              },
+              {
+                "RoundRect": {
+                  "x": 120.0,
+                  "y": 40.0,
+                  "width": 90.0,
+                  "height": 20.0,
+                  "fill": "TierDone",
+                  "rx": 4.0,
+                  "tier": "Done",
+                  "semantic": "BarProgress"
+                }
+              },
+              {
+                "Text": {
+                  "x": 165.0,
+                  "y": 50.0,
+                  "content": "100%",
+                  "fill": "ProgressTextOnFg",
+                  "font_size": 11.0,
+                  "font_weight": 600,
+                  "anchor": "Middle",
+                  "baseline": "Middle",
+                  "semantic": "ProgressPercent"
+                }
+              },
+              {
+                "Text": {
+                  "x": 116.0,
+                  "y": 50.0,
+                  "content": "Design",
+                  "fill": null,
+                  "font_size": null,
+                  "font_weight": null,
+                  "anchor": "End",
+                  "baseline": "Middle",
+                  "semantic": "RowLabel"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Group": {
+            "task_id": "task-2",
+            "tooltip": "Build: 2026-06-04 – 2026-06-08 (50%)",
+            "bbox": {
+              "x": 16.0,
+              "y": 80.0,
+              "width": 314.0,
+              "height": 20.0
+            },
+            "children": [
+              {
+                "Rect": {
+                  "x": 210.0,
+                  "y": 80.0,
+                  "width": 120.0,
+                  "height": 20.0,
+                  "fill": "BarBg",
+                  "rx": 4.0,
+                  "semantic": "BarBackground"
+                }
+              },
+              {
+                "RoundRect": {
+                  "x": 210.0,
+                  "y": 80.0,
+                  "width": 60.0,
+                  "height": 20.0,
+                  "fill": "TierMid",
+                  "rx": 4.0,
+                  "tier": "Mid",
+                  "semantic": "BarProgress"
+                }
+              },
+              {
+                "Text": {
+                  "x": 270.0,
+                  "y": 90.0,
+                  "content": "50%",
+                  "fill": "ProgressTextOnFg",
+                  "font_size": 11.0,
+                  "font_weight": 600,
+                  "anchor": "Middle",
+                  "baseline": "Middle",
+                  "semantic": "ProgressPercent"
+                }
+              },
+              {
+                "Text": {
+                  "x": 116.0,
+                  "y": 90.0,
+                  "content": "Build",
+                  "fill": null,
+                  "font_size": null,
+                  "font_weight": null,
+                  "anchor": "End",
+                  "baseline": "Middle",
+                  "semantic": "RowLabel"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "kind": "Dependencies",
+      "primitives": [
+        {
+          "Path": {
+            "d": "M 155 60 V 86 a 4 4 0 0 0 4 4 L 197 90 m -4 -4 l 4 4 l -4 4",
+            "stroke": "Dep",
+            "stroke_width": 1.5,
+            "semantic": "DependencyArrow"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "ProgressLine",
+      "primitives": [
+        {
+          "Polyline": {
+            "points": [
+              [
+                210.0,
+                50.0
+              ],
+              [
+                270.0,
+                90.0
+              ]
+            ],
+            "stroke": "Progress",
+            "stroke_width": 2.0,
+            "stroke_dash": "6,3",
+            "semantic": "ProgressStatusLine"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "Legend",
+      "primitives": [
+        {
+          "Group": {
+            "task_id": null,
+            "tooltip": null,
+            "bbox": {
+              "x": 128.0,
+              "y": 130.0,
+              "width": 400.0,
+              "height": 20.0
+            },
+            "children": [
+              {
+                "Line": {
+                  "x1": 128.0,
+                  "y1": 134.0,
+                  "x2": 156.0,
+                  "y2": 134.0,
+                  "stroke": "Progress",
+                  "stroke_width": 2.0,
+                  "stroke_dash": "6,3",
+                  "semantic": "LegendProgressLine"
+                }
+              },
+              {
+                "Text": {
+                  "x": 162.0,
+                  "y": 138.0,
+                  "content": "進捗ステータスライン（各タスクの完了位置を結ぶ）",
+                  "fill": "GridLabel",
+                  "font_size": 10.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendProgress"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Group": {
+            "task_id": null,
+            "tooltip": null,
+            "bbox": {
+              "x": 128.0,
+              "y": 140.0,
+              "width": 319.0,
+              "height": 16.0
+            },
+            "children": [
+              {
+                "Rect": {
+                  "x": 128.0,
+                  "y": 145.0,
+                  "width": 10.0,
+                  "height": 10.0,
+                  "fill": "BarBg",
+                  "rx": 2.0,
+                  "semantic": "LegendSwatch"
+                }
+              },
+              {
+                "Text": {
+                  "x": 140.0,
+                  "y": 153.0,
+                  "content": "未達",
+                  "fill": "GridLabel",
+                  "font_size": 9.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendTier"
+                }
+              },
+              {
+                "Rect": {
+                  "x": 208.0,
+                  "y": 145.0,
+                  "width": 10.0,
+                  "height": 10.0,
+                  "fill": "TierLow",
+                  "rx": 2.0,
+                  "semantic": "LegendSwatch"
+                }
+              },
+              {
+                "Text": {
+                  "x": 220.0,
+                  "y": 153.0,
+                  "content": "低",
+                  "fill": "GridLabel",
+                  "font_size": 9.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendTier"
+                }
+              },
+              {
+                "Rect": {
+                  "x": 261.0,
+                  "y": 145.0,
+                  "width": 10.0,
+                  "height": 10.0,
+                  "fill": "TierMid",
+                  "rx": 2.0,
+                  "semantic": "LegendSwatch"
+                }
+              },
+              {
+                "Text": {
+                  "x": 273.0,
+                  "y": 153.0,
+                  "content": "中",
+                  "fill": "GridLabel",
+                  "font_size": 9.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendTier"
+                }
+              },
+              {
+                "Rect": {
+                  "x": 314.0,
+                  "y": 145.0,
+                  "width": 10.0,
+                  "height": 10.0,
+                  "fill": "TierHigh",
+                  "rx": 2.0,
+                  "semantic": "LegendSwatch"
+                }
+              },
+              {
+                "Text": {
+                  "x": 326.0,
+                  "y": 153.0,
+                  "content": "高",
+                  "fill": "GridLabel",
+                  "font_size": 9.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendTier"
+                }
+              },
+              {
+                "Rect": {
+                  "x": 367.0,
+                  "y": 145.0,
+                  "width": 10.0,
+                  "height": 10.0,
+                  "fill": "TierDone",
+                  "rx": 2.0,
+                  "semantic": "LegendSwatch"
+                }
+              },
+              {
+                "Text": {
+                  "x": 379.0,
+                  "y": 153.0,
+                  "content": "完了",
+                  "fill": "GridLabel",
+                  "font_size": 9.0,
+                  "font_weight": null,
+                  "anchor": null,
+                  "baseline": "Middle",
+                  "semantic": "LegendTier"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "title": "Gantt chart",
+    "description": "Task schedule with progress bars and dependency arrows",
+    "task_bboxes": [
+      {
+        "task_id": "task-1",
+        "row": 0,
+        "bbox": {
+          "x": 16.0,
+          "y": 40.0,
+          "width": 194.0,
+          "height": 20.0
+        },
+        "bar_bbox": {
+          "x": 120.0,
+          "y": 40.0,
+          "width": 90.0,
+          "height": 20.0
+        }
+      },
+      {
+        "task_id": "task-2",
+        "row": 1,
+        "bbox": {
+          "x": 16.0,
+          "y": 80.0,
+          "width": 314.0,
+          "height": 20.0
+        },
+        "bar_bbox": {
+          "x": 210.0,
+          "y": 80.0,
+          "width": 120.0,
+          "height": 20.0
+        }
+      }
+    ],
+    "primitive_count": 31,
+    "element_count_estimate": 31
+  }
+}
