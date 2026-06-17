@@ -1,0 +1,80 @@
+name: Bench 3-Layer
+
+# Manual-only: real Chromium proof field for §6.6.2 perf gates (not on push/PR).
+on:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install --locked wasm-pack
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install chromium --with-deps
+
+      - name: Run 3-layer bench with §6.6.2 gates
+        run: bash scripts/run-3layer-bench.sh --dom-throttle 4
+
+      - name: Require Playwright Chromium (fail on linkedom fallback)
+        run: |
+          node -e "
+          const fs = require('fs');
+          const native = JSON.parse(fs.readFileSync('benches/results/layer3-dom-native.json', 'utf8'));
+          if (native.engine !== 'playwright-chromium') {
+            console.error('Expected playwright-chromium engine, got:', native.engine);
+            process.exit(1);
+          }
+          const throttled = JSON.parse(fs.readFileSync('benches/results/layer3-dom-throttle-4x.json', 'utf8'));
+          if (throttled.engine !== 'playwright-chromium') {
+            console.error('Expected playwright-chromium on throttled run, got:', throttled.engine);
+            process.exit(1);
+          }
+          "
+
+      - name: Verify L3_throttled gate (real CDP, not advisory)
+        run: |
+          node -e "
+          const fs = require('fs');
+          const gates = JSON.parse(fs.readFileSync('benches/results/bench-gates.json', 'utf8'));
+          const l3 = gates.gates.find((g) => g.id === 'L3_throttled');
+          if (!l3 || !l3.pass || l3.advisory) {
+            console.error('L3_throttled must pass with emulated CDP throttle:', l3);
+            process.exit(1);
+          }
+          if (!gates.all_pass) {
+            console.error('bench-gates.json all_pass is false');
+            process.exit(1);
+          }
+          "
+
+      - name: Upload bench artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-3layer-results
+          path: |
+            benches/results/render-pipeline-3layer-report.md
+            benches/results/bench-gates.json
+            benches/results/merged.json
+            benches/results/layer3-dom-native.json
+            benches/results/layer3-dom-throttle-4x.json
