@@ -19,7 +19,7 @@ pub enum ColorId {
     ProgressTextOnBg,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
     pub colors: Vec<(ColorId, String)>,
 }
