@@ -76,3 +76,61 @@ fn render_svg_milestone_and_tooltip() {
     assert!(svg.contains("100%"));
     assert!(svg.contains("<title>Ship: 2026-06-03 – 2026-06-03 (100%)</title>"));
 }
+
+#[wasm_bindgen_test]
+fn render_canvas_commands_returns_json_buffer() {
+    let json = koyori_arc_core::render_canvas_commands(TASKS, DEPS, None, None);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert!(v.get("error").is_none());
+    assert_eq!(v["viewport_width"].as_f64().unwrap(), 350.0);
+    assert!(v["ops"].as_array().unwrap().len() > 10);
+}
+
+#[wasm_bindgen_test]
+fn render_canvas_commands_progress_line_present() {
+    let json = koyori_arc_core::render_canvas_commands(TASKS, DEPS, None, None);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    let ops = v["ops"].as_array().expect("ops array");
+    let has_progress_poly = ops.iter().any(|op| {
+        op.get("StrokePolyline")
+            .and_then(|p| p.get("color_id"))
+            .and_then(|c| c.as_u64())
+            == Some(6)
+    });
+    assert!(has_progress_poly, "progress line StrokePolyline expected");
+}
+
+#[wasm_bindgen_test]
+fn render_canvas_commands_today_anchored_progress_line() {
+    let json =
+        koyori_arc_core::render_canvas_commands(TASKS, DEPS, Some("2026-06-03".to_string()), None);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    let ops = v["ops"].as_array().expect("ops array");
+    let progress = ops.iter().find_map(|op| {
+        op.get("StrokePolyline")
+            .filter(|p| p.get("color_id").and_then(|c| c.as_u64()) == Some(6))
+    });
+    let points = progress
+        .and_then(|p| p.get("points"))
+        .and_then(|p| p.as_array())
+        .expect("progress polyline points");
+    let first = points[0].as_array().expect("point");
+    assert_eq!(first[0].as_f64().unwrap(), 180.0);
+    let last = points.last().unwrap().as_array().unwrap();
+    assert_eq!(last[0].as_f64().unwrap(), 180.0);
+}
+
+#[wasm_bindgen_test]
+fn render_canvas_commands_parse_error_json() {
+    let json = koyori_arc_core::render_canvas_commands("not json", "[]", None, None);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert!(v.get("error").is_some());
+}
+
+#[wasm_bindgen_test]
+fn render_canvas_commands_empty_tasks() {
+    let json = koyori_arc_core::render_canvas_commands("[]", "[]", None, None);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert_eq!(v["viewport_width"].as_f64().unwrap(), 0.0);
+    assert!(v["ops"].as_array().unwrap().is_empty());
+}
