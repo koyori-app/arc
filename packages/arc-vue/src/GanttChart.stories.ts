@@ -84,3 +84,19 @@ export const ProgressLineEdgeCases: Story = {
     template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
   }),
 };
+
+export const CanvasBackend: Story = {
+  args: {
+    tasks,
+    deps,
+    today: '2026-06-06',
+    backend: 'canvas',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};

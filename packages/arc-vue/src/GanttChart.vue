@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
-import init, { render_svg } from '@koyori-app/arc';
+import init, { render_svg, render_canvas_commands } from '@koyori-app/arc';
 import type { GanttTask, GanttDep } from './types.ts';
+import {
+  parseCommandBuffer,
+  replayCommands,
+  findTaskAtPoint,
+  type TaskHitRegion,
+} from './replayCommands';
 
 const props = defineProps<{
   tasks: GanttTask[];
   deps?: GanttDep[];
   today?: string; // ISO 8601 date string, e.g. "2026-06-16"
+  /** Render backend — default `svg` preserves existing DOM projection. */
+  backend?: 'svg' | 'canvas';
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +31,10 @@ const svg = ref('');
 const scrollY = ref(0);
 const clientHeight = ref(600);
 const scrollRef = ref<HTMLElement | null>(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const hitRegions = ref<TaskHitRegion[]>([]);
+
+const useCanvas = computed(() => props.backend === 'canvas');
 
 onMounted(async () => {
   await init();
@@ -59,7 +71,7 @@ const viewportJson = computed(() => {
 });
 
 const svgHtml = computed(() => {
-  if (!ready.value || props.tasks.length === 0) return '';
+  if (!ready.value || props.tasks.length === 0 || useCanvas.value) return '';
   return render_svg(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -68,7 +80,38 @@ const svgHtml = computed(() => {
   );
 });
 
+const canvasCommandsJson = computed(() => {
+  if (!ready.value || props.tasks.length === 0 || !useCanvas.value) return '';
+  return render_canvas_commands(
+    JSON.stringify(props.tasks),
+    JSON.stringify(props.deps ?? []),
+    props.today ?? undefined,
+    viewportJson.value,
+  );
+});
+
 watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
+
+async function paintCanvas() {
+  const canvas = canvasRef.value;
+  const json = canvasCommandsJson.value;
+  if (!canvas || !json) return;
+
+  const buffer = parseCommandBuffer(json);
+  if (buffer.error) return;
+
+  canvas.width = buffer.viewport_width;
+  canvas.height = buffer.viewport_height;
+  canvas.style.width = `${buffer.viewport_width}px`;
+  canvas.style.height = `${buffer.viewport_height}px`;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const result = replayCommands(ctx, buffer);
+  hitRegions.value = result.hitRegions;
+}
+
+watch(canvasCommandsJson, () => { void nextTick().then(paintCanvas); }, { immediate: true });
 
 function onScroll(e: Event) {
   const el = e.target as HTMLElement;
@@ -83,10 +126,24 @@ function onSvgClick(e: MouseEvent) {
   const task = props.tasks.find((t) => t.id === id);
   if (task) emit('taskClick', task);
 }
+
+function onCanvasClick(e: MouseEvent) {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  const taskId = findTaskAtPoint(hitRegions.value, x, y);
+  if (!taskId) return;
+  const task = props.tasks.find((t) => t.id === taskId);
+  if (task) emit('taskClick', task);
+}
 </script>
 
 <template>
-  <div class="koyori-gantt" @click="onSvgClick">
+  <div class="koyori-gantt" @click="!useCanvas && onSvgClick($event)">
     <div v-if="!ready" class="koyori-gantt-skeleton" aria-hidden="true">
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
         <div class="koyori-gantt-skeleton-label" />
@@ -104,8 +161,16 @@ function onSvgClick(e: MouseEvent) {
       class="koyori-gantt-inner"
       :style="{ height: `${chartHeight}px` }"
     >
+      <canvas
+        v-if="useCanvas"
+        ref="canvasRef"
+        class="koyori-gantt-canvas"
+        role="img"
+        aria-label="Gantt chart"
+        @click="onCanvasClick"
+      />
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <div class="koyori-gantt-svg" v-html="svg" />
+      <div v-else class="koyori-gantt-svg" v-html="svg" />
     </div>
   </div>
   </div>
@@ -128,6 +193,12 @@ function onSvgClick(e: MouseEvent) {
   top: 0;
   left: 0;
   width: 100%;
+}
+.koyori-gantt-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
 }
 .koyori-gantt-svg :deep(svg) {
   display: block;

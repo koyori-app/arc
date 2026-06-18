@@ -1,8 +1,8 @@
 use chrono::NaiveDate;
 use wasm_bindgen::prelude::*;
 
-use crate::backend::{BackendOutput, RenderBackend, SvgBackend};
-use crate::display_list::{build_display_list, ScrollViewport};
+use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
+use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
 
 /// Native entry point — accepts typed structs directly.
@@ -24,6 +24,34 @@ pub fn render(
     let list = build_display_list(&graph, epoch, today, scroll_viewport);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+/// Native entry point — returns a `CommandBuffer` for Canvas2D replay.
+pub fn render_canvas(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    today: Option<NaiveDate>,
+    scroll_viewport: Option<ScrollViewport>,
+) -> CommandBuffer {
+    if tasks.is_empty() {
+        return CommandBuffer {
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+            ops: vec![],
+            palette: Palette::standard(),
+        };
+    }
+
+    let epoch = tasks.iter().map(|t| t.start).min().unwrap();
+    let graph = GanttGraph {
+        tasks: tasks.to_vec(),
+        deps: deps.to_vec(),
+    };
+    let list = build_display_list(&graph, epoch, today, scroll_viewport);
+    match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
         _ => unreachable!(),
     }
 }
@@ -51,9 +79,28 @@ pub fn render_svg(
     render(&tasks, &deps, today, scroll_viewport)
 }
 
-// Constants used by unit tests in this module
-#[cfg(test)]
-use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD, COLOR_TODAY};
+/// Wasm entry point — returns a JSON-serialized `CommandBuffer` for JS-side Canvas2D replay.
+/// On parse failure returns `{"error":"parse error: ..."}` (valid JSON, no draw ops).
+#[wasm_bindgen]
+pub fn render_canvas_commands(
+    tasks_json: &str,
+    deps_json: &str,
+    today_iso: Option<String>,
+    viewport_json: Option<String>,
+) -> String {
+    let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
+        Ok(v) => v,
+        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+    };
+    let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
+        Ok(v) => v,
+        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+    };
+    let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
+    let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
+    serde_json::to_string(&buffer).unwrap_or_else(|e| format!(r#"{{"error":"serialize error: {e}"}}"#))
+}
 
 #[cfg(test)]
 mod tests {
