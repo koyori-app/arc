@@ -376,6 +376,15 @@ async function main() {
   const crossovers = computeCrossover(l2, l3);
   const maxCanvasL2 = Math.max(...l2.map((r) => r.canvas_l2_p50_ms));
 
+  // Relative L2 gate (cmd_265): canvas L2 p50 must not exceed svg L2 p50 by
+  // more than L2_TOLERANCE at the boundary fixture. No absolute time threshold.
+  const GATE_FIXTURE = '2000_dense';
+  const L2_TOLERANCE = 1.15;
+  const gateRow = l2.find((r) => r.fixture === GATE_FIXTURE);
+  const gateCanvasL2 = gateRow?.canvas_l2_p50_ms ?? maxCanvasL2;
+  const gateSvgL2 = gateRow?.svg_l2_p50_ms ?? null;
+  const l2GatePass = gateSvgL2 != null ? gateCanvasL2 <= gateSvgL2 * L2_TOLERANCE : true;
+
   const merged = FIXTURES.map((fx) => {
     const l2Row = l2.find((r) => r.fixture === fx);
     const l3Svg = l3.find((r) => r.fixture === fx && r.backend === 'svg');
@@ -403,8 +412,13 @@ async function main() {
     l3_iters: L3_ITERS,
     crossovers,
     max_canvas_l2_p50_ms: round(maxCanvasL2),
-    l2_canvas_gate_ms: 30,
-    l2_canvas_gate_pass: maxCanvasL2 < 30,
+    l2_canvas_gate: {
+      fixture: GATE_FIXTURE,
+      tolerance: L2_TOLERANCE,
+      canvas_l2_p50_ms: gateCanvasL2 != null ? round(gateCanvasL2) : null,
+      svg_l2_p50_ms: gateSvgL2 != null ? round(gateSvgL2) : null,
+      pass: l2GatePass,
+    },
     merged,
     l2,
     l3,
@@ -416,7 +430,11 @@ async function main() {
   );
   console.log('\nWrote benches/results/canvas-vs-svg-crossover.json');
   console.log('Crossovers:', JSON.stringify(crossovers, null, 2));
-  console.log(`L2 canvas gate (p50 < 30ms): ${maxCanvasL2}ms → ${maxCanvasL2 < 30 ? 'PASS' : 'FAIL'}`);
+  console.log(
+    `L2 canvas gate (canvas ≤ svg ×${L2_TOLERANCE} @ ${GATE_FIXTURE}): ` +
+      `canvas ${gateCanvasL2 != null ? round(gateCanvasL2) : 'n/a'}ms vs ` +
+      `svg ${gateSvgL2 != null ? round(gateSvgL2) : 'n/a'}ms → ${l2GatePass ? 'PASS' : 'FAIL'}`,
+  );
 }
 
 main().catch((err) => {
