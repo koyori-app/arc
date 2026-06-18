@@ -6,15 +6,18 @@
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; }
     #host { min-height: 100vh; }
+    #host canvas { display: block; }
   </style>
 </head>
 <body>
   <div id="host"></div>
   <script type="module">
-    import init, { render_svg } from '../../crates/koyori-arc-core/pkg/koyori_arc_core.js';
+    import init, { render_svg, render_canvas_commands } from '../../crates/koyori-arc-core/pkg/koyori_arc_core.js';
+    import { replayCommands, parseCommandBuffer } from './bench-canvas-replay.js';
 
     const params = new URLSearchParams(location.search);
     const fixtureName = params.get('fixture') ?? '100_sparse';
+    const backend = params.get('backend') ?? 'svg';
     const virtualize = params.get('virtualize') !== '0';
     const scrollY = Number(params.get('scroll_y') ?? '0');
     const clientHeight = Number(params.get('client_height') ?? '600');
@@ -31,6 +34,41 @@
       const fx = await res.json();
       const tasksJson = JSON.stringify(fx.tasks);
       const depsJson = JSON.stringify(fx.deps);
+      const host = document.getElementById('host');
+
+      if (backend === 'canvas') {
+        const t0 = performance.now();
+        const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today, viewportJson);
+        const wasmMs = performance.now() - t0;
+        const buffer = parseCommandBuffer(bufJson);
+        const byteLength = new TextEncoder().encode(bufJson).length;
+        const canvasOps = buffer.ops?.length ?? 0;
+
+        host.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.width = buffer.viewport_width;
+        canvas.height = buffer.viewport_height;
+        host.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+
+        const domStart = performance.now();
+        replayCommands(ctx, buffer);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const domMs = performance.now() - domStart;
+
+        return {
+          wasmMs,
+          domMs,
+          byteLength,
+          elementCount: 0,
+          liveElems: 0,
+          canvasOps,
+          virtualize,
+          backend: 'canvas',
+          taskCount: fx.tasks.length,
+          depCount: fx.deps.length,
+        };
+      }
 
       const t0 = performance.now();
       const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
@@ -39,12 +77,10 @@
       const byteLength = new TextEncoder().encode(svg).length;
       const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
 
-      const host = document.getElementById('host');
       host.innerHTML = '';
 
       const domStart = performance.now();
       host.innerHTML = svg;
-      // Force layout + paint before measuring DOM cost.
       const liveElems = host.querySelectorAll('*').length;
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const domMs = performance.now() - domStart;
@@ -56,6 +92,7 @@
         elementCount,
         liveElems,
         virtualize,
+        backend: 'svg',
         taskCount: fx.tasks.length,
         depCount: fx.deps.length,
       };

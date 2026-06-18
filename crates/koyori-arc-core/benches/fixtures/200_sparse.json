@@ -1,0 +1,2203 @@
+{
+  "tasks": [
+    {
+      "id": "task-00000",
+      "title": "Task 0",
+      "progress_pct": 0,
+      "start": "2026-01-01",
+      "end": "2026-01-04"
+    },
+    {
+      "id": "task-00001",
+      "title": "Task 1",
+      "progress_pct": 37,
+      "start": "2026-01-02",
+      "end": "2026-01-06"
+    },
+    {
+      "id": "task-00002",
+      "title": "Task 2",
+      "progress_pct": 74,
+      "start": "2026-01-03",
+      "end": "2026-01-08"
+    },
+    {
+      "id": "task-00003",
+      "title": "Task 3",
+      "progress_pct": 10,
+      "start": "2026-01-04",
+      "end": "2026-01-10"
+    },
+    {
+      "id": "task-00004",
+      "title": "Task 4",
+      "progress_pct": 47,
+      "start": "2026-01-05",
+      "end": "2026-01-12"
+    },
+    {
+      "id": "task-00005",
+      "title": "Task 5",
+      "progress_pct": 84,
+      "start": "2026-01-06",
+      "end": "2026-01-14"
+    },
+    {
+      "id": "task-00006",
+      "title": "Task 6",
+      "progress_pct": 20,
+      "start": "2026-01-07",
+      "end": "2026-01-16"
+    },
+    {
+      "id": "task-00007",
+      "title": "Task 7",
+      "progress_pct": 57,
+      "start": "2026-01-08",
+      "end": "2026-01-11"
+    },
+    {
+      "id": "task-00008",
+      "title": "Task 8",
+      "progress_pct": 94,
+      "start": "2026-01-09",
+      "end": "2026-01-13"
+    },
+    {
+      "id": "task-00009",
+      "title": "Task 9",
+      "progress_pct": 30,
+      "start": "2026-01-10",
+      "end": "2026-01-15"
+    },
+    {
+      "id": "task-00010",
+      "title": "Task 10",
+      "progress_pct": 67,
+      "start": "2026-01-11",
+      "end": "2026-01-17"
+    },
+    {
+      "id": "task-00011",
+      "title": "Task 11",
+      "progress_pct": 3,
+      "start": "2026-01-12",
+      "end": "2026-01-19"
+    },
+    {
+      "id": "task-00012",
+      "title": "Task 12",
+      "progress_pct": 40,
+      "start": "2026-01-13",
+      "end": "2026-01-21"
+    },
+    {
+      "id": "task-00013",
+      "title": "Task 13",
+      "progress_pct": 77,
+      "start": "2026-01-14",
+      "end": "2026-01-23"
+    },
+    {
+      "id": "task-00014",
+      "title": "Task 14",
+      "progress_pct": 13,
+      "start": "2026-01-15",
+      "end": "2026-01-18"
+    },
+    {
+      "id": "task-00015",
+      "title": "Task 15",
+      "progress_pct": 50,
+      "start": "2026-01-16",
+      "end": "2026-01-20"
+    },
+    {
+      "id": "task-00016",
+      "title": "Task 16",
+      "progress_pct": 87,
+      "start": "2026-01-17",
+      "end": "2026-01-22"
+    },
+    {
+      "id": "task-00017",
+      "title": "Task 17",
+      "progress_pct": 23,
+      "start": "2026-01-18",
+      "end": "2026-01-24"
+    },
+    {
+      "id": "task-00018",
+      "title": "Task 18",
+      "progress_pct": 60,
+      "start": "2026-01-19",
+      "end": "2026-01-26"
+    },
+    {
+      "id": "task-00019",
+      "title": "Task 19",
+      "progress_pct": 97,
+      "start": "2026-01-20",
+      "end": "2026-01-28"
+    },
+    {
+      "id": "task-00020",
+      "title": "Task 20",
+      "progress_pct": 33,
+      "start": "2026-01-21",
+      "end": "2026-01-30"
+    },
+    {
+      "id": "task-00021",
+      "title": "Task 21",
+      "progress_pct": 70,
+      "start": "2026-01-22",
+      "end": "2026-01-25"
+    },
+    {
+      "id": "task-00022",
+      "title": "Task 22",
+      "progress_pct": 6,
+      "start": "2026-01-23",
+      "end": "2026-01-27"
+    },
+    {
+      "id": "task-00023",
+      "title": "Task 23",
+      "progress_pct": 43,
+      "start": "2026-01-24",
+      "end": "2026-01-29"
+    },
+    {
+      "id": "task-00024",
+      "title": "Task 24",
+      "progress_pct": 80,
+      "start": "2026-01-25",
+      "end": "2026-01-31"
+    },
+    {
+      "id": "task-00025",
+      "title": "Task 25",
+      "progress_pct": 16,
+      "start": "2026-01-26",
+      "end": "2026-02-02"
+    },
+    {
+      "id": "task-00026",
+      "title": "Task 26",
+      "progress_pct": 53,
+      "start": "2026-01-27",
+      "end": "2026-02-04"
+    },
+    {
+      "id": "task-00027",
+      "title": "Task 27",
+      "progress_pct": 90,
+      "start": "2026-01-28",
+      "end": "2026-02-06"
+    },
+    {
+      "id": "task-00028",
+      "title": "Task 28",
+      "progress_pct": 26,
+      "start": "2026-01-29",
+      "end": "2026-02-01"
+    },
+    {
+      "id": "task-00029",
+      "title": "Task 29",
+      "progress_pct": 63,
+      "start": "2026-01-30",
+      "end": "2026-02-03"
+    },
+    {
+      "id": "task-00030",
+      "title": "Task 30",
+      "progress_pct": 100,
+      "start": "2026-01-31",
+      "end": "2026-02-05"
+    },
+    {
+      "id": "task-00031",
+      "title": "Task 31",
+      "progress_pct": 36,
+      "start": "2026-02-01",
+      "end": "2026-02-07"
+    },
+    {
+      "id": "task-00032",
+      "title": "Task 32",
+      "progress_pct": 73,
+      "start": "2026-02-02",
+      "end": "2026-02-09"
+    },
+    {
+      "id": "task-00033",
+      "title": "Task 33",
+      "progress_pct": 9,
+      "start": "2026-02-03",
+      "end": "2026-02-11"
+    },
+    {
+      "id": "task-00034",
+      "title": "Task 34",
+      "progress_pct": 46,
+      "start": "2026-02-04",
+      "end": "2026-02-13"
+    },
+    {
+      "id": "task-00035",
+      "title": "Task 35",
+      "progress_pct": 83,
+      "start": "2026-02-05",
+      "end": "2026-02-08"
+    },
+    {
+      "id": "task-00036",
+      "title": "Task 36",
+      "progress_pct": 19,
+      "start": "2026-02-06",
+      "end": "2026-02-10"
+    },
+    {
+      "id": "task-00037",
+      "title": "Task 37",
+      "progress_pct": 56,
+      "start": "2026-02-07",
+      "end": "2026-02-12"
+    },
+    {
+      "id": "task-00038",
+      "title": "Task 38",
+      "progress_pct": 93,
+      "start": "2026-02-08",
+      "end": "2026-02-14"
+    },
+    {
+      "id": "task-00039",
+      "title": "Task 39",
+      "progress_pct": 29,
+      "start": "2026-02-09",
+      "end": "2026-02-16"
+    },
+    {
+      "id": "task-00040",
+      "title": "Task 40",
+      "progress_pct": 66,
+      "start": "2026-02-10",
+      "end": "2026-02-18"
+    },
+    {
+      "id": "task-00041",
+      "title": "Task 41",
+      "progress_pct": 2,
+      "start": "2026-02-11",
+      "end": "2026-02-20"
+    },
+    {
+      "id": "task-00042",
+      "title": "Task 42",
+      "progress_pct": 39,
+      "start": "2026-02-12",
+      "end": "2026-02-15"
+    },
+    {
+      "id": "task-00043",
+      "title": "Task 43",
+      "progress_pct": 76,
+      "start": "2026-02-13",
+      "end": "2026-02-17"
+    },
+    {
+      "id": "task-00044",
+      "title": "Task 44",
+      "progress_pct": 12,
+      "start": "2026-02-14",
+      "end": "2026-02-19"
+    },
+    {
+      "id": "task-00045",
+      "title": "Task 45",
+      "progress_pct": 49,
+      "start": "2026-02-15",
+      "end": "2026-02-21"
+    },
+    {
+      "id": "task-00046",
+      "title": "Task 46",
+      "progress_pct": 86,
+      "start": "2026-02-16",
+      "end": "2026-02-23"
+    },
+    {
+      "id": "task-00047",
+      "title": "Task 47",
+      "progress_pct": 22,
+      "start": "2026-02-17",
+      "end": "2026-02-25"
+    },
+    {
+      "id": "task-00048",
+      "title": "Task 48",
+      "progress_pct": 59,
+      "start": "2026-02-18",
+      "end": "2026-02-27"
+    },
+    {
+      "id": "task-00049",
+      "title": "Task 49",
+      "progress_pct": 96,
+      "start": "2026-02-19",
+      "end": "2026-02-22"
+    },
+    {
+      "id": "task-00050",
+      "title": "Task 50",
+      "progress_pct": 32,
+      "start": "2026-02-20",
+      "end": "2026-02-24"
+    },
+    {
+      "id": "task-00051",
+      "title": "Task 51",
+      "progress_pct": 69,
+      "start": "2026-02-21",
+      "end": "2026-02-26"
+    },
+    {
+      "id": "task-00052",
+      "title": "Task 52",
+      "progress_pct": 5,
+      "start": "2026-02-22",
+      "end": "2026-02-28"
+    },
+    {
+      "id": "task-00053",
+      "title": "Task 53",
+      "progress_pct": 42,
+      "start": "2026-02-23",
+      "end": "2026-03-02"
+    },
+    {
+      "id": "task-00054",
+      "title": "Task 54",
+      "progress_pct": 79,
+      "start": "2026-02-24",
+      "end": "2026-03-04"
+    },
+    {
+      "id": "task-00055",
+      "title": "Task 55",
+      "progress_pct": 15,
+      "start": "2026-02-25",
+      "end": "2026-03-06"
+    },
+    {
+      "id": "task-00056",
+      "title": "Task 56",
+      "progress_pct": 52,
+      "start": "2026-02-26",
+      "end": "2026-03-01"
+    },
+    {
+      "id": "task-00057",
+      "title": "Task 57",
+      "progress_pct": 89,
+      "start": "2026-02-27",
+      "end": "2026-03-03"
+    },
+    {
+      "id": "task-00058",
+      "title": "Task 58",
+      "progress_pct": 25,
+      "start": "2026-02-28",
+      "end": "2026-03-05"
+    },
+    {
+      "id": "task-00059",
+      "title": "Task 59",
+      "progress_pct": 62,
+      "start": "2026-03-01",
+      "end": "2026-03-07"
+    },
+    {
+      "id": "task-00060",
+      "title": "Task 60",
+      "progress_pct": 99,
+      "start": "2026-01-01",
+      "end": "2026-01-08"
+    },
+    {
+      "id": "task-00061",
+      "title": "Task 61",
+      "progress_pct": 35,
+      "start": "2026-01-02",
+      "end": "2026-01-10"
+    },
+    {
+      "id": "task-00062",
+      "title": "Task 62",
+      "progress_pct": 72,
+      "start": "2026-01-03",
+      "end": "2026-01-12"
+    },
+    {
+      "id": "task-00063",
+      "title": "Task 63",
+      "progress_pct": 8,
+      "start": "2026-01-04",
+      "end": "2026-01-07"
+    },
+    {
+      "id": "task-00064",
+      "title": "Task 64",
+      "progress_pct": 45,
+      "start": "2026-01-05",
+      "end": "2026-01-09"
+    },
+    {
+      "id": "task-00065",
+      "title": "Task 65",
+      "progress_pct": 82,
+      "start": "2026-01-06",
+      "end": "2026-01-11"
+    },
+    {
+      "id": "task-00066",
+      "title": "Task 66",
+      "progress_pct": 18,
+      "start": "2026-01-07",
+      "end": "2026-01-13"
+    },
+    {
+      "id": "task-00067",
+      "title": "Task 67",
+      "progress_pct": 55,
+      "start": "2026-01-08",
+      "end": "2026-01-15"
+    },
+    {
+      "id": "task-00068",
+      "title": "Task 68",
+      "progress_pct": 92,
+      "start": "2026-01-09",
+      "end": "2026-01-17"
+    },
+    {
+      "id": "task-00069",
+      "title": "Task 69",
+      "progress_pct": 28,
+      "start": "2026-01-10",
+      "end": "2026-01-19"
+    },
+    {
+      "id": "task-00070",
+      "title": "Task 70",
+      "progress_pct": 65,
+      "start": "2026-01-11",
+      "end": "2026-01-14"
+    },
+    {
+      "id": "task-00071",
+      "title": "Task 71",
+      "progress_pct": 1,
+      "start": "2026-01-12",
+      "end": "2026-01-16"
+    },
+    {
+      "id": "task-00072",
+      "title": "Task 72",
+      "progress_pct": 38,
+      "start": "2026-01-13",
+      "end": "2026-01-18"
+    },
+    {
+      "id": "task-00073",
+      "title": "Task 73",
+      "progress_pct": 75,
+      "start": "2026-01-14",
+      "end": "2026-01-20"
+    },
+    {
+      "id": "task-00074",
+      "title": "Task 74",
+      "progress_pct": 11,
+      "start": "2026-01-15",
+      "end": "2026-01-22"
+    },
+    {
+      "id": "task-00075",
+      "title": "Task 75",
+      "progress_pct": 48,
+      "start": "2026-01-16",
+      "end": "2026-01-24"
+    },
+    {
+      "id": "task-00076",
+      "title": "Task 76",
+      "progress_pct": 85,
+      "start": "2026-01-17",
+      "end": "2026-01-26"
+    },
+    {
+      "id": "task-00077",
+      "title": "Task 77",
+      "progress_pct": 21,
+      "start": "2026-01-18",
+      "end": "2026-01-21"
+    },
+    {
+      "id": "task-00078",
+      "title": "Task 78",
+      "progress_pct": 58,
+      "start": "2026-01-19",
+      "end": "2026-01-23"
+    },
+    {
+      "id": "task-00079",
+      "title": "Task 79",
+      "progress_pct": 95,
+      "start": "2026-01-20",
+      "end": "2026-01-25"
+    },
+    {
+      "id": "task-00080",
+      "title": "Task 80",
+      "progress_pct": 31,
+      "start": "2026-01-21",
+      "end": "2026-01-27"
+    },
+    {
+      "id": "task-00081",
+      "title": "Task 81",
+      "progress_pct": 68,
+      "start": "2026-01-22",
+      "end": "2026-01-29"
+    },
+    {
+      "id": "task-00082",
+      "title": "Task 82",
+      "progress_pct": 4,
+      "start": "2026-01-23",
+      "end": "2026-01-31"
+    },
+    {
+      "id": "task-00083",
+      "title": "Task 83",
+      "progress_pct": 41,
+      "start": "2026-01-24",
+      "end": "2026-02-02"
+    },
+    {
+      "id": "task-00084",
+      "title": "Task 84",
+      "progress_pct": 78,
+      "start": "2026-01-25",
+      "end": "2026-01-28"
+    },
+    {
+      "id": "task-00085",
+      "title": "Task 85",
+      "progress_pct": 14,
+      "start": "2026-01-26",
+      "end": "2026-01-30"
+    },
+    {
+      "id": "task-00086",
+      "title": "Task 86",
+      "progress_pct": 51,
+      "start": "2026-01-27",
+      "end": "2026-02-01"
+    },
+    {
+      "id": "task-00087",
+      "title": "Task 87",
+      "progress_pct": 88,
+      "start": "2026-01-28",
+      "end": "2026-02-03"
+    },
+    {
+      "id": "task-00088",
+      "title": "Task 88",
+      "progress_pct": 24,
+      "start": "2026-01-29",
+      "end": "2026-02-05"
+    },
+    {
+      "id": "task-00089",
+      "title": "Task 89",
+      "progress_pct": 61,
+      "start": "2026-01-30",
+      "end": "2026-02-07"
+    },
+    {
+      "id": "task-00090",
+      "title": "Task 90",
+      "progress_pct": 98,
+      "start": "2026-01-31",
+      "end": "2026-02-09"
+    },
+    {
+      "id": "task-00091",
+      "title": "Task 91",
+      "progress_pct": 34,
+      "start": "2026-02-01",
+      "end": "2026-02-04"
+    },
+    {
+      "id": "task-00092",
+      "title": "Task 92",
+      "progress_pct": 71,
+      "start": "2026-02-02",
+      "end": "2026-02-06"
+    },
+    {
+      "id": "task-00093",
+      "title": "Task 93",
+      "progress_pct": 7,
+      "start": "2026-02-03",
+      "end": "2026-02-08"
+    },
+    {
+      "id": "task-00094",
+      "title": "Task 94",
+      "progress_pct": 44,
+      "start": "2026-02-04",
+      "end": "2026-02-10"
+    },
+    {
+      "id": "task-00095",
+      "title": "Task 95",
+      "progress_pct": 81,
+      "start": "2026-02-05",
+      "end": "2026-02-12"
+    },
+    {
+      "id": "task-00096",
+      "title": "Task 96",
+      "progress_pct": 17,
+      "start": "2026-02-06",
+      "end": "2026-02-14"
+    },
+    {
+      "id": "task-00097",
+      "title": "Task 97",
+      "progress_pct": 54,
+      "start": "2026-02-07",
+      "end": "2026-02-16"
+    },
+    {
+      "id": "task-00098",
+      "title": "Task 98",
+      "progress_pct": 91,
+      "start": "2026-02-08",
+      "end": "2026-02-11"
+    },
+    {
+      "id": "task-00099",
+      "title": "Task 99",
+      "progress_pct": 27,
+      "start": "2026-02-09",
+      "end": "2026-02-13"
+    },
+    {
+      "id": "task-00100",
+      "title": "Task 100",
+      "progress_pct": 64,
+      "start": "2026-02-10",
+      "end": "2026-02-15"
+    },
+    {
+      "id": "task-00101",
+      "title": "Task 101",
+      "progress_pct": 0,
+      "start": "2026-02-11",
+      "end": "2026-02-17"
+    },
+    {
+      "id": "task-00102",
+      "title": "Task 102",
+      "progress_pct": 37,
+      "start": "2026-02-12",
+      "end": "2026-02-19"
+    },
+    {
+      "id": "task-00103",
+      "title": "Task 103",
+      "progress_pct": 74,
+      "start": "2026-02-13",
+      "end": "2026-02-21"
+    },
+    {
+      "id": "task-00104",
+      "title": "Task 104",
+      "progress_pct": 10,
+      "start": "2026-02-14",
+      "end": "2026-02-23"
+    },
+    {
+      "id": "task-00105",
+      "title": "Task 105",
+      "progress_pct": 47,
+      "start": "2026-02-15",
+      "end": "2026-02-18"
+    },
+    {
+      "id": "task-00106",
+      "title": "Task 106",
+      "progress_pct": 84,
+      "start": "2026-02-16",
+      "end": "2026-02-20"
+    },
+    {
+      "id": "task-00107",
+      "title": "Task 107",
+      "progress_pct": 20,
+      "start": "2026-02-17",
+      "end": "2026-02-22"
+    },
+    {
+      "id": "task-00108",
+      "title": "Task 108",
+      "progress_pct": 57,
+      "start": "2026-02-18",
+      "end": "2026-02-24"
+    },
+    {
+      "id": "task-00109",
+      "title": "Task 109",
+      "progress_pct": 94,
+      "start": "2026-02-19",
+      "end": "2026-02-26"
+    },
+    {
+      "id": "task-00110",
+      "title": "Task 110",
+      "progress_pct": 30,
+      "start": "2026-02-20",
+      "end": "2026-02-28"
+    },
+    {
+      "id": "task-00111",
+      "title": "Task 111",
+      "progress_pct": 67,
+      "start": "2026-02-21",
+      "end": "2026-03-02"
+    },
+    {
+      "id": "task-00112",
+      "title": "Task 112",
+      "progress_pct": 3,
+      "start": "2026-02-22",
+      "end": "2026-02-25"
+    },
+    {
+      "id": "task-00113",
+      "title": "Task 113",
+      "progress_pct": 40,
+      "start": "2026-02-23",
+      "end": "2026-02-27"
+    },
+    {
+      "id": "task-00114",
+      "title": "Task 114",
+      "progress_pct": 77,
+      "start": "2026-02-24",
+      "end": "2026-03-01"
+    },
+    {
+      "id": "task-00115",
+      "title": "Task 115",
+      "progress_pct": 13,
+      "start": "2026-02-25",
+      "end": "2026-03-03"
+    },
+    {
+      "id": "task-00116",
+      "title": "Task 116",
+      "progress_pct": 50,
+      "start": "2026-02-26",
+      "end": "2026-03-05"
+    },
+    {
+      "id": "task-00117",
+      "title": "Task 117",
+      "progress_pct": 87,
+      "start": "2026-02-27",
+      "end": "2026-03-07"
+    },
+    {
+      "id": "task-00118",
+      "title": "Task 118",
+      "progress_pct": 23,
+      "start": "2026-02-28",
+      "end": "2026-03-09"
+    },
+    {
+      "id": "task-00119",
+      "title": "Task 119",
+      "progress_pct": 60,
+      "start": "2026-03-01",
+      "end": "2026-03-04"
+    },
+    {
+      "id": "task-00120",
+      "title": "Task 120",
+      "progress_pct": 97,
+      "start": "2026-01-01",
+      "end": "2026-01-05"
+    },
+    {
+      "id": "task-00121",
+      "title": "Task 121",
+      "progress_pct": 33,
+      "start": "2026-01-02",
+      "end": "2026-01-07"
+    },
+    {
+      "id": "task-00122",
+      "title": "Task 122",
+      "progress_pct": 70,
+      "start": "2026-01-03",
+      "end": "2026-01-09"
+    },
+    {
+      "id": "task-00123",
+      "title": "Task 123",
+      "progress_pct": 6,
+      "start": "2026-01-04",
+      "end": "2026-01-11"
+    },
+    {
+      "id": "task-00124",
+      "title": "Task 124",
+      "progress_pct": 43,
+      "start": "2026-01-05",
+      "end": "2026-01-13"
+    },
+    {
+      "id": "task-00125",
+      "title": "Task 125",
+      "progress_pct": 80,
+      "start": "2026-01-06",
+      "end": "2026-01-15"
+    },
+    {
+      "id": "task-00126",
+      "title": "Task 126",
+      "progress_pct": 16,
+      "start": "2026-01-07",
+      "end": "2026-01-10"
+    },
+    {
+      "id": "task-00127",
+      "title": "Task 127",
+      "progress_pct": 53,
+      "start": "2026-01-08",
+      "end": "2026-01-12"
+    },
+    {
+      "id": "task-00128",
+      "title": "Task 128",
+      "progress_pct": 90,
+      "start": "2026-01-09",
+      "end": "2026-01-14"
+    },
+    {
+      "id": "task-00129",
+      "title": "Task 129",
+      "progress_pct": 26,
+      "start": "2026-01-10",
+      "end": "2026-01-16"
+    },
+    {
+      "id": "task-00130",
+      "title": "Task 130",
+      "progress_pct": 63,
+      "start": "2026-01-11",
+      "end": "2026-01-18"
+    },
+    {
+      "id": "task-00131",
+      "title": "Task 131",
+      "progress_pct": 100,
+      "start": "2026-01-12",
+      "end": "2026-01-20"
+    },
+    {
+      "id": "task-00132",
+      "title": "Task 132",
+      "progress_pct": 36,
+      "start": "2026-01-13",
+      "end": "2026-01-22"
+    },
+    {
+      "id": "task-00133",
+      "title": "Task 133",
+      "progress_pct": 73,
+      "start": "2026-01-14",
+      "end": "2026-01-17"
+    },
+    {
+      "id": "task-00134",
+      "title": "Task 134",
+      "progress_pct": 9,
+      "start": "2026-01-15",
+      "end": "2026-01-19"
+    },
+    {
+      "id": "task-00135",
+      "title": "Task 135",
+      "progress_pct": 46,
+      "start": "2026-01-16",
+      "end": "2026-01-21"
+    },
+    {
+      "id": "task-00136",
+      "title": "Task 136",
+      "progress_pct": 83,
+      "start": "2026-01-17",
+      "end": "2026-01-23"
+    },
+    {
+      "id": "task-00137",
+      "title": "Task 137",
+      "progress_pct": 19,
+      "start": "2026-01-18",
+      "end": "2026-01-25"
+    },
+    {
+      "id": "task-00138",
+      "title": "Task 138",
+      "progress_pct": 56,
+      "start": "2026-01-19",
+      "end": "2026-01-27"
+    },
+    {
+      "id": "task-00139",
+      "title": "Task 139",
+      "progress_pct": 93,
+      "start": "2026-01-20",
+      "end": "2026-01-29"
+    },
+    {
+      "id": "task-00140",
+      "title": "Task 140",
+      "progress_pct": 29,
+      "start": "2026-01-21",
+      "end": "2026-01-24"
+    },
+    {
+      "id": "task-00141",
+      "title": "Task 141",
+      "progress_pct": 66,
+      "start": "2026-01-22",
+      "end": "2026-01-26"
+    },
+    {
+      "id": "task-00142",
+      "title": "Task 142",
+      "progress_pct": 2,
+      "start": "2026-01-23",
+      "end": "2026-01-28"
+    },
+    {
+      "id": "task-00143",
+      "title": "Task 143",
+      "progress_pct": 39,
+      "start": "2026-01-24",
+      "end": "2026-01-30"
+    },
+    {
+      "id": "task-00144",
+      "title": "Task 144",
+      "progress_pct": 76,
+      "start": "2026-01-25",
+      "end": "2026-02-01"
+    },
+    {
+      "id": "task-00145",
+      "title": "Task 145",
+      "progress_pct": 12,
+      "start": "2026-01-26",
+      "end": "2026-02-03"
+    },
+    {
+      "id": "task-00146",
+      "title": "Task 146",
+      "progress_pct": 49,
+      "start": "2026-01-27",
+      "end": "2026-02-05"
+    },
+    {
+      "id": "task-00147",
+      "title": "Task 147",
+      "progress_pct": 86,
+      "start": "2026-01-28",
+      "end": "2026-01-31"
+    },
+    {
+      "id": "task-00148",
+      "title": "Task 148",
+      "progress_pct": 22,
+      "start": "2026-01-29",
+      "end": "2026-02-02"
+    },
+    {
+      "id": "task-00149",
+      "title": "Task 149",
+      "progress_pct": 59,
+      "start": "2026-01-30",
+      "end": "2026-02-04"
+    },
+    {
+      "id": "task-00150",
+      "title": "Task 150",
+      "progress_pct": 96,
+      "start": "2026-01-31",
+      "end": "2026-02-06"
+    },
+    {
+      "id": "task-00151",
+      "title": "Task 151",
+      "progress_pct": 32,
+      "start": "2026-02-01",
+      "end": "2026-02-08"
+    },
+    {
+      "id": "task-00152",
+      "title": "Task 152",
+      "progress_pct": 69,
+      "start": "2026-02-02",
+      "end": "2026-02-10"
+    },
+    {
+      "id": "task-00153",
+      "title": "Task 153",
+      "progress_pct": 5,
+      "start": "2026-02-03",
+      "end": "2026-02-12"
+    },
+    {
+      "id": "task-00154",
+      "title": "Task 154",
+      "progress_pct": 42,
+      "start": "2026-02-04",
+      "end": "2026-02-07"
+    },
+    {
+      "id": "task-00155",
+      "title": "Task 155",
+      "progress_pct": 79,
+      "start": "2026-02-05",
+      "end": "2026-02-09"
+    },
+    {
+      "id": "task-00156",
+      "title": "Task 156",
+      "progress_pct": 15,
+      "start": "2026-02-06",
+      "end": "2026-02-11"
+    },
+    {
+      "id": "task-00157",
+      "title": "Task 157",
+      "progress_pct": 52,
+      "start": "2026-02-07",
+      "end": "2026-02-13"
+    },
+    {
+      "id": "task-00158",
+      "title": "Task 158",
+      "progress_pct": 89,
+      "start": "2026-02-08",
+      "end": "2026-02-15"
+    },
+    {
+      "id": "task-00159",
+      "title": "Task 159",
+      "progress_pct": 25,
+      "start": "2026-02-09",
+      "end": "2026-02-17"
+    },
+    {
+      "id": "task-00160",
+      "title": "Task 160",
+      "progress_pct": 62,
+      "start": "2026-02-10",
+      "end": "2026-02-19"
+    },
+    {
+      "id": "task-00161",
+      "title": "Task 161",
+      "progress_pct": 99,
+      "start": "2026-02-11",
+      "end": "2026-02-14"
+    },
+    {
+      "id": "task-00162",
+      "title": "Task 162",
+      "progress_pct": 35,
+      "start": "2026-02-12",
+      "end": "2026-02-16"
+    },
+    {
+      "id": "task-00163",
+      "title": "Task 163",
+      "progress_pct": 72,
+      "start": "2026-02-13",
+      "end": "2026-02-18"
+    },
+    {
+      "id": "task-00164",
+      "title": "Task 164",
+      "progress_pct": 8,
+      "start": "2026-02-14",
+      "end": "2026-02-20"
+    },
+    {
+      "id": "task-00165",
+      "title": "Task 165",
+      "progress_pct": 45,
+      "start": "2026-02-15",
+      "end": "2026-02-22"
+    },
+    {
+      "id": "task-00166",
+      "title": "Task 166",
+      "progress_pct": 82,
+      "start": "2026-02-16",
+      "end": "2026-02-24"
+    },
+    {
+      "id": "task-00167",
+      "title": "Task 167",
+      "progress_pct": 18,
+      "start": "2026-02-17",
+      "end": "2026-02-26"
+    },
+    {
+      "id": "task-00168",
+      "title": "Task 168",
+      "progress_pct": 55,
+      "start": "2026-02-18",
+      "end": "2026-02-21"
+    },
+    {
+      "id": "task-00169",
+      "title": "Task 169",
+      "progress_pct": 92,
+      "start": "2026-02-19",
+      "end": "2026-02-23"
+    },
+    {
+      "id": "task-00170",
+      "title": "Task 170",
+      "progress_pct": 28,
+      "start": "2026-02-20",
+      "end": "2026-02-25"
+    },
+    {
+      "id": "task-00171",
+      "title": "Task 171",
+      "progress_pct": 65,
+      "start": "2026-02-21",
+      "end": "2026-02-27"
+    },
+    {
+      "id": "task-00172",
+      "title": "Task 172",
+      "progress_pct": 1,
+      "start": "2026-02-22",
+      "end": "2026-03-01"
+    },
+    {
+      "id": "task-00173",
+      "title": "Task 173",
+      "progress_pct": 38,
+      "start": "2026-02-23",
+      "end": "2026-03-03"
+    },
+    {
+      "id": "task-00174",
+      "title": "Task 174",
+      "progress_pct": 75,
+      "start": "2026-02-24",
+      "end": "2026-03-05"
+    },
+    {
+      "id": "task-00175",
+      "title": "Task 175",
+      "progress_pct": 11,
+      "start": "2026-02-25",
+      "end": "2026-02-28"
+    },
+    {
+      "id": "task-00176",
+      "title": "Task 176",
+      "progress_pct": 48,
+      "start": "2026-02-26",
+      "end": "2026-03-02"
+    },
+    {
+      "id": "task-00177",
+      "title": "Task 177",
+      "progress_pct": 85,
+      "start": "2026-02-27",
+      "end": "2026-03-04"
+    },
+    {
+      "id": "task-00178",
+      "title": "Task 178",
+      "progress_pct": 21,
+      "start": "2026-02-28",
+      "end": "2026-03-06"
+    },
+    {
+      "id": "task-00179",
+      "title": "Task 179",
+      "progress_pct": 58,
+      "start": "2026-03-01",
+      "end": "2026-03-08"
+    },
+    {
+      "id": "task-00180",
+      "title": "Task 180",
+      "progress_pct": 95,
+      "start": "2026-01-01",
+      "end": "2026-01-09"
+    },
+    {
+      "id": "task-00181",
+      "title": "Task 181",
+      "progress_pct": 31,
+      "start": "2026-01-02",
+      "end": "2026-01-11"
+    },
+    {
+      "id": "task-00182",
+      "title": "Task 182",
+      "progress_pct": 68,
+      "start": "2026-01-03",
+      "end": "2026-01-06"
+    },
+    {
+      "id": "task-00183",
+      "title": "Task 183",
+      "progress_pct": 4,
+      "start": "2026-01-04",
+      "end": "2026-01-08"
+    },
+    {
+      "id": "task-00184",
+      "title": "Task 184",
+      "progress_pct": 41,
+      "start": "2026-01-05",
+      "end": "2026-01-10"
+    },
+    {
+      "id": "task-00185",
+      "title": "Task 185",
+      "progress_pct": 78,
+      "start": "2026-01-06",
+      "end": "2026-01-12"
+    },
+    {
+      "id": "task-00186",
+      "title": "Task 186",
+      "progress_pct": 14,
+      "start": "2026-01-07",
+      "end": "2026-01-14"
+    },
+    {
+      "id": "task-00187",
+      "title": "Task 187",
+      "progress_pct": 51,
+      "start": "2026-01-08",
+      "end": "2026-01-16"
+    },
+    {
+      "id": "task-00188",
+      "title": "Task 188",
+      "progress_pct": 88,
+      "start": "2026-01-09",
+      "end": "2026-01-18"
+    },
+    {
+      "id": "task-00189",
+      "title": "Task 189",
+      "progress_pct": 24,
+      "start": "2026-01-10",
+      "end": "2026-01-13"
+    },
+    {
+      "id": "task-00190",
+      "title": "Task 190",
+      "progress_pct": 61,
+      "start": "2026-01-11",
+      "end": "2026-01-15"
+    },
+    {
+      "id": "task-00191",
+      "title": "Task 191",
+      "progress_pct": 98,
+      "start": "2026-01-12",
+      "end": "2026-01-17"
+    },
+    {
+      "id": "task-00192",
+      "title": "Task 192",
+      "progress_pct": 34,
+      "start": "2026-01-13",
+      "end": "2026-01-19"
+    },
+    {
+      "id": "task-00193",
+      "title": "Task 193",
+      "progress_pct": 71,
+      "start": "2026-01-14",
+      "end": "2026-01-21"
+    },
+    {
+      "id": "task-00194",
+      "title": "Task 194",
+      "progress_pct": 7,
+      "start": "2026-01-15",
+      "end": "2026-01-23"
+    },
+    {
+      "id": "task-00195",
+      "title": "Task 195",
+      "progress_pct": 44,
+      "start": "2026-01-16",
+      "end": "2026-01-25"
+    },
+    {
+      "id": "task-00196",
+      "title": "Task 196",
+      "progress_pct": 81,
+      "start": "2026-01-17",
+      "end": "2026-01-20"
+    },
+    {
+      "id": "task-00197",
+      "title": "Task 197",
+      "progress_pct": 17,
+      "start": "2026-01-18",
+      "end": "2026-01-22"
+    },
+    {
+      "id": "task-00198",
+      "title": "Task 198",
+      "progress_pct": 54,
+      "start": "2026-01-19",
+      "end": "2026-01-24"
+    },
+    {
+      "id": "task-00199",
+      "title": "Task 199",
+      "progress_pct": 91,
+      "start": "2026-01-20",
+      "end": "2026-01-26"
+    }
+  ],
+  "deps": [
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00001"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00002"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00003"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00004"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00045",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00046",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00047",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00048",
+      "blocked_task_id": "task-00049"
+    },
+    {
+      "blocker_task_id": "task-00049",
+      "blocked_task_id": "task-00050"
+    },
+    {
+      "blocker_task_id": "task-00050",
+      "blocked_task_id": "task-00051"
+    },
+    {
+      "blocker_task_id": "task-00051",
+      "blocked_task_id": "task-00052"
+    },
+    {
+      "blocker_task_id": "task-00052",
+      "blocked_task_id": "task-00053"
+    },
+    {
+      "blocker_task_id": "task-00053",
+      "blocked_task_id": "task-00054"
+    },
+    {
+      "blocker_task_id": "task-00054",
+      "blocked_task_id": "task-00055"
+    },
+    {
+      "blocker_task_id": "task-00055",
+      "blocked_task_id": "task-00056"
+    },
+    {
+      "blocker_task_id": "task-00056",
+      "blocked_task_id": "task-00057"
+    },
+    {
+      "blocker_task_id": "task-00057",
+      "blocked_task_id": "task-00058"
+    },
+    {
+      "blocker_task_id": "task-00058",
+      "blocked_task_id": "task-00059"
+    },
+    {
+      "blocker_task_id": "task-00059",
+      "blocked_task_id": "task-00060"
+    },
+    {
+      "blocker_task_id": "task-00060",
+      "blocked_task_id": "task-00061"
+    },
+    {
+      "blocker_task_id": "task-00061",
+      "blocked_task_id": "task-00062"
+    },
+    {
+      "blocker_task_id": "task-00062",
+      "blocked_task_id": "task-00063"
+    },
+    {
+      "blocker_task_id": "task-00063",
+      "blocked_task_id": "task-00064"
+    },
+    {
+      "blocker_task_id": "task-00064",
+      "blocked_task_id": "task-00065"
+    },
+    {
+      "blocker_task_id": "task-00065",
+      "blocked_task_id": "task-00066"
+    },
+    {
+      "blocker_task_id": "task-00066",
+      "blocked_task_id": "task-00067"
+    },
+    {
+      "blocker_task_id": "task-00067",
+      "blocked_task_id": "task-00068"
+    },
+    {
+      "blocker_task_id": "task-00068",
+      "blocked_task_id": "task-00069"
+    },
+    {
+      "blocker_task_id": "task-00069",
+      "blocked_task_id": "task-00070"
+    },
+    {
+      "blocker_task_id": "task-00070",
+      "blocked_task_id": "task-00071"
+    },
+    {
+      "blocker_task_id": "task-00071",
+      "blocked_task_id": "task-00072"
+    },
+    {
+      "blocker_task_id": "task-00072",
+      "blocked_task_id": "task-00073"
+    },
+    {
+      "blocker_task_id": "task-00073",
+      "blocked_task_id": "task-00074"
+    },
+    {
+      "blocker_task_id": "task-00074",
+      "blocked_task_id": "task-00075"
+    },
+    {
+      "blocker_task_id": "task-00075",
+      "blocked_task_id": "task-00076"
+    },
+    {
+      "blocker_task_id": "task-00076",
+      "blocked_task_id": "task-00077"
+    },
+    {
+      "blocker_task_id": "task-00077",
+      "blocked_task_id": "task-00078"
+    },
+    {
+      "blocker_task_id": "task-00078",
+      "blocked_task_id": "task-00079"
+    },
+    {
+      "blocker_task_id": "task-00079",
+      "blocked_task_id": "task-00080"
+    },
+    {
+      "blocker_task_id": "task-00080",
+      "blocked_task_id": "task-00081"
+    },
+    {
+      "blocker_task_id": "task-00081",
+      "blocked_task_id": "task-00082"
+    },
+    {
+      "blocker_task_id": "task-00082",
+      "blocked_task_id": "task-00083"
+    },
+    {
+      "blocker_task_id": "task-00083",
+      "blocked_task_id": "task-00084"
+    },
+    {
+      "blocker_task_id": "task-00084",
+      "blocked_task_id": "task-00085"
+    },
+    {
+      "blocker_task_id": "task-00085",
+      "blocked_task_id": "task-00086"
+    },
+    {
+      "blocker_task_id": "task-00086",
+      "blocked_task_id": "task-00087"
+    },
+    {
+      "blocker_task_id": "task-00087",
+      "blocked_task_id": "task-00088"
+    },
+    {
+      "blocker_task_id": "task-00088",
+      "blocked_task_id": "task-00089"
+    },
+    {
+      "blocker_task_id": "task-00089",
+      "blocked_task_id": "task-00090"
+    },
+    {
+      "blocker_task_id": "task-00090",
+      "blocked_task_id": "task-00091"
+    },
+    {
+      "blocker_task_id": "task-00091",
+      "blocked_task_id": "task-00092"
+    },
+    {
+      "blocker_task_id": "task-00092",
+      "blocked_task_id": "task-00093"
+    },
+    {
+      "blocker_task_id": "task-00093",
+      "blocked_task_id": "task-00094"
+    },
+    {
+      "blocker_task_id": "task-00094",
+      "blocked_task_id": "task-00095"
+    },
+    {
+      "blocker_task_id": "task-00095",
+      "blocked_task_id": "task-00096"
+    },
+    {
+      "blocker_task_id": "task-00096",
+      "blocked_task_id": "task-00097"
+    },
+    {
+      "blocker_task_id": "task-00097",
+      "blocked_task_id": "task-00098"
+    },
+    {
+      "blocker_task_id": "task-00098",
+      "blocked_task_id": "task-00099"
+    },
+    {
+      "blocker_task_id": "task-00099",
+      "blocked_task_id": "task-00100"
+    },
+    {
+      "blocker_task_id": "task-00100",
+      "blocked_task_id": "task-00101"
+    },
+    {
+      "blocker_task_id": "task-00101",
+      "blocked_task_id": "task-00102"
+    },
+    {
+      "blocker_task_id": "task-00102",
+      "blocked_task_id": "task-00103"
+    },
+    {
+      "blocker_task_id": "task-00103",
+      "blocked_task_id": "task-00104"
+    },
+    {
+      "blocker_task_id": "task-00104",
+      "blocked_task_id": "task-00105"
+    },
+    {
+      "blocker_task_id": "task-00105",
+      "blocked_task_id": "task-00106"
+    },
+    {
+      "blocker_task_id": "task-00106",
+      "blocked_task_id": "task-00107"
+    },
+    {
+      "blocker_task_id": "task-00107",
+      "blocked_task_id": "task-00108"
+    },
+    {
+      "blocker_task_id": "task-00108",
+      "blocked_task_id": "task-00109"
+    },
+    {
+      "blocker_task_id": "task-00109",
+      "blocked_task_id": "task-00110"
+    },
+    {
+      "blocker_task_id": "task-00110",
+      "blocked_task_id": "task-00111"
+    },
+    {
+      "blocker_task_id": "task-00111",
+      "blocked_task_id": "task-00112"
+    },
+    {
+      "blocker_task_id": "task-00112",
+      "blocked_task_id": "task-00113"
+    },
+    {
+      "blocker_task_id": "task-00113",
+      "blocked_task_id": "task-00114"
+    },
+    {
+      "blocker_task_id": "task-00114",
+      "blocked_task_id": "task-00115"
+    },
+    {
+      "blocker_task_id": "task-00115",
+      "blocked_task_id": "task-00116"
+    },
+    {
+      "blocker_task_id": "task-00116",
+      "blocked_task_id": "task-00117"
+    },
+    {
+      "blocker_task_id": "task-00117",
+      "blocked_task_id": "task-00118"
+    },
+    {
+      "blocker_task_id": "task-00118",
+      "blocked_task_id": "task-00119"
+    },
+    {
+      "blocker_task_id": "task-00119",
+      "blocked_task_id": "task-00120"
+    },
+    {
+      "blocker_task_id": "task-00120",
+      "blocked_task_id": "task-00121"
+    },
+    {
+      "blocker_task_id": "task-00121",
+      "blocked_task_id": "task-00122"
+    },
+    {
+      "blocker_task_id": "task-00122",
+      "blocked_task_id": "task-00123"
+    },
+    {
+      "blocker_task_id": "task-00123",
+      "blocked_task_id": "task-00124"
+    },
+    {
+      "blocker_task_id": "task-00124",
+      "blocked_task_id": "task-00125"
+    },
+    {
+      "blocker_task_id": "task-00125",
+      "blocked_task_id": "task-00126"
+    },
+    {
+      "blocker_task_id": "task-00126",
+      "blocked_task_id": "task-00127"
+    },
+    {
+      "blocker_task_id": "task-00127",
+      "blocked_task_id": "task-00128"
+    },
+    {
+      "blocker_task_id": "task-00128",
+      "blocked_task_id": "task-00129"
+    },
+    {
+      "blocker_task_id": "task-00129",
+      "blocked_task_id": "task-00130"
+    },
+    {
+      "blocker_task_id": "task-00130",
+      "blocked_task_id": "task-00131"
+    },
+    {
+      "blocker_task_id": "task-00131",
+      "blocked_task_id": "task-00132"
+    },
+    {
+      "blocker_task_id": "task-00132",
+      "blocked_task_id": "task-00133"
+    },
+    {
+      "blocker_task_id": "task-00133",
+      "blocked_task_id": "task-00134"
+    },
+    {
+      "blocker_task_id": "task-00134",
+      "blocked_task_id": "task-00135"
+    },
+    {
+      "blocker_task_id": "task-00135",
+      "blocked_task_id": "task-00136"
+    },
+    {
+      "blocker_task_id": "task-00136",
+      "blocked_task_id": "task-00137"
+    },
+    {
+      "blocker_task_id": "task-00137",
+      "blocked_task_id": "task-00138"
+    },
+    {
+      "blocker_task_id": "task-00138",
+      "blocked_task_id": "task-00139"
+    },
+    {
+      "blocker_task_id": "task-00139",
+      "blocked_task_id": "task-00140"
+    },
+    {
+      "blocker_task_id": "task-00140",
+      "blocked_task_id": "task-00141"
+    },
+    {
+      "blocker_task_id": "task-00141",
+      "blocked_task_id": "task-00142"
+    },
+    {
+      "blocker_task_id": "task-00142",
+      "blocked_task_id": "task-00143"
+    },
+    {
+      "blocker_task_id": "task-00143",
+      "blocked_task_id": "task-00144"
+    },
+    {
+      "blocker_task_id": "task-00144",
+      "blocked_task_id": "task-00145"
+    },
+    {
+      "blocker_task_id": "task-00145",
+      "blocked_task_id": "task-00146"
+    },
+    {
+      "blocker_task_id": "task-00146",
+      "blocked_task_id": "task-00147"
+    },
+    {
+      "blocker_task_id": "task-00147",
+      "blocked_task_id": "task-00148"
+    },
+    {
+      "blocker_task_id": "task-00148",
+      "blocked_task_id": "task-00149"
+    },
+    {
+      "blocker_task_id": "task-00149",
+      "blocked_task_id": "task-00150"
+    },
+    {
+      "blocker_task_id": "task-00150",
+      "blocked_task_id": "task-00151"
+    },
+    {
+      "blocker_task_id": "task-00151",
+      "blocked_task_id": "task-00152"
+    },
+    {
+      "blocker_task_id": "task-00152",
+      "blocked_task_id": "task-00153"
+    },
+    {
+      "blocker_task_id": "task-00153",
+      "blocked_task_id": "task-00154"
+    },
+    {
+      "blocker_task_id": "task-00154",
+      "blocked_task_id": "task-00155"
+    },
+    {
+      "blocker_task_id": "task-00155",
+      "blocked_task_id": "task-00156"
+    },
+    {
+      "blocker_task_id": "task-00156",
+      "blocked_task_id": "task-00157"
+    },
+    {
+      "blocker_task_id": "task-00157",
+      "blocked_task_id": "task-00158"
+    },
+    {
+      "blocker_task_id": "task-00158",
+      "blocked_task_id": "task-00159"
+    },
+    {
+      "blocker_task_id": "task-00159",
+      "blocked_task_id": "task-00160"
+    },
+    {
+      "blocker_task_id": "task-00160",
+      "blocked_task_id": "task-00161"
+    },
+    {
+      "blocker_task_id": "task-00161",
+      "blocked_task_id": "task-00162"
+    },
+    {
+      "blocker_task_id": "task-00162",
+      "blocked_task_id": "task-00163"
+    },
+    {
+      "blocker_task_id": "task-00163",
+      "blocked_task_id": "task-00164"
+    },
+    {
+      "blocker_task_id": "task-00164",
+      "blocked_task_id": "task-00165"
+    },
+    {
+      "blocker_task_id": "task-00165",
+      "blocked_task_id": "task-00166"
+    },
+    {
+      "blocker_task_id": "task-00166",
+      "blocked_task_id": "task-00167"
+    },
+    {
+      "blocker_task_id": "task-00167",
+      "blocked_task_id": "task-00168"
+    },
+    {
+      "blocker_task_id": "task-00168",
+      "blocked_task_id": "task-00169"
+    },
+    {
+      "blocker_task_id": "task-00169",
+      "blocked_task_id": "task-00170"
+    },
+    {
+      "blocker_task_id": "task-00170",
+      "blocked_task_id": "task-00171"
+    },
+    {
+      "blocker_task_id": "task-00171",
+      "blocked_task_id": "task-00172"
+    },
+    {
+      "blocker_task_id": "task-00172",
+      "blocked_task_id": "task-00173"
+    },
+    {
+      "blocker_task_id": "task-00173",
+      "blocked_task_id": "task-00174"
+    },
+    {
+      "blocker_task_id": "task-00174",
+      "blocked_task_id": "task-00175"
+    },
+    {
+      "blocker_task_id": "task-00175",
+      "blocked_task_id": "task-00176"
+    },
+    {
+      "blocker_task_id": "task-00176",
+      "blocked_task_id": "task-00177"
+    },
+    {
+      "blocker_task_id": "task-00177",
+      "blocked_task_id": "task-00178"
+    },
+    {
+      "blocker_task_id": "task-00178",
+      "blocked_task_id": "task-00179"
+    },
+    {
+      "blocker_task_id": "task-00179",
+      "blocked_task_id": "task-00180"
+    },
+    {
+      "blocker_task_id": "task-00180",
+      "blocked_task_id": "task-00181"
+    },
+    {
+      "blocker_task_id": "task-00181",
+      "blocked_task_id": "task-00182"
+    },
+    {
+      "blocker_task_id": "task-00182",
+      "blocked_task_id": "task-00183"
+    },
+    {
+      "blocker_task_id": "task-00183",
+      "blocked_task_id": "task-00184"
+    },
+    {
+      "blocker_task_id": "task-00184",
+      "blocked_task_id": "task-00185"
+    },
+    {
+      "blocker_task_id": "task-00185",
+      "blocked_task_id": "task-00186"
+    },
+    {
+      "blocker_task_id": "task-00186",
+      "blocked_task_id": "task-00187"
+    },
+    {
+      "blocker_task_id": "task-00187",
+      "blocked_task_id": "task-00188"
+    },
+    {
+      "blocker_task_id": "task-00188",
+      "blocked_task_id": "task-00189"
+    },
+    {
+      "blocker_task_id": "task-00189",
+      "blocked_task_id": "task-00190"
+    },
+    {
+      "blocker_task_id": "task-00190",
+      "blocked_task_id": "task-00191"
+    },
+    {
+      "blocker_task_id": "task-00191",
+      "blocked_task_id": "task-00192"
+    },
+    {
+      "blocker_task_id": "task-00192",
+      "blocked_task_id": "task-00193"
+    },
+    {
+      "blocker_task_id": "task-00193",
+      "blocked_task_id": "task-00194"
+    },
+    {
+      "blocker_task_id": "task-00194",
+      "blocked_task_id": "task-00195"
+    },
+    {
+      "blocker_task_id": "task-00195",
+      "blocked_task_id": "task-00196"
+    },
+    {
+      "blocker_task_id": "task-00196",
+      "blocked_task_id": "task-00197"
+    },
+    {
+      "blocker_task_id": "task-00197",
+      "blocked_task_id": "task-00198"
+    },
+    {
+      "blocker_task_id": "task-00198",
+      "blocked_task_id": "task-00199"
+    }
+  ],
+  "today": "2026-06-16"
+}
