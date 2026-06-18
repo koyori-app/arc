@@ -1,6 +1,7 @@
 //! Synthetic Gantt fixtures for render-pipeline benchmarks.
 //!
 //! Scales: 100 / 500 / 2000 / 5000 tasks × sparse / dense dependency graphs.
+//! Micro-bench crossover series: 50 / 200 / 500 / 1000 / 2000 / 5000 (cmd_284).
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
@@ -31,6 +32,13 @@ impl TaskCount {
             TaskCount::N5000 => "5000",
         }
     }
+}
+
+/// Task counts for Phase 2 canvas-vs-SVG crossover micro-bench (cmd_284).
+pub const MICRO_BENCH_COUNTS: [usize; 6] = [50, 200, 500, 1000, 2000, 5000];
+
+pub fn micro_fixture_id(count: usize, density: DepDensity) -> String {
+    format!("{count}_{}", density.label())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -132,7 +140,11 @@ pub fn generate_deps(tasks: &[GanttTask], density: DepDensity) -> Vec<GanttDep> 
 }
 
 pub fn generate_fixture(count: TaskCount, density: DepDensity) -> BenchFixture {
-    let tasks = generate_tasks(count.get());
+    generate_fixture_n(count.get(), density)
+}
+
+pub fn generate_fixture_n(count: usize, density: DepDensity) -> BenchFixture {
+    let tasks = generate_tasks(count);
     let deps = generate_deps(&tasks, density);
     BenchFixture { tasks, deps, today: today().format("%Y-%m-%d").to_string() }
 }
@@ -159,5 +171,14 @@ mod tests {
         let dense = generate_dense_deps(&tasks);
         assert!(dense.len() > sparse.len());
         assert!(dense.len() > 1000);
+    }
+
+    #[test]
+    fn micro_bench_series_counts() {
+        assert_eq!(MICRO_BENCH_COUNTS, [50, 200, 500, 1000, 2000, 5000]);
+        for &n in &MICRO_BENCH_COUNTS {
+            let fx = generate_fixture_n(n, DepDensity::Sparse);
+            assert_eq!(fx.tasks.len(), n);
+        }
     }
 }

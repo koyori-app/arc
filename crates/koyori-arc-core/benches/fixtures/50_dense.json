@@ -1,0 +1,1313 @@
+{
+  "tasks": [
+    {
+      "id": "task-00000",
+      "title": "Task 0",
+      "progress_pct": 0,
+      "start": "2026-01-01",
+      "end": "2026-01-04"
+    },
+    {
+      "id": "task-00001",
+      "title": "Task 1",
+      "progress_pct": 37,
+      "start": "2026-01-02",
+      "end": "2026-01-06"
+    },
+    {
+      "id": "task-00002",
+      "title": "Task 2",
+      "progress_pct": 74,
+      "start": "2026-01-03",
+      "end": "2026-01-08"
+    },
+    {
+      "id": "task-00003",
+      "title": "Task 3",
+      "progress_pct": 10,
+      "start": "2026-01-04",
+      "end": "2026-01-10"
+    },
+    {
+      "id": "task-00004",
+      "title": "Task 4",
+      "progress_pct": 47,
+      "start": "2026-01-05",
+      "end": "2026-01-12"
+    },
+    {
+      "id": "task-00005",
+      "title": "Task 5",
+      "progress_pct": 84,
+      "start": "2026-01-06",
+      "end": "2026-01-14"
+    },
+    {
+      "id": "task-00006",
+      "title": "Task 6",
+      "progress_pct": 20,
+      "start": "2026-01-07",
+      "end": "2026-01-16"
+    },
+    {
+      "id": "task-00007",
+      "title": "Task 7",
+      "progress_pct": 57,
+      "start": "2026-01-08",
+      "end": "2026-01-11"
+    },
+    {
+      "id": "task-00008",
+      "title": "Task 8",
+      "progress_pct": 94,
+      "start": "2026-01-09",
+      "end": "2026-01-13"
+    },
+    {
+      "id": "task-00009",
+      "title": "Task 9",
+      "progress_pct": 30,
+      "start": "2026-01-10",
+      "end": "2026-01-15"
+    },
+    {
+      "id": "task-00010",
+      "title": "Task 10",
+      "progress_pct": 67,
+      "start": "2026-01-11",
+      "end": "2026-01-17"
+    },
+    {
+      "id": "task-00011",
+      "title": "Task 11",
+      "progress_pct": 3,
+      "start": "2026-01-12",
+      "end": "2026-01-19"
+    },
+    {
+      "id": "task-00012",
+      "title": "Task 12",
+      "progress_pct": 40,
+      "start": "2026-01-13",
+      "end": "2026-01-21"
+    },
+    {
+      "id": "task-00013",
+      "title": "Task 13",
+      "progress_pct": 77,
+      "start": "2026-01-14",
+      "end": "2026-01-23"
+    },
+    {
+      "id": "task-00014",
+      "title": "Task 14",
+      "progress_pct": 13,
+      "start": "2026-01-15",
+      "end": "2026-01-18"
+    },
+    {
+      "id": "task-00015",
+      "title": "Task 15",
+      "progress_pct": 50,
+      "start": "2026-01-16",
+      "end": "2026-01-20"
+    },
+    {
+      "id": "task-00016",
+      "title": "Task 16",
+      "progress_pct": 87,
+      "start": "2026-01-17",
+      "end": "2026-01-22"
+    },
+    {
+      "id": "task-00017",
+      "title": "Task 17",
+      "progress_pct": 23,
+      "start": "2026-01-18",
+      "end": "2026-01-24"
+    },
+    {
+      "id": "task-00018",
+      "title": "Task 18",
+      "progress_pct": 60,
+      "start": "2026-01-19",
+      "end": "2026-01-26"
+    },
+    {
+      "id": "task-00019",
+      "title": "Task 19",
+      "progress_pct": 97,
+      "start": "2026-01-20",
+      "end": "2026-01-28"
+    },
+    {
+      "id": "task-00020",
+      "title": "Task 20",
+      "progress_pct": 33,
+      "start": "2026-01-21",
+      "end": "2026-01-30"
+    },
+    {
+      "id": "task-00021",
+      "title": "Task 21",
+      "progress_pct": 70,
+      "start": "2026-01-22",
+      "end": "2026-01-25"
+    },
+    {
+      "id": "task-00022",
+      "title": "Task 22",
+      "progress_pct": 6,
+      "start": "2026-01-23",
+      "end": "2026-01-27"
+    },
+    {
+      "id": "task-00023",
+      "title": "Task 23",
+      "progress_pct": 43,
+      "start": "2026-01-24",
+      "end": "2026-01-29"
+    },
+    {
+      "id": "task-00024",
+      "title": "Task 24",
+      "progress_pct": 80,
+      "start": "2026-01-25",
+      "end": "2026-01-31"
+    },
+    {
+      "id": "task-00025",
+      "title": "Task 25",
+      "progress_pct": 16,
+      "start": "2026-01-26",
+      "end": "2026-02-02"
+    },
+    {
+      "id": "task-00026",
+      "title": "Task 26",
+      "progress_pct": 53,
+      "start": "2026-01-27",
+      "end": "2026-02-04"
+    },
+    {
+      "id": "task-00027",
+      "title": "Task 27",
+      "progress_pct": 90,
+      "start": "2026-01-28",
+      "end": "2026-02-06"
+    },
+    {
+      "id": "task-00028",
+      "title": "Task 28",
+      "progress_pct": 26,
+      "start": "2026-01-29",
+      "end": "2026-02-01"
+    },
+    {
+      "id": "task-00029",
+      "title": "Task 29",
+      "progress_pct": 63,
+      "start": "2026-01-30",
+      "end": "2026-02-03"
+    },
+    {
+      "id": "task-00030",
+      "title": "Task 30",
+      "progress_pct": 100,
+      "start": "2026-01-31",
+      "end": "2026-02-05"
+    },
+    {
+      "id": "task-00031",
+      "title": "Task 31",
+      "progress_pct": 36,
+      "start": "2026-02-01",
+      "end": "2026-02-07"
+    },
+    {
+      "id": "task-00032",
+      "title": "Task 32",
+      "progress_pct": 73,
+      "start": "2026-02-02",
+      "end": "2026-02-09"
+    },
+    {
+      "id": "task-00033",
+      "title": "Task 33",
+      "progress_pct": 9,
+      "start": "2026-02-03",
+      "end": "2026-02-11"
+    },
+    {
+      "id": "task-00034",
+      "title": "Task 34",
+      "progress_pct": 46,
+      "start": "2026-02-04",
+      "end": "2026-02-13"
+    },
+    {
+      "id": "task-00035",
+      "title": "Task 35",
+      "progress_pct": 83,
+      "start": "2026-02-05",
+      "end": "2026-02-08"
+    },
+    {
+      "id": "task-00036",
+      "title": "Task 36",
+      "progress_pct": 19,
+      "start": "2026-02-06",
+      "end": "2026-02-10"
+    },
+    {
+      "id": "task-00037",
+      "title": "Task 37",
+      "progress_pct": 56,
+      "start": "2026-02-07",
+      "end": "2026-02-12"
+    },
+    {
+      "id": "task-00038",
+      "title": "Task 38",
+      "progress_pct": 93,
+      "start": "2026-02-08",
+      "end": "2026-02-14"
+    },
+    {
+      "id": "task-00039",
+      "title": "Task 39",
+      "progress_pct": 29,
+      "start": "2026-02-09",
+      "end": "2026-02-16"
+    },
+    {
+      "id": "task-00040",
+      "title": "Task 40",
+      "progress_pct": 66,
+      "start": "2026-02-10",
+      "end": "2026-02-18"
+    },
+    {
+      "id": "task-00041",
+      "title": "Task 41",
+      "progress_pct": 2,
+      "start": "2026-02-11",
+      "end": "2026-02-20"
+    },
+    {
+      "id": "task-00042",
+      "title": "Task 42",
+      "progress_pct": 39,
+      "start": "2026-02-12",
+      "end": "2026-02-15"
+    },
+    {
+      "id": "task-00043",
+      "title": "Task 43",
+      "progress_pct": 76,
+      "start": "2026-02-13",
+      "end": "2026-02-17"
+    },
+    {
+      "id": "task-00044",
+      "title": "Task 44",
+      "progress_pct": 12,
+      "start": "2026-02-14",
+      "end": "2026-02-19"
+    },
+    {
+      "id": "task-00045",
+      "title": "Task 45",
+      "progress_pct": 49,
+      "start": "2026-02-15",
+      "end": "2026-02-21"
+    },
+    {
+      "id": "task-00046",
+      "title": "Task 46",
+      "progress_pct": 86,
+      "start": "2026-02-16",
+      "end": "2026-02-23"
+    },
+    {
+      "id": "task-00047",
+      "title": "Task 47",
+      "progress_pct": 22,
+      "start": "2026-02-17",
+      "end": "2026-02-25"
+    },
+    {
+      "id": "task-00048",
+      "title": "Task 48",
+      "progress_pct": 59,
+      "start": "2026-02-18",
+      "end": "2026-02-27"
+    },
+    {
+      "id": "task-00049",
+      "title": "Task 49",
+      "progress_pct": 96,
+      "start": "2026-02-19",
+      "end": "2026-02-22"
+    }
+  ],
+  "deps": [
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00001"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00002"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00002"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00003"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00003"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00003"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00004"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00004"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00004"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00004"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00005"
+    },
+    {
+      "blocker_task_id": "task-00001",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00006"
+    },
+    {
+      "blocker_task_id": "task-00002",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00007"
+    },
+    {
+      "blocker_task_id": "task-00003",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00008"
+    },
+    {
+      "blocker_task_id": "task-00004",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00009"
+    },
+    {
+      "blocker_task_id": "task-00005",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00010"
+    },
+    {
+      "blocker_task_id": "task-00006",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00011"
+    },
+    {
+      "blocker_task_id": "task-00007",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00012"
+    },
+    {
+      "blocker_task_id": "task-00008",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00013"
+    },
+    {
+      "blocker_task_id": "task-00009",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00014"
+    },
+    {
+      "blocker_task_id": "task-00010",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00015"
+    },
+    {
+      "blocker_task_id": "task-00011",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00016"
+    },
+    {
+      "blocker_task_id": "task-00012",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00017"
+    },
+    {
+      "blocker_task_id": "task-00013",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00018"
+    },
+    {
+      "blocker_task_id": "task-00014",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00019"
+    },
+    {
+      "blocker_task_id": "task-00015",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00020"
+    },
+    {
+      "blocker_task_id": "task-00016",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00021"
+    },
+    {
+      "blocker_task_id": "task-00017",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00022"
+    },
+    {
+      "blocker_task_id": "task-00018",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00023"
+    },
+    {
+      "blocker_task_id": "task-00019",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00024"
+    },
+    {
+      "blocker_task_id": "task-00020",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00025"
+    },
+    {
+      "blocker_task_id": "task-00021",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00026"
+    },
+    {
+      "blocker_task_id": "task-00022",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00027"
+    },
+    {
+      "blocker_task_id": "task-00023",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00028"
+    },
+    {
+      "blocker_task_id": "task-00024",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00029"
+    },
+    {
+      "blocker_task_id": "task-00025",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00030"
+    },
+    {
+      "blocker_task_id": "task-00026",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00031"
+    },
+    {
+      "blocker_task_id": "task-00027",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00032"
+    },
+    {
+      "blocker_task_id": "task-00028",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00033"
+    },
+    {
+      "blocker_task_id": "task-00029",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00034"
+    },
+    {
+      "blocker_task_id": "task-00030",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00035"
+    },
+    {
+      "blocker_task_id": "task-00031",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00036"
+    },
+    {
+      "blocker_task_id": "task-00032",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00037"
+    },
+    {
+      "blocker_task_id": "task-00033",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00038"
+    },
+    {
+      "blocker_task_id": "task-00034",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00039"
+    },
+    {
+      "blocker_task_id": "task-00035",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00000",
+      "blocked_task_id": "task-00040"
+    },
+    {
+      "blocker_task_id": "task-00036",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00041"
+    },
+    {
+      "blocker_task_id": "task-00037",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00042"
+    },
+    {
+      "blocker_task_id": "task-00038",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00043"
+    },
+    {
+      "blocker_task_id": "task-00039",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00044"
+    },
+    {
+      "blocker_task_id": "task-00040",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00045"
+    },
+    {
+      "blocker_task_id": "task-00041",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00045",
+      "blocked_task_id": "task-00046"
+    },
+    {
+      "blocker_task_id": "task-00042",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00045",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00046",
+      "blocked_task_id": "task-00047"
+    },
+    {
+      "blocker_task_id": "task-00043",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00045",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00046",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00047",
+      "blocked_task_id": "task-00048"
+    },
+    {
+      "blocker_task_id": "task-00044",
+      "blocked_task_id": "task-00049"
+    },
+    {
+      "blocker_task_id": "task-00045",
+      "blocked_task_id": "task-00049"
+    },
+    {
+      "blocker_task_id": "task-00046",
+      "blocked_task_id": "task-00049"
+    },
+    {
+      "blocker_task_id": "task-00047",
+      "blocked_task_id": "task-00049"
+    },
+    {
+      "blocker_task_id": "task-00048",
+      "blocked_task_id": "task-00049"
+    }
+  ],
+  "today": "2026-06-16"
+}

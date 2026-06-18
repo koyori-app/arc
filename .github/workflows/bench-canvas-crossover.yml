@@ -1,0 +1,68 @@
+name: Bench Canvas Crossover
+
+# Manual-only: Phase 2 SVG vs canvas crossover micro-bench (cmd_284).
+on:
+  workflow_dispatch:
+    inputs:
+      dom_throttle:
+        description: 'CPU throttle rate for L3 (4 = lower-end approx)'
+        required: false
+        default: '1'
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install --locked wasm-pack
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install chromium --with-deps
+
+      - name: Run canvas crossover bench
+        run: |
+          THROTTLE="${{ github.event.inputs.dom_throttle }}"
+          if [[ -n "$THROTTLE" && "$THROTTLE" != "1" ]]; then
+            bash scripts/run-canvas-crossover-bench.sh --dom-throttle "$THROTTLE"
+          else
+            bash scripts/run-canvas-crossover-bench.sh
+          fi
+
+      - name: Verify L2 canvas gate
+        run: |
+          node -e "
+          const fs = require('fs');
+          const gates = JSON.parse(fs.readFileSync('benches/results/canvas-crossover-gates.json', 'utf8'));
+          const l2 = gates.gates.find((g) => g.id === 'L2_canvas');
+          if (!l2 || !l2.pass) {
+            console.error('L2_canvas gate failed:', l2);
+            process.exit(1);
+          }
+          if (!gates.all_pass) {
+            console.error('canvas-crossover-gates.json all_pass is false');
+            process.exit(1);
+          }
+          "
+
+      - name: Upload bench artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-crossover-results
+          path: |
+            benches/results/canvas-vs-svg-crossover-report.md
+            benches/results/canvas-vs-svg-crossover.json
+            benches/results/canvas-crossover-gates.json
