@@ -13,18 +13,21 @@ jobs:
   bench:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
       - name: Install wasm-pack
-        run: cargo install --locked wasm-pack
+        uses: taiki-e/install-action@wasm-pack
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
