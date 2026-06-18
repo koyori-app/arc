@@ -9,7 +9,7 @@ jobs:
   chromatic:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -18,19 +18,22 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
       - name: Install wasm-pack
-        run: cargo install --locked wasm-pack
+        uses: taiki-e/install-action@wasm-pack
 
       - name: Build npm package (pkg/ を生成)
         run: bash scripts/build-npm.sh
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
