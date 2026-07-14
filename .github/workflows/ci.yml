@@ -81,3 +81,7 @@ jobs:
       - name: Build
         run: pnpm build
         working-directory: packages/arc-vue
+
+      - name: Test
+        run: pnpm test
+        working-directory: packages/arc-vue
