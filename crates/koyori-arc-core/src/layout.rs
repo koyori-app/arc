@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::graph::{GanttDep, GanttTask};
 
@@ -17,24 +17,17 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
     }
 
     let n = tasks.len();
-    let id_to_idx: Vec<(&str, usize)> = tasks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| (t.id.as_str(), i))
-        .collect();
+    let mut id_to_idx = HashMap::with_capacity(n);
+    for (i, t) in tasks.iter().enumerate() {
+        id_to_idx.entry(t.id.as_str()).or_insert(i);
+    }
 
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut seen_edges = HashSet::new();
 
     for dep in deps {
-        let blocker_idx = id_to_idx
-            .iter()
-            .find(|(id, _)| *id == dep.blocker_task_id.as_str())
-            .map(|(_, i)| *i);
-        let blocked_idx = id_to_idx
-            .iter()
-            .find(|(id, _)| *id == dep.blocked_task_id.as_str())
-            .map(|(_, i)| *i);
+        let blocker_idx = id_to_idx.get(dep.blocker_task_id.as_str()).copied();
+        let blocked_idx = id_to_idx.get(dep.blocked_task_id.as_str()).copied();
 
         let (blocker_idx, blocked_idx) = match (blocker_idx, blocked_idx) {
             (Some(b), Some(d)) if b != d => (b, d),
@@ -104,31 +97,33 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
         }
     }
 
-    fn try_emit_dependent_sccs(
-        scc: usize,
+    fn drain_dependent_sccs(
+        start_scc: usize,
         scc_adj: &[Vec<usize>],
         scc_rev_adj: &[Vec<usize>],
         scc_members: &[Vec<usize>],
         emitted_scc: &mut HashSet<usize>,
         cluster_order: &mut Vec<usize>,
     ) {
-        for &next in &scc_adj[scc] {
-            if emitted_scc.contains(&next) {
-                continue;
-            }
-            let all_blockers_emitted = scc_rev_adj[next]
-                .iter()
-                .all(|pred| emitted_scc.contains(pred));
-            if all_blockers_emitted {
+        let mut stack = vec![(start_scc, 0usize)];
+
+        while let Some((scc, mut i)) = stack.pop() {
+            while i < scc_adj[scc].len() {
+                let next = scc_adj[scc][i];
+                i += 1;
+                if emitted_scc.contains(&next) {
+                    continue;
+                }
+                let all_blockers_emitted = scc_rev_adj[next]
+                    .iter()
+                    .all(|pred| emitted_scc.contains(pred));
+                if !all_blockers_emitted {
+                    continue;
+                }
                 emit_scc(next, scc_members, emitted_scc, cluster_order);
-                try_emit_dependent_sccs(
-                    next,
-                    scc_adj,
-                    scc_rev_adj,
-                    scc_members,
-                    emitted_scc,
-                    cluster_order,
-                );
+                stack.push((scc, i));
+                stack.push((next, 0));
+                break;
             }
         }
     }
@@ -143,7 +138,7 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
             continue;
         }
         emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
-        try_emit_dependent_sccs(
+        drain_dependent_sccs(
             scc,
             &scc_adj,
             &scc_rev_adj,
@@ -156,7 +151,7 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
     for scc in 0..scc_count {
         if !emitted_scc.contains(&scc) {
             emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
-            try_emit_dependent_sccs(
+            drain_dependent_sccs(
                 scc,
                 &scc_adj,
                 &scc_rev_adj,
@@ -402,5 +397,51 @@ mod tests {
         assert!(row_of(&first, "t1") < row_of(&first, "t2"));
         assert!(row_of(&first, "t1") < row_of(&first, "t3"));
         assert!(row_of(&first, "t2") < row_of(&first, "t4"));
+    }
+
+    #[test]
+    fn long_chain_does_not_stack_overflow_and_preserves_topo_order() {
+        const N: usize = 10_000;
+        let tasks: Vec<GanttTask> = (0..N).map(|i| task(&format!("t{i}"))).collect();
+        let deps: Vec<GanttDep> = (0..N - 1)
+            .map(|i| dep(&format!("t{i}"), &format!("t{}", i + 1)))
+            .collect();
+
+        let rows = assign_rows(&tasks, &deps);
+        assert_input_order_preserved(&rows, &tasks);
+        for i in 0..N - 1 {
+            assert!(
+                row_of(&rows, &format!("t{i}")) < row_of(&rows, &format!("t{}", i + 1)),
+                "chain must stay topologically ordered at link {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn dense_5000_completes_within_linear_id_lookup_budget() {
+        use crate::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
+
+        let fixture = generate_fixture(TaskCount::N5000, DepDensity::Dense);
+        let started = std::time::Instant::now();
+        let rows = assign_rows(&fixture.tasks, &fixture.deps);
+        let elapsed = started.elapsed();
+
+        assert_input_order_preserved(&rows, &fixture.tasks);
+        assert!(
+            elapsed.as_millis() < 2_000,
+            "5000_dense assign_rows took {:?}; linear id scans would be far slower",
+            elapsed
+        );
+        assert!(row_of(&rows, "task-00000") < row_of(&rows, "task-04999"));
+        assert!(row_of(&rows, "task-01234") < row_of(&rows, "task-04567"));
+    }
+
+    #[test]
+    fn duplicate_task_ids_resolve_to_first_occurrence() {
+        let tasks = vec![task("dup"), task("other"), task("dup")];
+        let deps = vec![dep("dup", "other")];
+        let rows = assign_rows(&tasks, &deps);
+        assert_input_order_preserved(&rows, &tasks);
+        assert!(row_of(&rows, "dup") < row_of(&rows, "other"));
     }
 }
