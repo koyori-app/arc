@@ -53,7 +53,7 @@ pub fn build_display_list(
     today: Option<NaiveDate>,
     scroll_viewport: Option<ScrollViewport>,
 ) -> DisplayList {
-    let rows = assign_rows(&graph.tasks);
+    let rows = assign_rows(&graph.tasks, &graph.deps);
 
     let total_days = graph
         .tasks
