@@ -60,7 +60,6 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
     let mut scc_adj: Vec<Vec<usize>> = vec![Vec::new(); scc_count];
     let mut scc_indegree = vec![0usize; scc_count];
     let mut scc_edges = HashSet::new();
-    let mut scc_rev_adj: Vec<Vec<usize>> = vec![Vec::new(); scc_count];
 
     for u in 0..n {
         for &v in &adj[u] {
@@ -68,24 +67,24 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
             let cv = component[v];
             if cu != cv && scc_edges.insert((cu, cv)) {
                 scc_adj[cu].push(cv);
-                scc_rev_adj[cv].push(cu);
                 scc_indegree[cv] += 1;
             }
         }
     }
 
-    for adj_list in &mut [scc_adj.as_mut_slice(), scc_rev_adj.as_mut_slice()] {
-        for neighbors in adj_list.iter_mut() {
-            neighbors.sort_unstable_by_key(|&scc| scc_min_index[scc]);
-        }
+    for neighbors in scc_adj.iter_mut() {
+        neighbors.sort_unstable_by_key(|&scc| scc_min_index[scc]);
     }
 
+    let mut remaining_indegree = scc_indegree.clone();
     let mut emitted_scc = HashSet::new();
     let mut cluster_order = Vec::with_capacity(n);
 
     fn emit_scc(
         scc: usize,
         scc_members: &[Vec<usize>],
+        scc_adj: &[Vec<usize>],
+        remaining_indegree: &mut [usize],
         emitted_scc: &mut HashSet<usize>,
         cluster_order: &mut Vec<usize>,
     ) {
@@ -95,13 +94,16 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
         for &idx in &scc_members[scc] {
             cluster_order.push(idx);
         }
+        for &next in &scc_adj[scc] {
+            remaining_indegree[next] -= 1;
+        }
     }
 
     fn drain_dependent_sccs(
         start_scc: usize,
         scc_adj: &[Vec<usize>],
-        scc_rev_adj: &[Vec<usize>],
         scc_members: &[Vec<usize>],
+        remaining_indegree: &mut [usize],
         emitted_scc: &mut HashSet<usize>,
         cluster_order: &mut Vec<usize>,
     ) {
@@ -114,13 +116,17 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
                 if emitted_scc.contains(&next) {
                     continue;
                 }
-                let all_blockers_emitted = scc_rev_adj[next]
-                    .iter()
-                    .all(|pred| emitted_scc.contains(pred));
-                if !all_blockers_emitted {
+                if remaining_indegree[next] != 0 {
                     continue;
                 }
-                emit_scc(next, scc_members, emitted_scc, cluster_order);
+                emit_scc(
+                    next,
+                    scc_members,
+                    scc_adj,
+                    remaining_indegree,
+                    emitted_scc,
+                    cluster_order,
+                );
                 stack.push((scc, i));
                 stack.push((next, 0));
                 break;
@@ -137,12 +143,19 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
         if emitted_scc.contains(&scc) {
             continue;
         }
-        emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
+        emit_scc(
+            scc,
+            &scc_members,
+            &scc_adj,
+            &mut remaining_indegree,
+            &mut emitted_scc,
+            &mut cluster_order,
+        );
         drain_dependent_sccs(
             scc,
             &scc_adj,
-            &scc_rev_adj,
             &scc_members,
+            &mut remaining_indegree,
             &mut emitted_scc,
             &mut cluster_order,
         );
@@ -150,12 +163,19 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
 
     for scc in 0..scc_count {
         if !emitted_scc.contains(&scc) {
-            emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
+            emit_scc(
+                scc,
+                &scc_members,
+                &scc_adj,
+                &mut remaining_indegree,
+                &mut emitted_scc,
+                &mut cluster_order,
+            );
             drain_dependent_sccs(
                 scc,
                 &scc_adj,
-                &scc_rev_adj,
                 &scc_members,
+                &mut remaining_indegree,
                 &mut emitted_scc,
                 &mut cluster_order,
             );
@@ -434,6 +454,34 @@ mod tests {
         );
         assert!(row_of(&rows, "task-00000") < row_of(&rows, "task-04999"));
         assert!(row_of(&rows, "task-01234") < row_of(&rows, "task-04567"));
+    }
+
+    #[test]
+    fn join_many_blockers_single_sink_is_linear_and_topo_ordered() {
+        const K: usize = 2_000;
+        let tasks: Vec<GanttTask> = std::iter::once(task("sink"))
+            .chain((0..K).map(|i| task(&format!("b{i}"))))
+            .collect();
+        let deps: Vec<GanttDep> = (0..K)
+            .map(|i| dep(&format!("b{i}"), "sink"))
+            .collect();
+
+        let started = std::time::Instant::now();
+        let rows = assign_rows(&tasks, &deps);
+        let elapsed = started.elapsed();
+
+        assert_input_order_preserved(&rows, &tasks);
+        for i in 0..K {
+            assert!(
+                row_of(&rows, &format!("b{i}")) < row_of(&rows, "sink"),
+                "blocker b{i} must be above sink"
+            );
+        }
+        assert!(
+            elapsed.as_millis() < 500,
+            "join fixture took {:?}; predecessor scans would be quadratic",
+            elapsed
+        );
     }
 
     #[test]
