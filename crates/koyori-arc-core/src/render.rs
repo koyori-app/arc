@@ -16,6 +16,10 @@ pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
 /// rejecting larger buffers avoids browser-specific blank canvases/context loss.
 pub const MAX_CANVAS_SIDE_PX: usize = 16_384;
+/// Keep the RGBA backing store near 128 MiB even when both dimensions are
+/// individually supported. This leaves headroom for browser/GPU copies and
+/// avoids a 16,384 x 16,384 canvas allocating roughly 1 GiB per buffer.
+pub const MAX_CANVAS_AREA_PX: usize = 32 * 1024 * 1024;
 const CHART_RIGHT_PADDING_PX: f64 = 20.0;
 const CHART_BOTTOM_PADDING_PX: f64 = 10.0;
 pub const MAX_CANVAS_ROWS: usize = ((MAX_CANVAS_SIDE_PX as f64
@@ -77,6 +81,18 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<St
     if rendered_date_span_days(tasks) > MAX_CANVAS_DATE_SPAN_DAYS {
         return Some(format!(
             "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+        ));
+    }
+    let width_px = rendered_date_span_days(tasks) as f64 * PX_PER_DAY
+        + LABEL_W
+        + CHART_RIGHT_PADDING_PX;
+    let height_px = tasks.len() as f64 * ROW_H
+        + HEADER_H
+        + LEGEND_H
+        + CHART_BOTTOM_PADDING_PX;
+    if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
+        return Some(format!(
+            "canvas area exceeds limit ({MAX_CANVAS_AREA_PX} pixels)"
         ));
     }
     None
@@ -483,6 +499,30 @@ mod tests {
 
         let svg = render_svg(&rejected_tasks_json, "[]", None, None);
         assert_ne!(svg, crate::backend::svg::empty_svg());
+    }
+
+    #[test]
+    fn canvas_rejects_near_maximum_sides_when_area_is_too_large() {
+        let tasks = canvas_tasks(MAX_CANVAS_ROWS, MAX_CANVAS_DATE_SPAN_DAYS);
+        let width_px = MAX_CANVAS_DATE_SPAN_DAYS as f64 * PX_PER_DAY
+            + LABEL_W
+            + CHART_RIGHT_PADDING_PX;
+        let height_px = MAX_CANVAS_ROWS as f64 * ROW_H
+            + HEADER_H
+            + LEGEND_H
+            + CHART_BOTTOM_PADDING_PX;
+        assert!(width_px <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(height_px <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(width_px * height_px > 267_000_000.0);
+
+        let json = render_canvas_commands(
+            &serde_json::to_string(&tasks).unwrap(),
+            "[]",
+            None,
+            None,
+        );
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["error"].as_str().unwrap().contains("canvas area"));
     }
 
     #[test]
