@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { formatGateActual } from './canvas-crossover-gate-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -19,6 +20,26 @@ function cpuInfo() {
   }
 }
 
+function resolveL2GateSummary(bench, gatesReport) {
+  const gateFromGates = gatesReport.gates?.find((g) => g.id === 'L2_canvas');
+  const benchGate = bench.l2_canvas_gate;
+
+  const fixture = gatesReport.gate_fixture ?? benchGate?.fixture ?? '2000_dense';
+  const tolerance = gatesReport.l2_tolerance ?? benchGate?.tolerance ?? 'n/a';
+  const pass = gateFromGates?.pass ?? benchGate?.pass ?? false;
+  const actual =
+    gateFromGates?.actual ??
+    (benchGate
+      ? formatGateActual({
+          pass: benchGate.pass,
+          canvasL2: benchGate.canvas_l2_p50_ms ?? null,
+          svgL2: benchGate.svg_l2_p50_ms ?? null,
+        })
+      : 'n/a');
+
+  return { fixture, tolerance, pass, actual };
+}
+
 function main() {
   const bench = JSON.parse(
     readFileSync(join(resultsDir, 'canvas-vs-svg-crossover.json'), 'utf8'),
@@ -26,6 +47,8 @@ function main() {
   const gates = JSON.parse(
     readFileSync(join(resultsDir, 'canvas-crossover-gates.json'), 'utf8'),
   );
+
+  const l2Gate = resolveL2GateSummary(bench, gates);
 
   const md = [];
   md.push('# Canvas vs SVG Crossover Micro-Bench (cmd_284)');
@@ -35,7 +58,9 @@ function main() {
   md.push(`- **Engine**: ${bench.engine}`);
   md.push(`- **DOM throttle**: ${bench.dom_throttle}x`);
   md.push(`- **N series**: ${bench.micro_counts.join(', ')}`);
-  md.push(`- **L2 gate**: canvas p50 < ${bench.l2_canvas_gate_ms} ms → **${bench.l2_canvas_gate_pass ? 'PASS' : 'FAIL'}** (max=${bench.max_canvas_l2_p50_ms} ms)`);
+  md.push(
+    `- **L2 gate**: canvas L2 p50 ≤ svg L2 p50 × ${l2Gate.tolerance} @ ${l2Gate.fixture} → **${l2Gate.pass ? 'PASS' : 'FAIL'}** (${l2Gate.actual})`,
+  );
   md.push('');
 
   md.push('## Crossover N (L2+L3 total p50)');

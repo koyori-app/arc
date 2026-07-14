@@ -13,15 +13,16 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  evaluateGateFromL2Rows,
+  formatGateActual,
+  GATE_FIXTURE,
+  L2_TOLERANCE,
+} from './canvas-crossover-gate-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const resultsDir = join(root, 'benches/results');
-
-// canvas L2 p50 must be ≤ svg L2 p50 × this factor. 15% headroom absorbs
-// measurement noise on shared CI runners while still catching a real regression.
-const L2_TOLERANCE = 1.15;
-const GATE_FIXTURE = '2000_dense';
 
 function main() {
   const bench = JSON.parse(
@@ -30,17 +31,18 @@ function main() {
   const gates = [];
   let failed = false;
 
-  const gateRow = bench.l2?.find((r) => r.fixture === GATE_FIXTURE);
-  const canvasL2 = gateRow?.canvas_l2_p50_ms ?? bench.max_canvas_l2_p50_ms;
-  const svgL2 = gateRow?.svg_l2_p50_ms;
-  // If svg baseline is missing we cannot make a relative claim — pass (informational).
-  const l2Pass = svgL2 != null ? canvasL2 <= svgL2 * L2_TOLERANCE : true;
+  const gateEval = evaluateGateFromL2Rows(bench.l2, {
+    fixture: GATE_FIXTURE,
+    tolerance: L2_TOLERANCE,
+  });
+  const l2Pass = gateEval.pass;
   gates.push({
     id: 'L2_canvas',
     fixture: GATE_FIXTURE,
     condition: `canvas L2 p50 ≤ svg L2 p50 × ${L2_TOLERANCE} @ ${GATE_FIXTURE}`,
-    actual: `canvas ${canvasL2} ms vs svg ${svgL2 ?? 'n/a'} ms`,
+    actual: formatGateActual(gateEval),
     pass: l2Pass,
+    ...(gateEval.reason ? { note: gateEval.reason } : {}),
   });
   gates.push({
     id: 'L2_canvas_max_series',
