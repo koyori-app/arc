@@ -1,3 +1,5 @@
 packages:
   - 'packages/*'
-  - 'crates/koyori-arc-core/pkg'  # wasm-pack 出力。build-npm.sh 実行後に有効
+  - 'crates/koyori-arc-core/pkg' # wasm-pack 出力。build-npm.sh 実行後に有効
+allowBuilds:
+  esbuild: true
