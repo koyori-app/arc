@@ -240,6 +240,147 @@ fn p4_ir_contains_no_dom_concepts() {
     }
 }
 
+// --- Topological row assignment integration (build.rs) ---
+
+fn reversed_two_task_graph() -> GanttGraph {
+    GanttGraph {
+        tasks: vec![
+            GanttTask {
+                id: "task-2".to_string(),
+                title: "Build".to_string(),
+                progress_pct: 50,
+                start: date(2026, 6, 4),
+                end: Some(date(2026, 6, 8)),
+            },
+            GanttTask {
+                id: "task-1".to_string(),
+                title: "Design".to_string(),
+                progress_pct: 100,
+                start: date(2026, 6, 1),
+                end: Some(date(2026, 6, 4)),
+            },
+        ],
+        deps: vec![GanttDep {
+            blocker_task_id: "task-1".to_string(),
+            blocked_task_id: "task-2".to_string(),
+        }],
+    }
+}
+
+fn cycle_downstream_graph() -> GanttGraph {
+    GanttGraph {
+        tasks: vec![
+            GanttTask {
+                id: "d".to_string(),
+                title: "Downstream".to_string(),
+                progress_pct: 0,
+                start: date(2026, 6, 10),
+                end: Some(date(2026, 6, 12)),
+            },
+            GanttTask {
+                id: "a".to_string(),
+                title: "Cycle A".to_string(),
+                progress_pct: 0,
+                start: date(2026, 6, 1),
+                end: Some(date(2026, 6, 3)),
+            },
+            GanttTask {
+                id: "b".to_string(),
+                title: "Cycle B".to_string(),
+                progress_pct: 0,
+                start: date(2026, 6, 4),
+                end: Some(date(2026, 6, 6)),
+            },
+            GanttTask {
+                id: "c".to_string(),
+                title: "Cycle C".to_string(),
+                progress_pct: 0,
+                start: date(2026, 6, 7),
+                end: Some(date(2026, 6, 9)),
+            },
+        ],
+        deps: vec![
+            GanttDep {
+                blocker_task_id: "a".to_string(),
+                blocked_task_id: "b".to_string(),
+            },
+            GanttDep {
+                blocker_task_id: "b".to_string(),
+                blocked_task_id: "c".to_string(),
+            },
+            GanttDep {
+                blocker_task_id: "c".to_string(),
+                blocked_task_id: "a".to_string(),
+            },
+            GanttDep {
+                blocker_task_id: "b".to_string(),
+                blocked_task_id: "d".to_string(),
+            },
+        ],
+    }
+}
+
+fn bar_row_from_bbox(bbox_y: f64) -> u32 {
+    ((bbox_y - HEADER_H - 4.0) / ROW_H).round() as u32
+}
+
+#[test]
+fn topological_rows_bar_matches_dependency_endpoints_when_input_reversed() {
+    let graph = reversed_two_task_graph();
+    let ep = epoch(&graph);
+    let list = build_display_list(&graph, ep, None, None);
+
+    let row_by_task: std::collections::HashMap<&str, u32> = list
+        .metadata
+        .task_bboxes
+        .iter()
+        .map(|tb| (tb.task_id.as_str(), tb.row))
+        .collect();
+
+    assert!(
+        row_by_task["task-1"] < row_by_task["task-2"],
+        "blocker must be above blocked even when blocked is listed first"
+    );
+
+    for tb in &list.metadata.task_bboxes {
+        assert_eq!(
+            tb.row,
+            bar_row_from_bbox(tb.bbox.y),
+            "bar y must match assigned topo row for {}",
+            tb.task_id
+        );
+    }
+
+    let blocker_row = row_by_task["task-1"];
+    let blocked_row = row_by_task["task-2"];
+    assert!(blocker_row < blocked_row);
+}
+
+#[test]
+fn topological_rows_cycle_downstream_blocker_above_blocked() {
+    let graph = cycle_downstream_graph();
+    let ep = epoch(&graph);
+    let list = build_display_list(&graph, ep, None, None);
+
+    let row_by_task: std::collections::HashMap<&str, u32> = list
+        .metadata
+        .task_bboxes
+        .iter()
+        .map(|tb| (tb.task_id.as_str(), tb.row))
+        .collect();
+
+    assert!(
+        row_by_task["b"] < row_by_task["d"],
+        "cycle member B must stay above downstream D"
+    );
+    assert!(row_by_task["a"] < row_by_task["d"]);
+    assert!(row_by_task["c"] < row_by_task["d"]);
+
+    for tb in &list.metadata.task_bboxes {
+        assert_eq!(tb.row, bar_row_from_bbox(tb.bbox.y));
+    }
+}
+
 // --- Phase 2: CanvasBackend + CommandBuffer ---
 
 #[test]
