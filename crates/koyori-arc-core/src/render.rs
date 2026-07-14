@@ -1,8 +1,9 @@
-use chrono::NaiveDate;
+use chrono::{Duration, NaiveDate};
 use wasm_bindgen::prelude::*;
 
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::backend::svg::empty_svg;
+use crate::display_list::constants::{HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H};
 use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
 
@@ -11,28 +12,72 @@ pub const MAX_TASKS: usize = 10_000;
 pub const MAX_DEPS: usize = 100_000;
 pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
 
+/// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
+/// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
+/// rejecting larger buffers avoids browser-specific blank canvases/context loss.
+pub const MAX_CANVAS_SIDE_PX: usize = 16_384;
+const CHART_RIGHT_PADDING_PX: f64 = 20.0;
+const CHART_BOTTOM_PADDING_PX: f64 = 10.0;
+pub const MAX_CANVAS_ROWS: usize = ((MAX_CANVAS_SIDE_PX as f64
+    - HEADER_H
+    - LEGEND_H
+    - CHART_BOTTOM_PADDING_PX)
+    / ROW_H) as usize;
+pub const MAX_CANVAS_DATE_SPAN_DAYS: i64 = ((MAX_CANVAS_SIDE_PX as f64
+    - LABEL_W
+    - CHART_RIGHT_PADDING_PX)
+    / PX_PER_DAY) as i64;
+
 fn json_error(msg: impl Into<String>) -> String {
     serde_json::json!({ "error": msg.into() }).to_string()
 }
 
-fn graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
+fn common_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
     if tasks.len() > MAX_TASKS {
         return Some(format!("task count exceeds limit ({MAX_TASKS})"));
     }
     if deps.len() > MAX_DEPS {
         return Some(format!("dependency count exceeds limit ({MAX_DEPS})"));
     }
+    None
+}
+
+fn rendered_date_span_days(tasks: &[GanttTask]) -> i64 {
     if tasks.is_empty() {
-        return None;
+        return 0;
     }
     let min_start = tasks.iter().map(|t| t.start).min().unwrap();
     let max_date = tasks
         .iter()
-        .map(|t| t.end.unwrap_or(t.start))
+        .map(|t| t.end.unwrap_or_else(|| t.start + Duration::days(1)))
         .max()
         .unwrap();
-    if (max_date - min_start).num_days() > MAX_DATE_SPAN_DAYS {
+    (max_date - min_start).num_days().max(0)
+}
+
+fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
+    if let Some(msg) = common_graph_limit_error(tasks, deps) {
+        return Some(msg);
+    }
+    if rendered_date_span_days(tasks) > MAX_DATE_SPAN_DAYS {
         return Some(format!("date range exceeds limit ({MAX_DATE_SPAN_DAYS} days)"));
+    }
+    None
+}
+
+fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
+    if let Some(msg) = common_graph_limit_error(tasks, deps) {
+        return Some(msg);
+    }
+    if tasks.len() > MAX_CANVAS_ROWS {
+        return Some(format!(
+            "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
+        ));
+    }
+    if rendered_date_span_days(tasks) > MAX_CANVAS_DATE_SPAN_DAYS {
+        return Some(format!(
+            "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+        ));
     }
     None
 }
@@ -106,7 +151,7 @@ pub fn render_svg(
         Ok(v) => v,
         Err(_) => return empty_svg(),
     };
-    if graph_limit_error(&tasks, &deps).is_some() {
+    if svg_graph_limit_error(&tasks, &deps).is_some() {
         return empty_svg();
     }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
@@ -131,7 +176,7 @@ pub fn render_canvas_commands(
         Ok(v) => v,
         Err(e) => return json_error(format!("parse error: {e}")),
     };
-    if let Some(msg) = graph_limit_error(&tasks, &deps) {
+    if let Some(msg) = canvas_graph_limit_error(&tasks, &deps) {
         return json_error(msg);
     }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
@@ -363,6 +408,81 @@ mod tests {
         );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
+    }
+
+    fn canvas_tasks(count: usize, end_offset_days: i64) -> Vec<GanttTask> {
+        (0..count)
+            .map(|i| GanttTask {
+                id: format!("canvas-{i}"),
+                title: format!("Canvas task {i}"),
+                progress_pct: 0,
+                start: date(2026, 1, 1),
+                end: Some(date(2026, 1, 1) + Duration::days(end_offset_days)),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn canvas_row_limit_is_derived_from_max_side() {
+        let accepted_height = MAX_CANVAS_ROWS as f64 * ROW_H
+            + HEADER_H
+            + LEGEND_H
+            + CHART_BOTTOM_PADDING_PX;
+        let rejected_height = (MAX_CANVAS_ROWS + 1) as f64 * ROW_H
+            + HEADER_H
+            + LEGEND_H
+            + CHART_BOTTOM_PADDING_PX;
+        assert!(accepted_height <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(rejected_height > MAX_CANVAS_SIDE_PX as f64);
+
+        let accepted = canvas_tasks(MAX_CANVAS_ROWS, 1);
+        let accepted_json = render_canvas_commands(
+            &serde_json::to_string(&accepted).unwrap(),
+            "[]",
+            None,
+            None,
+        );
+        let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
+        assert!(accepted_value.get("error").is_none());
+        assert!(accepted_value["viewport_height"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
+
+        let rejected = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
+        let rejected_json = render_canvas_commands(
+            &serde_json::to_string(&rejected).unwrap(),
+            "[]",
+            None,
+            None,
+        );
+        let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
+        assert!(rejected_value["error"].as_str().unwrap().contains("canvas row count"));
+    }
+
+    #[test]
+    fn canvas_date_limit_is_derived_from_max_side_and_does_not_reduce_svg_limit() {
+        let accepted_width = MAX_CANVAS_DATE_SPAN_DAYS as f64 * PX_PER_DAY
+            + LABEL_W
+            + CHART_RIGHT_PADDING_PX;
+        let rejected_width = (MAX_CANVAS_DATE_SPAN_DAYS + 1) as f64 * PX_PER_DAY
+            + LABEL_W
+            + CHART_RIGHT_PADDING_PX;
+        assert!(accepted_width <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(rejected_width > MAX_CANVAS_SIDE_PX as f64);
+
+        let accepted = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS);
+        let accepted_tasks_json = serde_json::to_string(&accepted).unwrap();
+        let accepted_json = render_canvas_commands(&accepted_tasks_json, "[]", None, None);
+        let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
+        assert!(accepted_value.get("error").is_none());
+        assert!(accepted_value["viewport_width"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
+
+        let rejected = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS + 1);
+        let rejected_tasks_json = serde_json::to_string(&rejected).unwrap();
+        let rejected_json = render_canvas_commands(&rejected_tasks_json, "[]", None, None);
+        let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
+        assert!(rejected_value["error"].as_str().unwrap().contains("canvas date range"));
+
+        let svg = render_svg(&rejected_tasks_json, "[]", None, None);
+        assert_ne!(svg, crate::backend::svg::empty_svg());
     }
 
     #[test]

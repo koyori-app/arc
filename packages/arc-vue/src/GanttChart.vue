@@ -8,6 +8,7 @@ import {
   findTaskAtPoint,
   type TaskHitRegion,
 } from './replayCommands';
+import { resetCanvasElement } from './canvasLifecycle';
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -94,11 +95,7 @@ watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
 
 function resetCanvas(canvas: HTMLCanvasElement | null) {
   hitRegions.value = [];
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
+  resetCanvasElement(canvas);
 }
 
 async function paintCanvas() {
