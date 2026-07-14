@@ -249,7 +249,17 @@ export function replayCommands(
 }
 
 export function parseCommandBuffer(json: string): CommandBuffer {
-  return JSON.parse(json) as CommandBuffer;
+  try {
+    return JSON.parse(json) as CommandBuffer;
+  } catch {
+    return {
+      viewport_width: 0,
+      viewport_height: 0,
+      ops: [],
+      palette: { colors: [] },
+      error: 'invalid json',
+    };
+  }
 }
 
 export function findTaskAtPoint(

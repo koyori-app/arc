@@ -2,8 +2,40 @@ use chrono::NaiveDate;
 use wasm_bindgen::prelude::*;
 
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
+use crate::backend::svg::empty_svg;
 use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
+
+/// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
+pub const MAX_TASKS: usize = 10_000;
+pub const MAX_DEPS: usize = 100_000;
+pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
+
+fn json_error(msg: impl Into<String>) -> String {
+    serde_json::json!({ "error": msg.into() }).to_string()
+}
+
+fn graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
+    if tasks.len() > MAX_TASKS {
+        return Some(format!("task count exceeds limit ({MAX_TASKS})"));
+    }
+    if deps.len() > MAX_DEPS {
+        return Some(format!("dependency count exceeds limit ({MAX_DEPS})"));
+    }
+    if tasks.is_empty() {
+        return None;
+    }
+    let min_start = tasks.iter().map(|t| t.start).min().unwrap();
+    let max_date = tasks
+        .iter()
+        .map(|t| t.end.unwrap_or(t.start))
+        .max()
+        .unwrap();
+    if (max_date - min_start).num_days() > MAX_DATE_SPAN_DAYS {
+        return Some(format!("date range exceeds limit ({MAX_DATE_SPAN_DAYS} days)"));
+    }
+    None
+}
 
 /// Native entry point — accepts typed structs directly.
 pub fn render(
@@ -68,12 +100,15 @@ pub fn render_svg(
 ) -> String {
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
-        Err(e) => return format!("<!-- parse error: {e} -->"),
+        Err(_) => return empty_svg(),
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
-        Err(e) => return format!("<!-- parse error: {e} -->"),
+        Err(_) => return empty_svg(),
     };
+    if graph_limit_error(&tasks, &deps).is_some() {
+        return empty_svg();
+    }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     render(&tasks, &deps, today, scroll_viewport)
@@ -90,16 +125,19 @@ pub fn render_canvas_commands(
 ) -> String {
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
-        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+        Err(e) => return json_error(format!("parse error: {e}")),
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
-        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+        Err(e) => return json_error(format!("parse error: {e}")),
     };
+    if let Some(msg) = graph_limit_error(&tasks, &deps) {
+        return json_error(msg);
+    }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
-    serde_json::to_string(&buffer).unwrap_or_else(|e| format!(r#"{{"error":"serialize error: {e}"}}"#))
+    serde_json::to_string(&buffer).unwrap_or_else(|e| json_error(format!("serialize error: {e}")))
 }
 
 #[cfg(test)]
@@ -239,9 +277,92 @@ mod tests {
     }
 
     #[test]
-    fn parse_error_returns_comment() {
+    fn parse_error_returns_safe_empty_svg() {
         let svg = render_svg("not json", "[]", None, None);
-        assert!(svg.starts_with("<!-- parse error:"));
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+        assert!(!svg.contains("parse error"));
+        assert!(!svg.contains("<!--"));
+    }
+
+    #[test]
+    fn parse_error_comment_injection_does_not_break_markup() {
+        let payload = r#"not json --><img onerror=alert(1)><!--"#;
+        let svg = render_svg(payload, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+        assert!(!svg.contains("<img"));
+    }
+
+    #[test]
+    fn wasm_id_xss_payload_escaped_in_output() {
+        let tasks = vec![GanttTask {
+            id: "x\" onmouseover=\"alert(1)\"".to_string(),
+            title: "Safe".to_string(),
+            progress_pct: 0,
+            start: date(2026, 6, 1),
+            end: Some(date(2026, 6, 2)),
+        }];
+        let svg = render(&tasks, &[], None, None);
+        assert!(svg.contains(r#"data-task-id="x&quot; onmouseover=&quot;alert(1)&quot;""#));
+        assert!(!svg.contains(r#"onmouseover="alert"#));
+    }
+
+    #[test]
+    fn json_error_produces_valid_json_with_quotes() {
+        let s = super::json_error(r#"parse error: bad "quote""#);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("valid json");
+        assert_eq!(v["error"].as_str().unwrap(), r#"parse error: bad "quote""#);
+    }
+
+    #[test]
+    fn canvas_parse_error_json_is_valid() {
+        let json = render_canvas_commands("not json", "[]", None, None);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(v.get("error").is_some());
+    }
+
+    #[test]
+    fn graph_limit_rejects_excessive_tasks() {
+        let tasks: Vec<GanttTask> = (0..=super::MAX_TASKS)
+            .map(|i| GanttTask {
+                id: format!("t{i}"),
+                title: format!("Task {i}"),
+                progress_pct: 0,
+                start: date(2026, 6, 1),
+                end: Some(date(2026, 6, 2)),
+            })
+            .collect();
+        let svg = render_svg(
+            &serde_json::to_string(&tasks).unwrap(),
+            "[]",
+            None,
+            None,
+        );
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+    }
+
+    #[test]
+    fn graph_limit_rejects_excessive_deps() {
+        let tasks = vec![GanttTask {
+            id: "t0".to_string(),
+            title: "Only".to_string(),
+            progress_pct: 0,
+            start: date(2026, 6, 1),
+            end: Some(date(2026, 6, 2)),
+        }];
+        let deps: Vec<GanttDep> = (0..=super::MAX_DEPS)
+            .map(|i| GanttDep {
+                blocker_task_id: "t0".to_string(),
+                blocked_task_id: format!("t{i}"),
+            })
+            .collect();
+        let json = render_canvas_commands(
+            &serde_json::to_string(&tasks).unwrap(),
+            &serde_json::to_string(&deps).unwrap(),
+            None,
+            None,
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(v.get("error").is_some());
     }
 
     #[test]

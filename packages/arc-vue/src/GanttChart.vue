@@ -92,13 +92,28 @@ const canvasCommandsJson = computed(() => {
 
 watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
 
+function resetCanvas(canvas: HTMLCanvasElement | null) {
+  hitRegions.value = [];
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
 async function paintCanvas() {
   const canvas = canvasRef.value;
   const json = canvasCommandsJson.value;
-  if (!canvas || !json) return;
+  if (!canvas || !json) {
+    resetCanvas(canvas);
+    return;
+  }
 
   const buffer = parseCommandBuffer(json);
-  if (buffer.error) return;
+  if (buffer.error) {
+    resetCanvas(canvas);
+    return;
+  }
 
   canvas.width = buffer.viewport_width;
   canvas.height = buffer.viewport_height;
@@ -106,7 +121,10 @@ async function paintCanvas() {
   canvas.style.height = `${buffer.viewport_height}px`;
 
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) {
+    resetCanvas(canvas);
+    return;
+  }
   const result = replayCommands(ctx, buffer);
   hitRegions.value = result.hitRegions;
 }

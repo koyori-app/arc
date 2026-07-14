@@ -241,10 +241,37 @@ fn render_text(svg: &mut String, t: &TextPrim, palette: &Palette) {
 
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
 
 pub fn empty_svg() -> String {
     r#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" viewBox="0 0 0 0" role="img" aria-label="Empty Gantt chart" font-family="sans-serif" font-size="12"><title>Empty Gantt chart</title><desc>No tasks to display</desc></svg>"#.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_xml_quotes_in_attribute_context() {
+        let malicious = "x\" onmouseover=\"alert(1)\"";
+        let escaped = escape_xml(malicious);
+        assert!(!escaped.contains('"'));
+        assert!(escaped.contains("&quot;"));
+        assert_eq!(
+            escaped,
+            "x&quot; onmouseover=&quot;alert(1)&quot;"
+        );
+    }
+
+    #[test]
+    fn data_task_id_attribute_is_safe() {
+        let id = "x\" onmouseover=\"alert(1)\"";
+        let fragment = format!(r#"<g data-task-id="{}">"#, escape_xml(id));
+        assert!(fragment.contains("data-task-id=\"x&quot; onmouseover=&quot;alert(1)&quot;\""));
+        assert!(!fragment.contains(r#"onmouseover="alert"#));
+    }
 }
