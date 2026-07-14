@@ -18,10 +18,13 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/arc-vue.js"
-    }
+    },
+    "./style.css": "./dist/arc-vue.css"
   },
   "types": "./dist/index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "build": "vite build",
     "typecheck": "vue-tsc --noEmit",
