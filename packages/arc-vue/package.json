@@ -35,14 +35,15 @@
   },
   "devDependencies": {
     "@koyori-app/arc": "workspace:*",
-    "@storybook/vue3-vite": "^10.4.6",
+    "@storybook/vue3-vite": "^10.5.0",
+    "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.7",
-    "storybook": "^10.4.6",
-    "typescript": "^5.8.3",
+    "storybook": "^10.5.0",
+    "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vite-plugin-dts": "^5.0.2",
-    "vitest": "^3.2.4",
-    "vue": "^3.5.35",
-    "vue-tsc": "^2.2.10"
+    "vite-plugin-dts": "^5.0.3",
+    "vitest": "^4.1.10",
+    "vue": "^3.5.39",
+    "vue-tsc": "^3.3.7"
   }
 }
