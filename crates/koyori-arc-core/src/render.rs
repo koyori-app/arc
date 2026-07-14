@@ -1,8 +1,8 @@
 use chrono::{Duration, NaiveDate};
 use wasm_bindgen::prelude::*;
 
-use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::backend::svg::empty_svg;
+use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::display_list::constants::{HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H};
 use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
@@ -10,6 +10,12 @@ use crate::graph::{GanttDep, GanttGraph, GanttTask};
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
 pub const MAX_DEPS: usize = 100_000;
+/// Allows about 839 bytes per task at `MAX_TASKS`, enough for realistic IDs and
+/// titles plus JSON overhead while rejecting multi-megabyte individual fields.
+pub const MAX_TASKS_JSON_BYTES: usize = 8 * 1024 * 1024;
+/// Allows about 167 bytes per dependency at `MAX_DEPS`, leaving ample room for
+/// two realistic task IDs and JSON overhead without accepting unbounded input.
+pub const MAX_DEPS_JSON_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
@@ -34,6 +40,20 @@ pub const MAX_CANVAS_DATE_SPAN_DAYS: i64 = ((MAX_CANVAS_SIDE_PX as f64
 
 fn json_error(msg: impl Into<String>) -> String {
     serde_json::json!({ "error": msg.into() }).to_string()
+}
+
+fn raw_json_limit_error(tasks_json: &str, deps_json: &str) -> Option<String> {
+    if tasks_json.len() > MAX_TASKS_JSON_BYTES {
+        return Some(format!(
+            "tasks JSON byte size exceeds limit ({MAX_TASKS_JSON_BYTES})"
+        ));
+    }
+    if deps_json.len() > MAX_DEPS_JSON_BYTES {
+        return Some(format!(
+            "dependencies JSON byte size exceeds limit ({MAX_DEPS_JSON_BYTES})"
+        ));
+    }
+    None
 }
 
 fn common_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
@@ -159,6 +179,9 @@ pub fn render_svg(
     today_iso: Option<String>,
     viewport_json: Option<String>,
 ) -> String {
+    if raw_json_limit_error(tasks_json, deps_json).is_some() {
+        return empty_svg();
+    }
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
         Err(_) => return empty_svg(),
@@ -184,6 +207,9 @@ pub fn render_canvas_commands(
     today_iso: Option<String>,
     viewport_json: Option<String>,
 ) -> String {
+    if let Some(msg) = raw_json_limit_error(tasks_json, deps_json) {
+        return json_error(msg);
+    }
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
         Err(e) => return json_error(format!("parse error: {e}")),
@@ -379,6 +405,61 @@ mod tests {
         let json = render_canvas_commands("not json", "[]", None, None);
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
+    }
+
+    #[test]
+    fn raw_byte_limits_reject_tasks_before_deserialization() {
+        // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
+        let oversized_tasks = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
+        let svg = render_svg(&oversized_tasks, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+
+        let json = render_canvas_commands(&oversized_tasks, "[]", None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["error"]
+            .as_str()
+            .unwrap()
+            .contains("tasks JSON byte size"));
+        assert!(!value["error"].as_str().unwrap().contains("parse error"));
+    }
+
+    #[test]
+    fn raw_byte_limits_reject_dependencies_before_deserialization() {
+        // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
+        let oversized_deps = "x".repeat(MAX_DEPS_JSON_BYTES + 1);
+        let svg = render_svg("[]", &oversized_deps, None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+
+        let json = render_canvas_commands("[]", &oversized_deps, None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["error"]
+            .as_str()
+            .unwrap()
+            .contains("dependencies JSON byte size"));
+        assert!(!value["error"].as_str().unwrap().contains("parse error"));
+    }
+
+    #[test]
+    fn raw_byte_limit_rejects_single_giant_title() {
+        let giant_title = "x".repeat(MAX_TASKS_JSON_BYTES);
+        let tasks = serde_json::json!([{
+            "id": "giant-title",
+            "title": giant_title,
+            "progress_pct": 0,
+            "start": "2026-06-01",
+            "end": "2026-06-02"
+        }])
+        .to_string();
+        assert!(tasks.len() > MAX_TASKS_JSON_BYTES);
+
+        let svg = render_svg(&tasks, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+        let json = render_canvas_commands(&tasks, "[]", None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["error"]
+            .as_str()
+            .unwrap()
+            .contains("tasks JSON byte size"));
     }
 
     #[test]
