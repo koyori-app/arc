@@ -9,7 +9,8 @@ pub struct RowLayout {
 }
 
 /// Assign each task a vertical row from dependency topology.
-/// Returns one entry per input task in **input order**; `row` is the topological rank.
+/// Returns one entry per input task in **input order**; `row` is the clustering rank
+/// (blocked tasks cluster directly under their blockers, not global topo priority).
 pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
     if tasks.is_empty() {
         return Vec::new();
@@ -66,6 +67,7 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
     let mut scc_adj: Vec<Vec<usize>> = vec![Vec::new(); scc_count];
     let mut scc_indegree = vec![0usize; scc_count];
     let mut scc_edges = HashSet::new();
+    let mut scc_rev_adj: Vec<Vec<usize>> = vec![Vec::new(); scc_count];
 
     for u in 0..n {
         for &v in &adj[u] {
@@ -73,40 +75,101 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
             let cv = component[v];
             if cu != cv && scc_edges.insert((cu, cv)) {
                 scc_adj[cu].push(cv);
+                scc_rev_adj[cv].push(cu);
                 scc_indegree[cv] += 1;
             }
         }
     }
 
-    let mut ready: Vec<usize> = (0..scc_count)
-        .filter(|&s| scc_indegree[s] == 0)
-        .collect();
-    let mut scc_order = Vec::with_capacity(scc_count);
-    let mut scc_indegree = scc_indegree;
+    for adj_list in &mut [scc_adj.as_mut_slice(), scc_rev_adj.as_mut_slice()] {
+        for neighbors in adj_list.iter_mut() {
+            neighbors.sort_unstable_by_key(|&scc| scc_min_index[scc]);
+        }
+    }
 
-    while let Some(scc) = pop_min_scc(&mut ready, &scc_min_index) {
-        scc_order.push(scc);
+    let mut emitted_scc = HashSet::new();
+    let mut cluster_order = Vec::with_capacity(n);
+
+    fn emit_scc(
+        scc: usize,
+        scc_members: &[Vec<usize>],
+        emitted_scc: &mut HashSet<usize>,
+        cluster_order: &mut Vec<usize>,
+    ) {
+        if !emitted_scc.insert(scc) {
+            return;
+        }
+        for &idx in &scc_members[scc] {
+            cluster_order.push(idx);
+        }
+    }
+
+    fn try_emit_dependent_sccs(
+        scc: usize,
+        scc_adj: &[Vec<usize>],
+        scc_rev_adj: &[Vec<usize>],
+        scc_members: &[Vec<usize>],
+        emitted_scc: &mut HashSet<usize>,
+        cluster_order: &mut Vec<usize>,
+    ) {
         for &next in &scc_adj[scc] {
-            scc_indegree[next] -= 1;
-            if scc_indegree[next] == 0 {
-                ready.push(next);
+            if emitted_scc.contains(&next) {
+                continue;
+            }
+            let all_blockers_emitted = scc_rev_adj[next]
+                .iter()
+                .all(|pred| emitted_scc.contains(pred));
+            if all_blockers_emitted {
+                emit_scc(next, scc_members, emitted_scc, cluster_order);
+                try_emit_dependent_sccs(
+                    next,
+                    scc_adj,
+                    scc_rev_adj,
+                    scc_members,
+                    emitted_scc,
+                    cluster_order,
+                );
             }
         }
     }
 
+    let mut root_sccs: Vec<usize> = (0..scc_count)
+        .filter(|&s| scc_indegree[s] == 0)
+        .collect();
+    root_sccs.sort_unstable_by_key(|&scc| scc_min_index[scc]);
+
+    for scc in root_sccs {
+        if emitted_scc.contains(&scc) {
+            continue;
+        }
+        emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
+        try_emit_dependent_sccs(
+            scc,
+            &scc_adj,
+            &scc_rev_adj,
+            &scc_members,
+            &mut emitted_scc,
+            &mut cluster_order,
+        );
+    }
+
     for scc in 0..scc_count {
-        if !scc_order.contains(&scc) {
-            scc_order.push(scc);
+        if !emitted_scc.contains(&scc) {
+            emit_scc(scc, &scc_members, &mut emitted_scc, &mut cluster_order);
+            try_emit_dependent_sccs(
+                scc,
+                &scc_adj,
+                &scc_rev_adj,
+                &scc_members,
+                &mut emitted_scc,
+                &mut cluster_order,
+            );
         }
     }
 
     let mut row_of = vec![0usize; n];
-    let mut next_row = 0usize;
-    for &scc in &scc_order {
-        for &idx in &scc_members[scc] {
-            row_of[idx] = next_row;
-            next_row += 1;
-        }
+    for (row, &idx) in cluster_order.iter().enumerate() {
+        row_of[idx] = row;
     }
 
     (0..n)
@@ -115,18 +178,6 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
             row: row_of[idx],
         })
         .collect()
-}
-
-fn pop_min_scc(ready: &mut Vec<usize>, scc_min_index: &[usize]) -> Option<usize> {
-    if ready.is_empty() {
-        return None;
-    }
-    let min_pos = ready
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, scc)| scc_min_index[**scc])
-        .map(|(pos, _)| pos)?;
-    Some(ready.remove(min_pos))
 }
 
 fn tarjan_scc(n: usize, adj: &[Vec<usize>]) -> Vec<usize> {
@@ -267,12 +318,13 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_components_use_input_order_among_ready() {
+    fn disconnected_components_cluster_blocked_under_blocker() {
         let tasks = vec![task("x"), task("y"), task("z")];
         let deps = vec![dep("x", "z")];
         let rows = assign_rows(&tasks, &deps);
         assert_input_order_preserved(&rows, &tasks);
-        assert_eq!(row_map(&rows), vec![("x", 0), ("y", 1), ("z", 2)]);
+        // x emits then z clusters directly under x; y stays after the cluster.
+        assert_eq!(row_map(&rows), vec![("x", 0), ("y", 2), ("z", 1)]);
     }
 
     #[test]
@@ -326,6 +378,17 @@ mod tests {
         let rows = assign_rows(&tasks, &deps);
         assert_input_order_preserved(&rows, &tasks);
         assert!(row_of(&rows, "a") < row_of(&rows, "b"));
+    }
+
+    #[test]
+    fn blocker_clustering_pulls_blocked_adjacent_not_global_kahn() {
+        // Acceptance example: input [t1,t3,t2] with t2 blocked by t1 must cluster as
+        // [t1,t2,t3], not global priority Kahn [t1,t3,t2].
+        let tasks = vec![task("t1"), task("t3"), task("t2")];
+        let deps = vec![dep("t1", "t2")];
+        let rows = assign_rows(&tasks, &deps);
+        assert_input_order_preserved(&rows, &tasks);
+        assert_eq!(row_map(&rows), vec![("t1", 0), ("t3", 2), ("t2", 1)]);
     }
 
     #[test]
