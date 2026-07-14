@@ -8,6 +8,12 @@ import {
   findTaskAtPoint,
   type TaskHitRegion,
 } from './replayCommands';
+import { resetCanvasElement } from './canvasLifecycle';
+import {
+  chartHeightForTaskCount,
+  isCanvasCapacityError,
+  resolveCanvasFailure,
+} from './canvasFallback';
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -21,11 +27,6 @@ const emit = defineEmits<{
   taskClick: [task: GanttTask];
 }>();
 
-/** Mirrors koyori-arc-core display_list constants */
-const ROW_H = 40;
-const HEADER_H = 30;
-const LEGEND_H = 40;
-
 const ready = ref(false);
 const svg = ref('');
 const scrollY = ref(0);
@@ -33,6 +34,9 @@ const clientHeight = ref(600);
 const scrollRef = ref<HTMLElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const hitRegions = ref<TaskHitRegion[]>([]);
+const canvasFallbackSvg = ref('');
+const canvasError = ref('');
+const canvasFailureMessage = ref('');
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
@@ -58,8 +62,8 @@ const deviceTier = detectDeviceTier();
 const useVirtualization = computed(() => deviceTier === 'low');
 
 const chartHeight = computed(() => {
-  if (props.tasks.length === 0) return 0;
-  return props.tasks.length * ROW_H + HEADER_H + LEGEND_H + 10;
+  if (canvasError.value) return 0;
+  return chartHeightForTaskCount(props.tasks.length);
 });
 
 const viewportJson = computed(() => {
@@ -92,13 +96,77 @@ const canvasCommandsJson = computed(() => {
 
 watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
 
+function resetCanvas(canvas: HTMLCanvasElement | null) {
+  hitRegions.value = [];
+  resetCanvasElement(canvas);
+}
+
+function clearCanvasFailure() {
+  canvasFallbackSvg.value = '';
+  canvasError.value = '';
+  canvasFailureMessage.value = '';
+}
+
+function renderCanvasFallback(message: string) {
+  canvasFailureMessage.value = message;
+  let fallbackSvg = '';
+  if (isCanvasCapacityError(message)) {
+    try {
+      fallbackSvg = render_svg(
+        JSON.stringify(props.tasks),
+        JSON.stringify(props.deps ?? []),
+        props.today ?? undefined,
+        JSON.stringify({
+          scroll_y: scrollY.value,
+          client_height: Math.min(clientHeight.value, 600),
+        }),
+      );
+    } catch {
+      // resolveCanvasFailure turns a failed fallback into a visible error.
+    }
+  }
+  const resolution = resolveCanvasFailure(message, fallbackSvg);
+  if (resolution.mode === 'svg') {
+    canvasFallbackSvg.value = resolution.svg;
+    canvasError.value = '';
+  } else {
+    canvasFallbackSvg.value = '';
+    canvasError.value = resolution.message;
+  }
+}
+
+watch([scrollY, clientHeight], () => {
+  if (canvasFallbackSvg.value && canvasFailureMessage.value) {
+    renderCanvasFallback(canvasFailureMessage.value);
+  }
+});
+
 async function paintCanvas() {
-  const canvas = canvasRef.value;
   const json = canvasCommandsJson.value;
-  if (!canvas || !json) return;
+  if (!json) {
+    resetCanvas(canvasRef.value);
+    clearCanvasFailure();
+    return;
+  }
+
+  let canvas = canvasRef.value;
+  if (!canvas) {
+    // A fallback/error replaces the canvas with v-if. Clear it first, then
+    // wait for Vue to mount a fresh canvas before replaying recovered output.
+    clearCanvasFailure();
+    await nextTick();
+    canvas = canvasRef.value;
+    if (!canvas) return;
+  }
 
   const buffer = parseCommandBuffer(json);
-  if (buffer.error) return;
+  if (buffer.error) {
+    resetCanvas(canvas);
+    renderCanvasFallback(buffer.error);
+    return;
+  }
+
+  clearCanvasFailure();
 
   canvas.width = buffer.viewport_width;
   canvas.height = buffer.viewport_height;
@@ -106,7 +174,10 @@ async function paintCanvas() {
   canvas.style.height = `${buffer.viewport_height}px`;
 
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) {
+    resetCanvas(canvas);
+    return;
+  }
   const result = replayCommands(ctx, buffer);
   hitRegions.value = result.hitRegions;
 }
@@ -143,7 +214,7 @@ function onCanvasClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="koyori-gantt" @click="!useCanvas && onSvgClick($event)">
+  <div class="koyori-gantt" @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)">
     <div v-if="!ready" class="koyori-gantt-skeleton" aria-hidden="true">
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
         <div class="koyori-gantt-skeleton-label" />
@@ -154,15 +225,19 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization }"
+    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailureMessage }"
     @scroll="onScroll"
   >
+    <div v-if="canvasError" class="koyori-gantt-error" role="alert">
+      Unable to render Gantt chart: {{ canvasError }}
+    </div>
     <div
+      v-else
       class="koyori-gantt-inner"
       :style="{ height: `${chartHeight}px` }"
     >
       <canvas
-        v-if="useCanvas"
+        v-if="useCanvas && !canvasFallbackSvg"
         ref="canvasRef"
         class="koyori-gantt-canvas"
         role="img"
@@ -170,7 +245,7 @@ function onCanvasClick(e: MouseEvent) {
         @click="onCanvasClick"
       />
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <div v-else class="koyori-gantt-svg" v-html="svg" />
+      <div v-else class="koyori-gantt-svg" v-html="canvasFallbackSvg || svg" />
     </div>
   </div>
   </div>
@@ -187,6 +262,10 @@ function onCanvasClick(e: MouseEvent) {
 .koyori-gantt-inner {
   position: relative;
   width: 100%;
+}
+.koyori-gantt-error {
+  padding: 12px;
+  color: #991b1b;
 }
 .koyori-gantt-svg {
   position: absolute;

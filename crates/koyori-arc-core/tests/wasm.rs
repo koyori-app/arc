@@ -31,9 +31,19 @@ fn render_svg_with_today_marker() {
 }
 
 #[wasm_bindgen_test]
-fn render_svg_parse_error_returns_comment() {
+fn render_svg_parse_error_returns_safe_empty_svg() {
     let svg = koyori_arc_core::render_svg("not json", "[]", None, None);
-    assert!(svg.starts_with("<!-- parse error:"));
+    assert!(svg.contains("width=\"0\""));
+    assert!(!svg.contains("<!--"));
+    assert!(!svg.contains("parse error"));
+}
+
+#[wasm_bindgen_test]
+fn render_svg_id_xss_payload_escaped() {
+    let tasks = r#"[{"id":"x\" onmouseover=\"alert(1)","title":"Safe","progress_pct":0,"start":"2026-06-01","end":"2026-06-02"}]"#;
+    let svg = koyori_arc_core::render_svg(tasks, "[]", None, None);
+    assert!(svg.contains("&quot;"));
+    assert!(!svg.contains(r#"onmouseover="alert"#));
 }
 
 #[wasm_bindgen_test]
