@@ -11,12 +11,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0 # git-cliff needs full history for changelog
 
       - name: Install git-cliff
-        uses: taiki-e/install-action@git-cliff
+        uses: taiki-e/install-action@b3833c305283683eafb8fd4b888e3ea0ddac2042 # git-cliff
 
       - name: Generate changelog
         run: git-cliff --latest --strip header -o CHANGELOG_RELEASE.md
