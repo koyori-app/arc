@@ -78,15 +78,20 @@ const emptySvgMarkup = ref(EMPTY_SVG_MARKUP);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
+function syncScrollViewport(el?: HTMLElement | null) {
+  const scrollEl = el ?? scrollRef.value;
+  if (!scrollEl) return;
+  scrollY.value = scrollEl.scrollTop;
+  clientHeight.value = scrollEl.clientHeight;
+}
+
 onMounted(async () => {
   await init();
   // Read once, before `ready` unblocks the computeds that compare against it.
   emptySvgMarkup.value = empty_svg_markup();
   ready.value = true;
   await nextTick();
-  if (scrollRef.value) {
-    clientHeight.value = scrollRef.value.clientHeight;
-  }
+  syncScrollViewport();
 });
 
 function detectDeviceTier(): 'low' | 'high' {
@@ -101,6 +106,11 @@ function detectDeviceTier(): 'low' | 'high' {
 
 const deviceTier = computed(() => detectDeviceTier());
 const useVirtualization = computed(() => deviceTier.value === 'low');
+
+watch(useVirtualization, async () => {
+  await nextTick();
+  syncScrollViewport();
+}, { flush: 'post' });
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
@@ -246,9 +256,7 @@ async function paintCanvas() {
 watch(canvasCommandsJson, () => { void nextTick().then(paintCanvas); }, { immediate: true });
 
 function onScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  scrollY.value = el.scrollTop;
-  clientHeight.value = el.clientHeight;
+  syncScrollViewport(e.target as HTMLElement);
 }
 
 function onSvgClick(e: MouseEvent) {

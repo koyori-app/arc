@@ -11,6 +11,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    environmentMatchGlobs: [
+      ['src/**/*.virtualization.test.ts', 'happy-dom'],
+    ],
   },
   build: {
     lib: {
