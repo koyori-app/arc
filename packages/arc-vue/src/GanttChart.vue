@@ -42,6 +42,8 @@ const props = defineProps<{
   today?: string; // ISO 8601 date string, e.g. "2026-06-16"
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
+  /** Override auto-detected device tier (VRT / Storybook should pin this). */
+  deviceTier?: 'low' | 'high';
 }>();
 
 const emit = defineEmits<{
@@ -88,6 +90,7 @@ onMounted(async () => {
 });
 
 function detectDeviceTier(): 'low' | 'high' {
+  if (props.deviceTier) return props.deviceTier;
   if (typeof navigator === 'undefined') return 'low';
   const nav = navigator as Navigator & { deviceMemory?: number };
   if (nav.deviceMemory === undefined) return 'low';
@@ -96,8 +99,8 @@ function detectDeviceTier(): 'low' | 'high' {
   return 'high';
 }
 
-const deviceTier = detectDeviceTier();
-const useVirtualization = computed(() => deviceTier === 'low');
+const deviceTier = computed(() => detectDeviceTier());
+const useVirtualization = computed(() => deviceTier.value === 'low');
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
