@@ -92,6 +92,9 @@ onMounted(async () => {
   ready.value = true;
   await nextTick();
   syncScrollViewport();
+  if (requestedVirtualization.value) {
+    viewportReady.value = true;
+  }
 });
 
 function detectDeviceTier(): 'low' | 'high' {
@@ -105,11 +108,20 @@ function detectDeviceTier(): 'low' | 'high' {
 }
 
 const deviceTier = computed(() => detectDeviceTier());
-const useVirtualization = computed(() => deviceTier.value === 'low');
+/** CSS class: requested virtualization state (does not wait for DOM measure). */
+const requestedVirtualization = computed(() => deviceTier.value === 'low');
+/** WASM viewport: only after DOM reflects CSS and scroll metrics are synced. */
+const viewportReady = ref(false);
 
-watch(useVirtualization, async () => {
+watch(requestedVirtualization, async (virtual) => {
+  if (!virtual) {
+    viewportReady.value = false;
+    return;
+  }
+  viewportReady.value = false;
   await nextTick();
   syncScrollViewport();
+  viewportReady.value = true;
 }, { flush: 'post' });
 
 const chartHeight = computed(() => {
@@ -118,7 +130,7 @@ const chartHeight = computed(() => {
 });
 
 const viewportJson = computed(() => {
-  if (!useVirtualization.value) return undefined;
+  if (!requestedVirtualization.value || !viewportReady.value) return undefined;
   return JSON.stringify({
     scroll_y: scrollY.value,
     client_height: clientHeight.value,
@@ -294,7 +306,7 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailure }"
+    :class="{ 'koyori-gantt-scroll--virtual': requestedVirtualization || canvasFailure }"
     @scroll="onScroll"
   >
     <div v-if="displayError" class="koyori-gantt-error" role="alert">

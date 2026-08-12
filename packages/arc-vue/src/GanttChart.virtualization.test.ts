@@ -8,11 +8,12 @@ import GanttChart from './GanttChart.vue';
 import type { GanttTask } from './types.ts';
 
 const renderSvgMock = vi.fn(() => '<svg></svg>');
+const renderCanvasMock = vi.fn(() => '');
 
 vi.mock('@koyori-app/arc', () => ({
   default: vi.fn(() => Promise.resolve()),
   render_svg: (...args: unknown[]) => renderSvgMock(...args),
-  render_canvas_commands: vi.fn(() => ''),
+  render_canvas_commands: (...args: unknown[]) => renderCanvasMock(...args),
 }));
 
 function makeTasks(count: number): GanttTask[] {
@@ -25,13 +26,49 @@ function makeTasks(count: number): GanttTask[] {
   }));
 }
 
-function latestViewportJson(): { scroll_y: number; client_height: number } | null {
-  const calls = renderSvgMock.mock.calls;
-  for (let i = calls.length - 1; i >= 0; i -= 1) {
-    const viewportArg = calls[i][3] as string | undefined;
-    if (viewportArg) return JSON.parse(viewportArg) as { scroll_y: number; client_height: number };
+type Viewport = { scroll_y: number; client_height: number };
+
+function viewportFromArg(arg: string | undefined): Viewport | null {
+  if (!arg) return null;
+  return JSON.parse(arg) as Viewport;
+}
+
+/** Every render_svg / render_canvas_commands call that passed viewport_json. */
+function collectViewportCalls(
+  mock: { mock: { calls: unknown[][] } },
+): Array<{ callIndex: number; viewport: Viewport }> {
+  const out: Array<{ callIndex: number; viewport: Viewport }> = [];
+  mock.mock.calls.forEach((call, i) => {
+    const vp = viewportFromArg(call[3] as string | undefined);
+    if (vp) out.push({ callIndex: i + 1, viewport: vp });
+  });
+  return out;
+}
+
+function assertNoViewportClientHeight(
+  mocks: Array<{ mock: { calls: unknown[][] } }>,
+  forbidden: number,
+  label: string,
+) {
+  for (const mock of mocks) {
+    for (const { callIndex, viewport } of collectViewportCalls(mock)) {
+      expect(
+        viewport.client_height,
+        `${label}: call #${callIndex} passed stale client_height ${forbidden}`,
+      ).not.toBe(forbidden);
+    }
   }
-  return null;
+}
+
+function assertAllRecentCallsOmitViewport(
+  mock: { mock: { calls: unknown[][] } },
+  sinceCallIndex: number,
+  label: string,
+) {
+  mock.mock.calls.slice(sinceCallIndex).forEach((call, offset) => {
+    const idx = sinceCallIndex + offset + 1;
+    expect(call[3], `${label}: call #${idx} must omit viewport_json`).toBeUndefined();
+  });
 }
 
 function mockScrollMetrics(el: HTMLElement, clientHeight: number, scrollTop = 0) {
@@ -95,14 +132,17 @@ function scrollEl(wrapper: ReturnType<typeof mount>) {
 describe('GanttChart deviceTier flip viewport sync', () => {
   beforeEach(() => {
     renderSvgMock.mockClear();
+    renderCanvasMock.mockClear();
   });
 
-  it('high→low: viewport client_height matches scroll container after tier flip', async () => {
+  it('high→low: no render call may pass stale client_height (880) after tier flip', async () => {
     const wrapper = await mountHarness('high');
     const el = scrollEl(wrapper);
     mockScrollMetrics(el, 880);
     el.dispatchEvent(new Event('scroll'));
     await nextTick();
+
+    const callsBeforeFlip = renderSvgMock.mock.calls.length;
 
     (wrapper.vm as HarnessVm).setTier('low');
     mockScrollMetrics(el, 600);
@@ -110,52 +150,77 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     await nextTick();
     await nextTick();
 
-    const viewport = latestViewportJson();
-    expect(viewport).not.toBeNull();
-    expect(viewport!.client_height).toBe(600);
-    expect(viewport!.client_height).not.toBe(880);
+    expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
+
+    assertNoViewportClientHeight([renderSvgMock, renderCanvasMock], 880, 'high→low');
+
+    const postFlipCalls = renderSvgMock.mock.calls.slice(callsBeforeFlip);
+    expect(postFlipCalls.length).toBeGreaterThan(0);
+    postFlipCalls.forEach((call, offset) => {
+      const idx = callsBeforeFlip + offset + 1;
+      const viewport = viewportFromArg(call[3] as string | undefined);
+      expect(viewport, `call #${idx} must pass viewport_json (full render leaked)`).not.toBeNull();
+      expect(viewport!.client_height, `call #${idx}`).toBe(600);
+    });
 
     wrapper.unmount();
   });
 
-  it('low→high: virtualization off so viewport_json is omitted (no stale-height bug)', async () => {
+  it('low→high: every call after flip omits viewport_json (no stale-height path)', async () => {
     const wrapper = await mountHarness('low');
     const el = scrollEl(wrapper);
+    const callsBeforeScroll = renderSvgMock.mock.calls.length;
     mockScrollMetrics(el, 600);
     el.dispatchEvent(new Event('scroll'));
     await nextTick();
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
-    expect(latestViewportJson()?.client_height).toBe(600);
+    const lowTierCalls = collectViewportCalls(renderSvgMock).filter(
+      (c) => c.callIndex > callsBeforeScroll,
+    );
+    expect(lowTierCalls.length).toBeGreaterThan(0);
+    for (const { viewport } of lowTierCalls) {
+      expect(viewport.client_height).toBe(600);
+    }
+
+    const callsBeforeFlip = renderSvgMock.mock.calls.length;
 
     (wrapper.vm as HarnessVm).setTier('high');
     mockScrollMetrics(el, 880);
+    await flushPromises();
     await nextTick();
     await nextTick();
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(false);
-    const lastCall = renderSvgMock.mock.calls.at(-1);
-    expect(lastCall?.[3]).toBeUndefined();
+    assertAllRecentCallsOmitViewport(renderSvgMock, callsBeforeFlip, 'low→high svg');
+    assertAllRecentCallsOmitViewport(renderCanvasMock, 0, 'low→high canvas');
 
     wrapper.unmount();
   });
 
-  it('tasks change while virtualized: scroll client_height unchanged (no remeasure needed)', async () => {
+  it('tasks change while virtualized: all viewport calls keep measured client_height', async () => {
     const wrapper = await mountHarness('low', 20);
     const el = scrollEl(wrapper);
     mockScrollMetrics(el, 600);
     el.dispatchEvent(new Event('scroll'));
     await nextTick();
 
-    const beforeViewport = latestViewportJson();
-    expect(beforeViewport!.client_height).toBe(600);
+    const callsBeforeTasksChange = renderSvgMock.mock.calls.length;
 
     (wrapper.vm as HarnessVm).setTaskCount(30);
+    await flushPromises();
     await nextTick();
     await nextTick();
 
-    const afterViewport = latestViewportJson();
-    expect(afterViewport!.client_height).toBe(600);
+    const postChangeCalls = collectViewportCalls(renderSvgMock).filter(
+      (c) => c.callIndex > callsBeforeTasksChange,
+    );
+    expect(postChangeCalls.length).toBeGreaterThan(0);
+    for (const { callIndex, viewport } of postChangeCalls) {
+      expect(viewport.client_height, `call #${callIndex}`).toBe(600);
+    }
+
+    assertNoViewportClientHeight([renderSvgMock, renderCanvasMock], 880, 'tasks-change');
 
     wrapper.unmount();
   });
