@@ -137,8 +137,19 @@ const viewportJson = computed(() => {
   });
 });
 
-const svgHtml = computed(() => {
+/**
+ * Single chokepoint for both WASM entry points: while virtualization is
+ * requested but the viewport is not yet measured (initial mount, tier-flip
+ * window), defer the render instead of issuing a full-range WASM call.
+ * Non-virtual (high tier) renders are never delayed.
+ */
+const viewportPending = computed(
+  () => requestedVirtualization.value && !viewportReady.value,
+);
+
+const svgHtml = computed<string | null>(() => {
   if (!ready.value || props.tasks.length === 0 || useCanvas.value) return '';
+  if (viewportPending.value) return null;
   return render_svg(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -149,6 +160,7 @@ const svgHtml = computed(() => {
 
 const canvasCommandsJson = computed(() => {
   if (!ready.value || props.tasks.length === 0 || !useCanvas.value) return '';
+  if (viewportPending.value) return '';
   return render_canvas_commands(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -157,7 +169,8 @@ const canvasCommandsJson = computed(() => {
   );
 });
 
-watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
+// null = deferred (viewport pending): keep the last painted SVG, no blanking.
+watch(svgHtml, (v) => { if (v !== null) svg.value = v; }, { immediate: true });
 
 /**
  * `render_svg` answers a blank chart to both "no tasks" and "input refused".

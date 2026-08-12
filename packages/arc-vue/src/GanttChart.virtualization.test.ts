@@ -90,33 +90,43 @@ const TierFlipHarness = defineComponent({
   props: {
     initialTier: { type: String as () => 'low' | 'high', required: true },
     taskCount: { type: Number, required: true },
+    initialBackend: { type: String as () => 'svg' | 'canvas', default: 'svg' },
   },
   setup(props) {
     const tier = ref(props.initialTier);
+    const backend = ref(props.initialBackend);
     const tasks = ref(makeTasks(props.taskCount));
     function setTier(next: 'low' | 'high') {
       tier.value = next;
     }
+    function setBackend(next: 'svg' | 'canvas') {
+      backend.value = next;
+    }
     function setTaskCount(count: number) {
       tasks.value = makeTasks(count);
     }
-    return { tier, tasks, setTier, setTaskCount };
+    return { tier, backend, tasks, setTier, setBackend, setTaskCount };
   },
   template: `
     <div class="harness" style="height: 800px; width: 400px;">
-      <GanttChart :tasks="tasks" :device-tier="tier" />
+      <GanttChart :tasks="tasks" :device-tier="tier" :backend="backend" />
     </div>
   `,
 });
 
 type HarnessVm = {
   setTier: (t: 'low' | 'high') => void;
+  setBackend: (b: 'svg' | 'canvas') => void;
   setTaskCount: (n: number) => void;
 };
 
-async function mountHarness(initialTier: 'low' | 'high', taskCount = 20) {
+async function mountHarness(
+  initialTier: 'low' | 'high',
+  taskCount = 20,
+  initialBackend: 'svg' | 'canvas' = 'svg',
+) {
   const wrapper = mount(TierFlipHarness, {
-    props: { initialTier, taskCount },
+    props: { initialTier, taskCount, initialBackend },
     attachTo: document.body,
   });
   await flushPromises();
@@ -221,6 +231,102 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     }
 
     assertNoViewportClientHeight([renderSvgMock, renderCanvasMock], 880, 'tasks-change');
+
+    wrapper.unmount();
+  });
+});
+
+/**
+ * Window invariant: while requestedVirtualization is true, no WASM render call
+ * may run without viewport_json. Windows where viewportReady is false:
+ *   W1 = component creation until onMounted sets viewportReady (every mount)
+ *   W2 = tier-flip watch body (high→low), spans a nextTick
+ * Every call in mock.calls is scanned — no .at(-1) sampling.
+ */
+describe('GanttChart WASM viewport gate', () => {
+  beforeEach(() => {
+    renderSvgMock.mockClear();
+    renderCanvasMock.mockClear();
+  });
+
+  it('W1 svg: initial low-tier mount never calls render_svg without viewport_json', async () => {
+    const wrapper = await mountHarness('low');
+
+    expect(renderSvgMock.mock.calls.length).toBeGreaterThan(0);
+    renderSvgMock.mock.calls.forEach((call, i) => {
+      expect(
+        call[3],
+        `W1 svg: call #${i + 1} ran without viewport_json (full-range WASM render on mount)`,
+      ).toBeDefined();
+    });
+
+    wrapper.unmount();
+  });
+
+  it('W1 canvas: initial low-tier mount never calls render_canvas_commands without viewport_json', async () => {
+    const wrapper = await mountHarness('low', 20, 'canvas');
+
+    expect(renderCanvasMock.mock.calls.length).toBeGreaterThan(0);
+    renderCanvasMock.mock.calls.forEach((call, i) => {
+      expect(
+        call[3],
+        `W1 canvas: call #${i + 1} ran without viewport_json (full-range WASM render on mount)`,
+      ).toBeDefined();
+    });
+
+    wrapper.unmount();
+  });
+
+  it('W2 props: tasks change inside high→low flip window never leaks a viewport-less render_svg call', async () => {
+    const wrapper = await mountHarness('high');
+    const callsBeforeFlip = renderSvgMock.mock.calls.length;
+
+    // Same tick: flip opens W2, tasks change triggers svgHtml recompute inside it.
+    (wrapper.vm as HarnessVm).setTier('low');
+    (wrapper.vm as HarnessVm).setTaskCount(30);
+    await flushPromises();
+    await nextTick();
+    await nextTick();
+
+    const postFlip = renderSvgMock.mock.calls.slice(callsBeforeFlip);
+    expect(postFlip.length).toBeGreaterThan(0);
+    postFlip.forEach((call, offset) => {
+      expect(
+        call[3],
+        `W2 props: call #${callsBeforeFlip + offset + 1} ran without viewport_json inside flip window`,
+      ).toBeDefined();
+    });
+
+    wrapper.unmount();
+  });
+
+  it('W2 backend: backend switch inside high→low flip window never leaks a viewport-less render_canvas_commands call', async () => {
+    const wrapper = await mountHarness('high');
+
+    (wrapper.vm as HarnessVm).setTier('low');
+    (wrapper.vm as HarnessVm).setBackend('canvas');
+    await flushPromises();
+    await nextTick();
+    await nextTick();
+
+    expect(renderCanvasMock.mock.calls.length).toBeGreaterThan(0);
+    renderCanvasMock.mock.calls.forEach((call, i) => {
+      expect(
+        call[3],
+        `W2 backend: call #${i + 1} ran without viewport_json inside flip window`,
+      ).toBeDefined();
+    });
+
+    wrapper.unmount();
+  });
+
+  it('non-virtual guard: high-tier mount renders immediately and omits viewport_json', async () => {
+    const wrapper = await mountHarness('high');
+
+    expect(renderSvgMock.mock.calls.length).toBeGreaterThan(0);
+    renderSvgMock.mock.calls.forEach((call, i) => {
+      expect(call[3], `high tier: call #${i + 1} must omit viewport_json`).toBeUndefined();
+    });
 
     wrapper.unmount();
   });
