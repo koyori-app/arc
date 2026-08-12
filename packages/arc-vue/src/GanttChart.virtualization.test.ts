@@ -45,19 +45,34 @@ function collectViewportCalls(
   return out;
 }
 
+/**
+ * Gate against vacuous passes: a scan-based assertion that inspected nothing
+ * proves nothing. Every helper below runs its traversal through this, so an
+ * empty input is a hard failure instead of a silent green.
+ */
+function assertScanned(count: number, label: string) {
+  expect(
+    count,
+    `${label}: scanned 0 calls — vacuous assertion, nothing was actually checked`,
+  ).toBeGreaterThan(0);
+}
+
 function assertNoViewportClientHeight(
   mocks: Array<{ mock: { calls: unknown[][] } }>,
   forbidden: number,
   label: string,
 ) {
+  let scanned = 0;
   for (const mock of mocks) {
     for (const { callIndex, viewport } of collectViewportCalls(mock)) {
+      scanned += 1;
       expect(
         viewport.client_height,
         `${label}: call #${callIndex} passed stale client_height ${forbidden}`,
       ).not.toBe(forbidden);
     }
   }
+  assertScanned(scanned, `${label} (no-stale-client-height)`);
 }
 
 function assertAllRecentCallsOmitViewport(
@@ -65,9 +80,24 @@ function assertAllRecentCallsOmitViewport(
   sinceCallIndex: number,
   label: string,
 ) {
-  mock.mock.calls.slice(sinceCallIndex).forEach((call, offset) => {
+  const callWindow = mock.mock.calls.slice(sinceCallIndex);
+  assertScanned(callWindow.length, `${label} (omit-viewport window from #${sinceCallIndex + 1})`);
+  callWindow.forEach((call, offset) => {
     const idx = sinceCallIndex + offset + 1;
     expect(call[3], `${label}: call #${idx} must omit viewport_json`).toBeUndefined();
+  });
+}
+
+function assertAllCallsCarryViewport(
+  mock: { mock: { calls: unknown[][] } },
+  sinceCallIndex: number,
+  label: string,
+) {
+  const callWindow = mock.mock.calls.slice(sinceCallIndex);
+  assertScanned(callWindow.length, `${label} (carry-viewport window from #${sinceCallIndex + 1})`);
+  callWindow.forEach((call, offset) => {
+    const idx = sinceCallIndex + offset + 1;
+    expect(call[3], `${label}: call #${idx} ran without viewport_json`).toBeDefined();
   });
 }
 
@@ -139,6 +169,58 @@ function scrollEl(wrapper: ReturnType<typeof mount>) {
   return wrapper.find('.koyori-gantt-scroll').element as HTMLElement;
 }
 
+/**
+ * Positive control for the scan gates themselves. Without these, a helper that
+ * silently scans an empty call list keeps reporting green — the exact failure
+ * that let `assertAllRecentCallsOmitViewport(renderCanvasMock, 0)` sit in the
+ * svg test asserting nothing.
+ */
+describe('scan-assertion gates', () => {
+  const VP = JSON.stringify({ scroll_y: 0, client_height: 600 });
+  const mockWith = (calls: unknown[][]) => ({ mock: { calls } });
+
+  it('assertAllRecentCallsOmitViewport fails when the scan window is empty', () => {
+    expect(() =>
+      assertAllRecentCallsOmitViewport(mockWith([]), 0, 'gate'),
+    ).toThrow(/scanned 0 calls/);
+  });
+
+  it('assertAllCallsCarryViewport fails when the scan window is empty', () => {
+    expect(() =>
+      assertAllCallsCarryViewport(mockWith([]), 0, 'gate'),
+    ).toThrow(/scanned 0 calls/);
+  });
+
+  it('assertNoViewportClientHeight fails when no scanned call carried viewport_json', () => {
+    expect(() =>
+      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, undefined]])], 880, 'gate'),
+    ).toThrow(/scanned 0 calls/);
+  });
+
+  it('gates pass on a legitimate non-empty scan (and still catch real violations)', () => {
+    expect(() =>
+      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, VP]])], 880, 'gate'),
+    ).not.toThrow();
+    expect(() =>
+      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, undefined]]), 0, 'gate'),
+    ).not.toThrow();
+    expect(() =>
+      assertAllCallsCarryViewport(mockWith([['t', 'd', undefined, VP]]), 0, 'gate'),
+    ).not.toThrow();
+
+    const stale = JSON.stringify({ scroll_y: 0, client_height: 880 });
+    expect(() =>
+      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, stale]])], 880, 'gate'),
+    ).toThrow(/stale client_height 880/);
+    expect(() =>
+      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, VP]]), 0, 'gate'),
+    ).toThrow(/must omit viewport_json/);
+    expect(() =>
+      assertAllCallsCarryViewport(mockWith([['t', 'd', undefined, undefined]]), 0, 'gate'),
+    ).toThrow(/ran without viewport_json/);
+  });
+});
+
 describe('GanttChart deviceTier flip viewport sync', () => {
   beforeEach(() => {
     renderSvgMock.mockClear();
@@ -203,7 +285,42 @@ describe('GanttChart deviceTier flip viewport sync', () => {
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(false);
     assertAllRecentCallsOmitViewport(renderSvgMock, callsBeforeFlip, 'low→high svg');
-    assertAllRecentCallsOmitViewport(renderCanvasMock, 0, 'low→high canvas');
+
+    wrapper.unmount();
+  });
+
+  // The svg harness never mounts a canvas, so the canvas leg needs its own
+  // harness — asserting on renderCanvasMock from inside the svg test only ever
+  // scanned an empty call list.
+  it('low→high canvas: viewport carried while virtual, omitted after flip', async () => {
+    const wrapper = await mountHarness('low', 20, 'canvas');
+    const el = scrollEl(wrapper);
+    const callsBeforeScroll = renderCanvasMock.mock.calls.length;
+    mockScrollMetrics(el, 600);
+    el.dispatchEvent(new Event('scroll'));
+    await nextTick();
+
+    expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
+    assertAllCallsCarryViewport(renderCanvasMock, 0, 'low→high canvas pre-flip');
+    const lowTierCalls = collectViewportCalls(renderCanvasMock).filter(
+      (c) => c.callIndex > callsBeforeScroll,
+    );
+    expect(lowTierCalls.length).toBeGreaterThan(0);
+    for (const { callIndex, viewport } of lowTierCalls) {
+      expect(viewport.client_height, `pre-flip call #${callIndex}`).toBe(600);
+    }
+
+    const callsBeforeFlip = renderCanvasMock.mock.calls.length;
+
+    (wrapper.vm as HarnessVm).setTier('high');
+    mockScrollMetrics(el, 880);
+    await flushPromises();
+    await nextTick();
+    await nextTick();
+
+    expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(false);
+    assertAllRecentCallsOmitViewport(renderCanvasMock, callsBeforeFlip, 'low→high canvas');
+    assertNoViewportClientHeight([renderCanvasMock], 880, 'low→high canvas');
 
     wrapper.unmount();
   });
