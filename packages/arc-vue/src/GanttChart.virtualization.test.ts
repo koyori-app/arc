@@ -49,6 +49,10 @@ function collectViewportCalls(
  * Gate against vacuous passes: a scan-based assertion that inspected nothing
  * proves nothing. Every helper below runs its traversal through this, so an
  * empty input is a hard failure instead of a silent green.
+ *
+ * All three helpers take the same `(mock, sinceCallIndex, …)` shape: the window
+ * a scan covers is a parameter, so an assertion cannot be satisfied by calls
+ * outside the window it claims to check.
  */
 function assertScanned(count: number, label: string) {
   expect(
@@ -58,21 +62,27 @@ function assertScanned(count: number, label: string) {
 }
 
 function assertNoViewportClientHeight(
-  mocks: Array<{ mock: { calls: unknown[][] } }>,
+  mock: { mock: { calls: unknown[][] } },
+  sinceCallIndex: number,
   forbidden: number,
   label: string,
 ) {
+  const callWindow = mock.mock.calls.slice(sinceCallIndex);
   let scanned = 0;
-  for (const mock of mocks) {
-    for (const { callIndex, viewport } of collectViewportCalls(mock)) {
-      scanned += 1;
-      expect(
-        viewport.client_height,
-        `${label}: call #${callIndex} passed stale client_height ${forbidden}`,
-      ).not.toBe(forbidden);
-    }
-  }
-  assertScanned(scanned, `${label} (no-stale-client-height)`);
+  callWindow.forEach((call, offset) => {
+    const idx = sinceCallIndex + offset + 1;
+    const viewport = viewportFromArg(call[3] as string | undefined);
+    if (!viewport) return;
+    scanned += 1;
+    expect(
+      viewport.client_height,
+      `${label}: call #${idx} passed stale client_height ${forbidden}`,
+    ).not.toBe(forbidden);
+  });
+  assertScanned(
+    scanned,
+    `${label} (no-stale-client-height window from #${sinceCallIndex + 1})`,
+  );
 }
 
 function assertAllRecentCallsOmitViewport(
@@ -193,13 +203,13 @@ describe('scan-assertion gates', () => {
 
   it('assertNoViewportClientHeight fails when no scanned call carried viewport_json', () => {
     expect(() =>
-      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, undefined]])], 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, undefined]]), 0, 880, 'gate'),
     ).toThrow(/scanned 0 calls/);
   });
 
   it('gates pass on a legitimate non-empty scan (and still catch real violations)', () => {
     expect(() =>
-      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, VP]])], 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, VP]]), 0, 880, 'gate'),
     ).not.toThrow();
     expect(() =>
       assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, undefined]]), 0, 'gate'),
@@ -210,7 +220,7 @@ describe('scan-assertion gates', () => {
 
     const stale = JSON.stringify({ scroll_y: 0, client_height: 880 });
     expect(() =>
-      assertNoViewportClientHeight([mockWith([['t', 'd', undefined, stale]])], 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, stale]]), 0, 880, 'gate'),
     ).toThrow(/stale client_height 880/);
     expect(() =>
       assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, VP]]), 0, 'gate'),
@@ -244,7 +254,10 @@ describe('GanttChart deviceTier flip viewport sync', () => {
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
 
-    assertNoViewportClientHeight([renderSvgMock, renderCanvasMock], 880, 'high→low');
+    // Window 0: the invariant spans the whole test — no call, before or after
+    // the flip, may carry the stale height. The svg harness never mounts a
+    // canvas, so scanning renderCanvasMock here would inspect nothing.
+    assertNoViewportClientHeight(renderSvgMock, 0, 880, 'high→low');
 
     const postFlipCalls = renderSvgMock.mock.calls.slice(callsBeforeFlip);
     expect(postFlipCalls.length).toBeGreaterThan(0);
@@ -319,8 +332,10 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     await nextTick();
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(false);
+    // No stale-height assertion here: after the flip the window provably carries
+    // zero viewport_json calls (assertAllRecentCallsOmitViewport enforces it), so
+    // a client_height scan over that window could only ever inspect nothing.
     assertAllRecentCallsOmitViewport(renderCanvasMock, callsBeforeFlip, 'low→high canvas');
-    assertNoViewportClientHeight([renderCanvasMock], 880, 'low→high canvas');
 
     wrapper.unmount();
   });
@@ -347,7 +362,9 @@ describe('GanttChart deviceTier flip viewport sync', () => {
       expect(viewport.client_height, `call #${callIndex}`).toBe(600);
     }
 
-    assertNoViewportClientHeight([renderSvgMock, renderCanvasMock], 880, 'tasks-change');
+    // Window 0: covers the pre-change low-tier calls too, which no other
+    // assertion in this test inspects.
+    assertNoViewportClientHeight(renderSvgMock, 0, 880, 'tasks-change');
 
     wrapper.unmount();
   });
@@ -358,7 +375,9 @@ describe('GanttChart deviceTier flip viewport sync', () => {
  * may run without viewport_json. Windows where viewportReady is false:
  *   W1 = component creation until onMounted sets viewportReady (every mount)
  *   W2 = tier-flip watch body (high→low), spans a nextTick
- * Every call in mock.calls is scanned — no .at(-1) sampling.
+ * Every assertion here goes through the shared scan helpers, so the window is
+ * declared per call and an empty window fails instead of passing vacuously —
+ * no .at(-1) sampling and no hand-written call-count guards.
  */
 describe('GanttChart WASM viewport gate', () => {
   beforeEach(() => {
@@ -369,13 +388,7 @@ describe('GanttChart WASM viewport gate', () => {
   it('W1 svg: initial low-tier mount never calls render_svg without viewport_json', async () => {
     const wrapper = await mountHarness('low');
 
-    expect(renderSvgMock.mock.calls.length).toBeGreaterThan(0);
-    renderSvgMock.mock.calls.forEach((call, i) => {
-      expect(
-        call[3],
-        `W1 svg: call #${i + 1} ran without viewport_json (full-range WASM render on mount)`,
-      ).toBeDefined();
-    });
+    assertAllCallsCarryViewport(renderSvgMock, 0, 'W1 svg mount');
 
     wrapper.unmount();
   });
@@ -383,13 +396,7 @@ describe('GanttChart WASM viewport gate', () => {
   it('W1 canvas: initial low-tier mount never calls render_canvas_commands without viewport_json', async () => {
     const wrapper = await mountHarness('low', 20, 'canvas');
 
-    expect(renderCanvasMock.mock.calls.length).toBeGreaterThan(0);
-    renderCanvasMock.mock.calls.forEach((call, i) => {
-      expect(
-        call[3],
-        `W1 canvas: call #${i + 1} ran without viewport_json (full-range WASM render on mount)`,
-      ).toBeDefined();
-    });
+    assertAllCallsCarryViewport(renderCanvasMock, 0, 'W1 canvas mount');
 
     wrapper.unmount();
   });
@@ -405,14 +412,7 @@ describe('GanttChart WASM viewport gate', () => {
     await nextTick();
     await nextTick();
 
-    const postFlip = renderSvgMock.mock.calls.slice(callsBeforeFlip);
-    expect(postFlip.length).toBeGreaterThan(0);
-    postFlip.forEach((call, offset) => {
-      expect(
-        call[3],
-        `W2 props: call #${callsBeforeFlip + offset + 1} ran without viewport_json inside flip window`,
-      ).toBeDefined();
-    });
+    assertAllCallsCarryViewport(renderSvgMock, callsBeforeFlip, 'W2 props flip window');
 
     wrapper.unmount();
   });
@@ -426,13 +426,7 @@ describe('GanttChart WASM viewport gate', () => {
     await nextTick();
     await nextTick();
 
-    expect(renderCanvasMock.mock.calls.length).toBeGreaterThan(0);
-    renderCanvasMock.mock.calls.forEach((call, i) => {
-      expect(
-        call[3],
-        `W2 backend: call #${i + 1} ran without viewport_json inside flip window`,
-      ).toBeDefined();
-    });
+    assertAllCallsCarryViewport(renderCanvasMock, 0, 'W2 backend flip window');
 
     wrapper.unmount();
   });
@@ -440,10 +434,7 @@ describe('GanttChart WASM viewport gate', () => {
   it('non-virtual guard: high-tier mount renders immediately and omits viewport_json', async () => {
     const wrapper = await mountHarness('high');
 
-    expect(renderSvgMock.mock.calls.length).toBeGreaterThan(0);
-    renderSvgMock.mock.calls.forEach((call, i) => {
-      expect(call[3], `high tier: call #${i + 1} must omit viewport_json`).toBeUndefined();
-    });
+    assertAllRecentCallsOmitViewport(renderSvgMock, 0, 'non-virtual high tier');
 
     wrapper.unmount();
   });
