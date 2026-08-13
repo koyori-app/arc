@@ -66,24 +66,57 @@ fn common_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<St
     None
 }
 
-fn rendered_date_span_days(tasks: &[GanttTask]) -> i64 {
+/// Days of headroom every task date must keep below `NaiveDate::MAX`. The
+/// display list steps the weekly grid forward by one week past the last task
+/// date and derives an implicit end date as `start + 1 day`, so dates without
+/// this headroom are rejected before any date arithmetic runs.
+pub const DATE_HEADROOM_DAYS: i64 = 7;
+
+fn date_headroom_error(tasks: &[GanttTask]) -> Option<String> {
+    let lacks_headroom = tasks.iter().any(|t| {
+        let latest = t.end.unwrap_or(t.start).max(t.start);
+        latest
+            .checked_add_signed(Duration::days(DATE_HEADROOM_DAYS))
+            .is_none()
+    });
+    lacks_headroom.then(|| {
+        format!("date is too close to the maximum supported date (needs {DATE_HEADROOM_DAYS} days of headroom)")
+    })
+}
+
+/// Rejects dates without headroom *before* computing anything, then computes
+/// the span with checked arithmetic so an overflow yields a value, not a panic.
+fn rendered_date_span_days(tasks: &[GanttTask]) -> Result<i64, String> {
     if tasks.is_empty() {
-        return 0;
+        return Ok(0);
+    }
+    if let Some(msg) = date_headroom_error(tasks) {
+        return Err(msg);
     }
     let min_start = tasks.iter().map(|t| t.start).min().unwrap();
     let max_date = tasks
         .iter()
-        .map(|t| t.end.unwrap_or_else(|| t.start + Duration::days(1)))
+        .map(|t| {
+            t.end.unwrap_or_else(|| {
+                t.start
+                    .checked_add_signed(Duration::days(1))
+                    .unwrap_or(t.start)
+            })
+        })
         .max()
         .unwrap();
-    (max_date - min_start).num_days().max(0)
+    Ok((max_date - min_start).num_days().max(0))
 }
 
 fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
     if let Some(msg) = common_graph_limit_error(tasks, deps) {
         return Some(msg);
     }
-    if rendered_date_span_days(tasks) > MAX_DATE_SPAN_DAYS {
+    let span_days = match rendered_date_span_days(tasks) {
+        Ok(days) => days,
+        Err(msg) => return Some(msg),
+    };
+    if span_days > MAX_DATE_SPAN_DAYS {
         return Some(format!("date range exceeds limit ({MAX_DATE_SPAN_DAYS} days)"));
     }
     None
@@ -98,12 +131,16 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<St
             "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
         ));
     }
-    if rendered_date_span_days(tasks) > MAX_CANVAS_DATE_SPAN_DAYS {
+    let span_days = match rendered_date_span_days(tasks) {
+        Ok(days) => days,
+        Err(msg) => return Some(msg),
+    };
+    if span_days > MAX_CANVAS_DATE_SPAN_DAYS {
         return Some(format!(
             "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
         ));
     }
-    let width_px = rendered_date_span_days(tasks) as f64 * PX_PER_DAY
+    let width_px = span_days as f64 * PX_PER_DAY
         + LABEL_W
         + CHART_RIGHT_PADDING_PX;
     let height_px = tasks.len() as f64 * ROW_H
@@ -604,6 +641,118 @@ mod tests {
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"].as_str().unwrap().contains("canvas area"));
+    }
+
+    fn max_date_tasks_json(start: NaiveDate, end: Option<NaiveDate>) -> String {
+        let tasks = vec![GanttTask {
+            id: "max-date".to_string(),
+            title: "Max date".to_string(),
+            progress_pct: 0,
+            start,
+            end,
+        }];
+        serde_json::to_string(&tasks).unwrap()
+    }
+
+    fn near_max_start() -> NaiveDate {
+        NaiveDate::MAX
+            .checked_sub_signed(Duration::days(10))
+            .expect("10 days below NaiveDate::MAX")
+    }
+
+    #[test]
+    fn svg_entry_rejects_maximum_start_date_with_null_end() {
+        // `end: None` makes the guard itself compute `start + 1 day`, which
+        // overflows `NaiveDate::MAX`. Before the fix this panics inside the guard.
+        let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
+        let svg = render_svg(&tasks_json, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+    }
+
+    #[test]
+    fn canvas_entry_rejects_maximum_start_date_with_null_end() {
+        let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
+        let json = render_canvas_commands(&tasks_json, "[]", None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(
+            value["error"].as_str().unwrap().contains("date"),
+            "expected a date-related rejection, got: {json:.200}"
+        );
+    }
+
+    #[test]
+    fn svg_entry_rejects_explicit_maximum_end_date() {
+        // Span is only 10 days, so the span limit accepts it; the panic before
+        // the fix comes from the weekly grid stepping past `NaiveDate::MAX`.
+        let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
+        let svg = render_svg(&tasks_json, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+    }
+
+    #[test]
+    fn canvas_entry_rejects_explicit_maximum_end_date() {
+        let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
+        let json = render_canvas_commands(&tasks_json, "[]", None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(
+            value["error"].as_str().unwrap().contains("date"),
+            "expected a date-related rejection, got: {json:.200}"
+        );
+    }
+
+    #[test]
+    fn svg_date_span_boundary_accepts_limit_and_rejects_one_more() {
+        let start = date(2026, 1, 1);
+        let at_limit = max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS)));
+        let svg = render_svg(&at_limit, "[]", None, None);
+        assert_ne!(svg, crate::backend::svg::empty_svg());
+
+        let over_limit =
+            max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS + 1)));
+        let svg = render_svg(&over_limit, "[]", None, None);
+        assert_eq!(svg, crate::backend::svg::empty_svg());
+    }
+
+    #[test]
+    fn canvas_reports_date_span_overflow_instead_of_panicking() {
+        let start = date(2026, 1, 1);
+        let over_limit = max_date_tasks_json(
+            start,
+            Some(start + Duration::days(MAX_CANVAS_DATE_SPAN_DAYS + 1)),
+        );
+        let json = render_canvas_commands(&over_limit, "[]", None, None);
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(value["error"]
+            .as_str()
+            .unwrap()
+            .contains("canvas date range"));
+    }
+
+    #[test]
+    fn native_render_survives_maximum_dates() {
+        // The native entry points have no limit guards, so the checked date
+        // arithmetic in the display list is what keeps them from panicking.
+        let tasks = vec![GanttTask {
+            id: "native-max".to_string(),
+            title: "Native max".to_string(),
+            progress_pct: 0,
+            start: near_max_start(),
+            end: Some(NaiveDate::MAX),
+        }];
+        let svg = render(&tasks, &[], None, None);
+        assert!(svg.starts_with("<svg "));
+
+        let no_end = vec![GanttTask {
+            id: "native-max-null-end".to_string(),
+            title: "Native max null end".to_string(),
+            progress_pct: 0,
+            start: NaiveDate::MAX,
+            end: None,
+        }];
+        let svg = render(&no_end, &[], None, None);
+        assert!(svg.starts_with("<svg "));
+        let buffer = render_canvas(&no_end, &[], None, None);
+        assert!(buffer.viewport_width.is_finite());
     }
 
     #[test]

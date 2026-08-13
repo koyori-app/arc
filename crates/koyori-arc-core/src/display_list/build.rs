@@ -94,10 +94,16 @@ pub fn build_display_list(
 
     // Grid layer
     let mut grid_prims = Vec::new();
+    // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
+    // but the native entry points have no such guard, so every step here is
+    // checked: an overflow stops the grid instead of panicking.
     let first_monday = {
         let mut d = epoch;
         while d.weekday() != Weekday::Mon {
-            d += Duration::days(1);
+            match d.checked_add_signed(Duration::days(1)) {
+                Some(next) => d = next,
+                None => break,
+            }
         }
         d
     };
@@ -126,7 +132,10 @@ pub fn build_display_list(
             baseline: TextBaseline::Auto,
             semantic: TextSemantic::GridLabel,
         }));
-        grid_day += Duration::weeks(1);
+        grid_day = match grid_day.checked_add_signed(Duration::weeks(1)) {
+            Some(next) => next,
+            None => break,
+        };
     }
     layers.push(Layer {
         kind: LayerKind::Grid,
@@ -147,10 +156,13 @@ pub fn build_display_list(
         let prog_pct = task.progress_pct.clamp(0, 100);
         let tier = ProgressTier::from_pct(prog_pct);
         let pct_label = format!("{prog_pct}%");
-        let end_label = task
-            .end
-            .map(format_date)
-            .unwrap_or_else(|| format_date(task.start + Duration::days(1)));
+        let end_label = task.end.map(format_date).unwrap_or_else(|| {
+            format_date(
+                task.start
+                    .checked_add_signed(Duration::days(1))
+                    .unwrap_or(task.start),
+            )
+        });
         let tooltip = format!(
             "{}: {} – {} ({pct_label})",
             task.title,
