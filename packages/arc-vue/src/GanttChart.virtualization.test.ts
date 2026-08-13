@@ -33,24 +33,12 @@ function viewportFromArg(arg: string | undefined): Viewport | null {
   return JSON.parse(arg) as Viewport;
 }
 
-/** Every render_svg / render_canvas_commands call that passed viewport_json. */
-function collectViewportCalls(
-  mock: { mock: { calls: unknown[][] } },
-): Array<{ callIndex: number; viewport: Viewport }> {
-  const out: Array<{ callIndex: number; viewport: Viewport }> = [];
-  mock.mock.calls.forEach((call, i) => {
-    const vp = viewportFromArg(call[3] as string | undefined);
-    if (vp) out.push({ callIndex: i + 1, viewport: vp });
-  });
-  return out;
-}
-
 /**
  * Gate against vacuous passes: a scan-based assertion that inspected nothing
  * proves nothing. Every helper below runs its traversal through this, so an
  * empty input is a hard failure instead of a silent green.
  *
- * All three helpers take the same `(mock, sinceCallIndex, …)` shape: the window
+ * All four helpers take the same `(mock, sinceCallIndex, …)` shape: the window
  * a scan covers is a parameter, so an assertion cannot be satisfied by calls
  * outside the window it claims to check.
  */
@@ -82,6 +70,37 @@ function assertNoViewportClientHeight(
   assertScanned(
     scanned,
     `${label} (no-stale-client-height window from #${sinceCallIndex + 1})`,
+  );
+}
+
+/**
+ * Measured-value identity: every viewport-carrying call in the window must
+ * pass exactly the measured client_height. This is the falsifiable form of
+ * assertNoViewportClientHeight — a forbidden value that never appears in the
+ * fixture can never fail, but "every call carries the value we measured"
+ * fails on any wrong height, known or not.
+ */
+function assertViewportClientHeightIs(
+  mock: { mock: { calls: unknown[][] } },
+  sinceCallIndex: number,
+  expected: number,
+  label: string,
+) {
+  const callWindow = mock.mock.calls.slice(sinceCallIndex);
+  let scanned = 0;
+  callWindow.forEach((call, offset) => {
+    const idx = sinceCallIndex + offset + 1;
+    const viewport = viewportFromArg(call[3] as string | undefined);
+    if (!viewport) return;
+    scanned += 1;
+    expect(
+      viewport.client_height,
+      `${label}: call #${idx} carried client_height ${viewport.client_height}, expected measured ${expected}`,
+    ).toBe(expected);
+  });
+  assertScanned(
+    scanned,
+    `${label} (client-height-is window from #${sinceCallIndex + 1})`,
   );
 }
 
@@ -207,6 +226,22 @@ describe('scan-assertion gates', () => {
     ).toThrow(/scanned 0 calls/);
   });
 
+  it('assertViewportClientHeightIs fails when no scanned call carried viewport_json', () => {
+    expect(() =>
+      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, undefined]]), 0, 600, 'gate'),
+    ).toThrow(/scanned 0 calls/);
+  });
+
+  it('assertViewportClientHeightIs passes on the measured value and fails on any other', () => {
+    expect(() =>
+      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, VP]]), 0, 600, 'gate'),
+    ).not.toThrow();
+    const wrong = JSON.stringify({ scroll_y: 0, client_height: 599 });
+    expect(() =>
+      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, wrong]]), 0, 600, 'gate'),
+    ).toThrow(/carried client_height 599/);
+  });
+
   it('gates pass on a legitimate non-empty scan (and still catch real violations)', () => {
     expect(() =>
       assertNoViewportClientHeight(mockWith([['t', 'd', undefined, VP]]), 0, 880, 'gate'),
@@ -259,14 +294,10 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     // canvas, so scanning renderCanvasMock here would inspect nothing.
     assertNoViewportClientHeight(renderSvgMock, 0, 880, 'high→low');
 
-    const postFlipCalls = renderSvgMock.mock.calls.slice(callsBeforeFlip);
-    expect(postFlipCalls.length).toBeGreaterThan(0);
-    postFlipCalls.forEach((call, offset) => {
-      const idx = callsBeforeFlip + offset + 1;
-      const viewport = viewportFromArg(call[3] as string | undefined);
-      expect(viewport, `call #${idx} must pass viewport_json (full render leaked)`).not.toBeNull();
-      expect(viewport!.client_height, `call #${idx}`).toBe(600);
-    });
+    // Post-flip window: every call must carry viewport_json (a full render
+    // here is the leak this test exists for) and carry the re-measured 600.
+    assertAllCallsCarryViewport(renderSvgMock, callsBeforeFlip, 'high→low post-flip');
+    assertViewportClientHeightIs(renderSvgMock, callsBeforeFlip, 600, 'high→low post-flip');
 
     wrapper.unmount();
   });
@@ -280,13 +311,7 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     await nextTick();
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
-    const lowTierCalls = collectViewportCalls(renderSvgMock).filter(
-      (c) => c.callIndex > callsBeforeScroll,
-    );
-    expect(lowTierCalls.length).toBeGreaterThan(0);
-    for (const { viewport } of lowTierCalls) {
-      expect(viewport.client_height).toBe(600);
-    }
+    assertViewportClientHeightIs(renderSvgMock, callsBeforeScroll, 600, 'low→high pre-flip');
 
     const callsBeforeFlip = renderSvgMock.mock.calls.length;
 
@@ -315,13 +340,12 @@ describe('GanttChart deviceTier flip viewport sync', () => {
 
     expect(scrollEl(wrapper).classList.contains('koyori-gantt-scroll--virtual')).toBe(true);
     assertAllCallsCarryViewport(renderCanvasMock, 0, 'low→high canvas pre-flip');
-    const lowTierCalls = collectViewportCalls(renderCanvasMock).filter(
-      (c) => c.callIndex > callsBeforeScroll,
+    assertViewportClientHeightIs(
+      renderCanvasMock,
+      callsBeforeScroll,
+      600,
+      'low→high canvas pre-flip',
     );
-    expect(lowTierCalls.length).toBeGreaterThan(0);
-    for (const { callIndex, viewport } of lowTierCalls) {
-      expect(viewport.client_height, `pre-flip call #${callIndex}`).toBe(600);
-    }
 
     const callsBeforeFlip = renderCanvasMock.mock.calls.length;
 
@@ -340,33 +364,47 @@ describe('GanttChart deviceTier flip viewport sync', () => {
     wrapper.unmount();
   });
 
-  it('tasks change while virtualized: all viewport calls keep measured client_height', async () => {
-    const wrapper = await mountHarness('low', 20);
-    const el = scrollEl(wrapper);
-    mockScrollMetrics(el, 600);
-    el.dispatchEvent(new Event('scroll'));
-    await nextTick();
+  it('tasks change while virtualized: every viewport call in the test carries measured client_height', async () => {
+    // The clientHeight getter is stubbed at the prototype level BEFORE mount:
+    // happy-dom never lays out and would otherwise report 0 to the onMounted
+    // measure. Stubbing first makes window 0 a real invariant — every viewport
+    // call in the whole test (mount, scroll, tasks change) must carry the
+    // measured height, not merely avoid one forbidden value that this fixture
+    // never produces. 640 deliberately differs from the component's internal
+    // clientHeight ref default (600): a component that never syncs would carry
+    // 600 and be indistinguishable from a measured 600.
+    const heightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(640);
+    try {
+      const wrapper = await mountHarness('low', 20);
+      scrollEl(wrapper).dispatchEvent(new Event('scroll'));
+      await nextTick();
 
-    const callsBeforeTasksChange = renderSvgMock.mock.calls.length;
+      const callsBeforeTasksChange = renderSvgMock.mock.calls.length;
 
-    (wrapper.vm as HarnessVm).setTaskCount(30);
-    await flushPromises();
-    await nextTick();
-    await nextTick();
+      (wrapper.vm as HarnessVm).setTaskCount(30);
+      await flushPromises();
+      await nextTick();
+      await nextTick();
 
-    const postChangeCalls = collectViewportCalls(renderSvgMock).filter(
-      (c) => c.callIndex > callsBeforeTasksChange,
-    );
-    expect(postChangeCalls.length).toBeGreaterThan(0);
-    for (const { callIndex, viewport } of postChangeCalls) {
-      expect(viewport.client_height, `call #${callIndex}`).toBe(600);
+      // The tasks change must itself produce render calls (otherwise the
+      // window-0 scan below could be satisfied by pre-change calls alone),
+      // and while virtualized none of them may run without viewport_json.
+      assertAllCallsCarryViewport(
+        renderSvgMock,
+        callsBeforeTasksChange,
+        'tasks-change post-change',
+      );
+      // Window 0: one falsifiable predicate over the entire test — measured
+      // value identity, replacing the old forbidden-880 scan (880 never
+      // appeared in this fixture, so that scan could not fail).
+      assertViewportClientHeightIs(renderSvgMock, 0, 640, 'tasks-change');
+
+      wrapper.unmount();
+    } finally {
+      heightSpy.mockRestore();
     }
-
-    // Window 0: covers the pre-change low-tier calls too, which no other
-    // assertion in this test inspects.
-    assertNoViewportClientHeight(renderSvgMock, 0, 880, 'tasks-change');
-
-    wrapper.unmount();
   });
 });
 
