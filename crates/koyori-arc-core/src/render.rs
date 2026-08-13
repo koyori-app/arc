@@ -56,6 +56,40 @@ pub fn render_canvas(
     }
 }
 
+/// Returned by [`render_svg`] instead of markup when the input JSON cannot be parsed.
+///
+/// A constant, deliberately: serde error text quotes the offending input
+/// verbatim, so an input carrying `-->` used to terminate the SVG comment and
+/// leave live markup behind — `GanttChart.vue` mounts this string with
+/// `v-html`. Escaping the message would also work, but only for as long as the
+/// next author keeps escaping it; a constant cannot carry input at all. The
+/// detail is not lost, it goes to [`log_parse_error`] instead of into markup.
+const PARSE_ERROR_SVG: &str = "<!-- parse error: invalid input JSON -->";
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn console_error(s: &str);
+}
+
+/// Send parse detail to the host console — a channel that is not markup.
+fn log_parse_error(context: &str, e: &serde_json::Error) {
+    #[cfg(target_arch = "wasm32")]
+    console_error(&format!("koyori-arc: {context} JSON parse error: {e}"));
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = (context, e);
+}
+
+/// Error payload for [`render_canvas_commands`], built by serde so the detail
+/// cannot break the JSON it travels in. Hand-concatenated `{"error":"…{e}…"}`
+/// produced invalid JSON whenever the serde message contained a quote, and the
+/// JS side then threw inside a floating promise — no error, just a blank chart.
+fn parse_error_json(context: &str, e: &serde_json::Error) -> String {
+    log_parse_error(context, e);
+    serde_json::json!({ "error": format!("parse error: {e}") }).to_string()
+}
+
 /// Wasm entry point — accepts JSON strings matching the task project's API response shape.
 /// `today_iso` is an optional ISO 8601 date string (e.g. "2026-06-16") for the today marker.
 /// `viewport_json` is an optional `{"scroll_y":f64,"client_height":f64}` for row virtualization.
@@ -68,11 +102,17 @@ pub fn render_svg(
 ) -> String {
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
-        Err(e) => return format!("<!-- parse error: {e} -->"),
+        Err(e) => {
+            log_parse_error("tasks", &e);
+            return PARSE_ERROR_SVG.to_string();
+        }
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
-        Err(e) => return format!("<!-- parse error: {e} -->"),
+        Err(e) => {
+            log_parse_error("deps", &e);
+            return PARSE_ERROR_SVG.to_string();
+        }
     };
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
@@ -90,16 +130,18 @@ pub fn render_canvas_commands(
 ) -> String {
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
-        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+        Err(e) => return parse_error_json("tasks", &e),
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
-        Err(e) => return format!(r#"{{"error":"parse error: {e}"}}"#),
+        Err(e) => return parse_error_json("deps", &e),
     };
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
-    serde_json::to_string(&buffer).unwrap_or_else(|e| format!(r#"{{"error":"serialize error: {e}"}}"#))
+    serde_json::to_string(&buffer).unwrap_or_else(|e| {
+        serde_json::json!({ "error": format!("serialize error: {e}") }).to_string()
+    })
 }
 
 #[cfg(test)]

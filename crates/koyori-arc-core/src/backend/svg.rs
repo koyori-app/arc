@@ -156,10 +156,9 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette, chart
             });
 
             if let Some(id) = &g.task_id {
-                svg.push_str(&format!(
-                    r#"<g data-task-id="{id}">"#,
-                    id = escape_xml(id),
-                ));
+                // Attribute value, and the only one in this file fed by caller
+                // data — `escape_attr`, not `escape_text`.
+                svg.push_str(&format!(r#"<g data-task-id="{id}">"#, id = escape_attr(id),));
             } else if is_progress_legend {
                 svg.push_str(r#"<g class="progress-line-legend" aria-hidden="true">"#);
             } else if is_tier_legend {
@@ -170,7 +169,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette, chart
             if let Some(tooltip) = &g.tooltip {
                 svg.push_str(&format!(
                     r#"<title>{tooltip}</title>"#,
-                    tooltip = escape_xml(tooltip),
+                    tooltip = escape_text(tooltip),
                 ));
             }
             for child in &g.children {
@@ -182,7 +181,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette, chart
 }
 
 fn render_text(svg: &mut String, t: &TextPrim, palette: &Palette) {
-    let content = escape_xml(&t.content);
+    let content = escape_text(&t.content);
     match t.semantic {
         TextSemantic::GridLabel => {
             let fill = palette.resolve(t.fill.unwrap());
@@ -239,10 +238,27 @@ fn render_text(svg: &mut String, t: &TextPrim, palette: &Palette) {
     }
 }
 
-fn escape_xml(s: &str) -> String {
+/// Escape for a **text node** (`<title>…</title>`, `<text>…</text>`).
+///
+/// `"` and `'` are not markup there, so three characters are enough. Never use
+/// this inside an attribute value: the quote that delimits the value would pass
+/// through and close it. Use [`escape_attr`] there.
+fn escape_text(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Escape for an **attribute value** (`data-task-id="…"`).
+///
+/// Adds the two quote characters on top of the text-node set, so the value
+/// cannot terminate the attribute and start a new one — an injected
+/// `onmouseover=` is live markup once `GanttChart.vue` mounts the string with
+/// `v-html`. `'` is encoded as well so a single-quoted host stays safe.
+/// The `&` replacement must stay first, or the entities emitted below would be
+/// double-escaped.
+fn escape_attr(s: &str) -> String {
+    escape_text(s).replace('"', "&quot;").replace('\'', "&#39;")
 }
 
 pub fn empty_svg() -> String {

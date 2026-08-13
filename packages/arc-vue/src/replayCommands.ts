@@ -248,8 +248,27 @@ export function replayCommands(
   return { hitRegions };
 }
 
+/**
+ * Parse a `CommandBuffer` payload, turning a malformed one into the `error`
+ * shape the callers already branch on.
+ *
+ * A bare `JSON.parse` threw here, and `paintCanvas` is invoked from
+ * `void nextTick().then(...)`, so the throw became an unhandled rejection: the
+ * user saw an empty chart and no error at all. The `error` branch existed but
+ * was unreachable for exactly the case it was written for.
+ */
 export function parseCommandBuffer(json: string): CommandBuffer {
-  return JSON.parse(json) as CommandBuffer;
+  try {
+    return JSON.parse(json) as CommandBuffer;
+  } catch (e) {
+    return {
+      viewport_width: 0,
+      viewport_height: 0,
+      ops: [],
+      palette: { colors: [] },
+      error: `invalid command buffer JSON: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
 }
 
 export function findTaskAtPoint(

@@ -105,6 +105,33 @@ describe('replayCommands', () => {
     expect(progressOp).toBeDefined();
   });
 
+  it('parseCommandBuffer reports malformed JSON instead of throwing', () => {
+    // `paintCanvas` calls this from `void nextTick().then(...)`, so a throw
+    // vanishes as an unhandled rejection and the user gets a blank chart with
+    // no error. The wasm side can only reach this shape through a bug, which is
+    // exactly when the message has to survive.
+    const broken = '{"error":"parse error: invalid type: string ""}';
+    expect(() => parseCommandBuffer(broken)).not.toThrow();
+    const buffer = parseCommandBuffer(broken);
+    expect(buffer.error).toBeDefined();
+    expect(buffer.ops).toEqual([]);
+  });
+
+  it('parseCommandBuffer passes through a well-formed error payload', () => {
+    // Positive control: the wasm error path (serde-built JSON) must still land
+    // on `error`, not be mistaken for a parse failure of our own.
+    const buffer = parseCommandBuffer(
+      JSON.stringify({
+        viewport_width: 0,
+        viewport_height: 0,
+        ops: [],
+        palette: { colors: [] },
+        error: 'parse error: invalid type: string "\\"}]<img>"',
+      }),
+    );
+    expect(buffer.error).toContain('invalid type');
+  });
+
   it('findTaskAtPoint returns task inside hit region', () => {
     const buffer = parseCommandBuffer(goldenJson);
     const ctx = createMockCtx();
