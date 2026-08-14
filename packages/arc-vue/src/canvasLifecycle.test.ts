@@ -13,7 +13,9 @@ function paintedCanvas() {
 }
 
 describe('resetCanvasElement', () => {
-  it.each(['empty', 'error'])('removes bitmap and CSS dimensions on success -> %s', () => {
+  // One case, stated once: `resetCanvasElement` does not branch on why the
+  // canvas is being torn down, so the former it.each ran the same body twice.
+  it('removes bitmap and CSS dimensions', () => {
     const { canvas, clearRect } = paintedCanvas();
 
     resetCanvasElement(canvas as unknown as HTMLCanvasElement);

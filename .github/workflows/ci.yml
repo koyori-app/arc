@@ -67,6 +67,11 @@ jobs:
         run: pnpm typecheck
         working-directory: packages/arc-vue
 
+      # The Rust ↔ TS contract tests only guard anything if CI runs them.
+      - name: Unit tests
+        run: pnpm test
+        working-directory: packages/arc-vue
+
       - name: Build
         run: pnpm build
         working-directory: packages/arc-vue

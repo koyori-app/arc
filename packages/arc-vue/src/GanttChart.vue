@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
-import init, { render_svg, render_canvas_commands } from '@koyori-app/arc';
+import init, { render_svg, render_svg_error, render_canvas_commands } from '@koyori-app/arc';
 import type { GanttTask, GanttDep } from './types.ts';
 import {
   parseCommandBuffer,
@@ -14,6 +14,7 @@ import {
   isCanvasCapacityError,
   resolveCanvasFailure,
 } from './canvasFallback';
+import { EMPTY_SVG_MARKUP, parseRenderError, type RenderFailure } from './wasmContract';
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -36,7 +37,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const hitRegions = ref<TaskHitRegion[]>([]);
 const canvasFallbackSvg = ref('');
 const canvasError = ref('');
-const canvasFailureMessage = ref('');
+const canvasFailure = ref<RenderFailure | null>(null);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
@@ -62,7 +63,7 @@ const deviceTier = detectDeviceTier();
 const useVirtualization = computed(() => deviceTier === 'low');
 
 const chartHeight = computed(() => {
-  if (canvasError.value) return 0;
+  if (displayError.value) return 0;
   return chartHeightForTaskCount(props.tasks.length);
 });
 
@@ -96,6 +97,26 @@ const canvasCommandsJson = computed(() => {
 
 watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
 
+/**
+ * `render_svg` answers a blank chart to both "no tasks" and "input refused".
+ * `render_svg_error` is the channel that tells them apart, so a refusal reaches
+ * the same role="alert" the Canvas path already uses instead of silently
+ * showing an empty chart.
+ */
+const svgFailure = computed<RenderFailure | null>(() => {
+  if (!ready.value || props.tasks.length === 0 || useCanvas.value) return null;
+  // Only a blank chart can be hiding a refusal, and `render_svg` returns this
+  // exact markup when it refuses — so the happy path never pays a second parse.
+  if (svgHtml.value !== EMPTY_SVG_MARKUP) return null;
+  const reported = render_svg_error(
+    JSON.stringify(props.tasks),
+    JSON.stringify(props.deps ?? []),
+  );
+  return reported ? parseRenderError(reported) : null;
+});
+
+const displayError = computed(() => canvasError.value || svgFailure.value?.message || '');
+
 function resetCanvas(canvas: HTMLCanvasElement | null) {
   hitRegions.value = [];
   resetCanvasElement(canvas);
@@ -104,13 +125,13 @@ function resetCanvas(canvas: HTMLCanvasElement | null) {
 function clearCanvasFailure() {
   canvasFallbackSvg.value = '';
   canvasError.value = '';
-  canvasFailureMessage.value = '';
+  canvasFailure.value = null;
 }
 
-function renderCanvasFallback(message: string) {
-  canvasFailureMessage.value = message;
+function renderCanvasFallback(failure: RenderFailure) {
+  canvasFailure.value = failure;
   let fallbackSvg = '';
-  if (isCanvasCapacityError(message)) {
+  if (isCanvasCapacityError(failure)) {
     try {
       fallbackSvg = render_svg(
         JSON.stringify(props.tasks),
@@ -125,7 +146,7 @@ function renderCanvasFallback(message: string) {
       // resolveCanvasFailure turns a failed fallback into a visible error.
     }
   }
-  const resolution = resolveCanvasFailure(message, fallbackSvg);
+  const resolution = resolveCanvasFailure(failure, fallbackSvg);
   if (resolution.mode === 'svg') {
     canvasFallbackSvg.value = resolution.svg;
     canvasError.value = '';
@@ -136,8 +157,8 @@ function renderCanvasFallback(message: string) {
 }
 
 watch([scrollY, clientHeight], () => {
-  if (canvasFallbackSvg.value && canvasFailureMessage.value) {
-    renderCanvasFallback(canvasFailureMessage.value);
+  if (canvasFallbackSvg.value && canvasFailure.value) {
+    renderCanvasFallback(canvasFailure.value);
   }
 });
 
@@ -162,7 +183,7 @@ async function paintCanvas() {
   const buffer = parseCommandBuffer(json);
   if (buffer.error) {
     resetCanvas(canvas);
-    renderCanvasFallback(buffer.error);
+    renderCanvasFallback({ message: buffer.error, code: buffer.code });
     return;
   }
 
@@ -225,11 +246,11 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailureMessage }"
+    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailure }"
     @scroll="onScroll"
   >
-    <div v-if="canvasError" class="koyori-gantt-error" role="alert">
-      Unable to render Gantt chart: {{ canvasError }}
+    <div v-if="displayError" class="koyori-gantt-error" role="alert">
+      Unable to render Gantt chart: {{ displayError }}
     </div>
     <div
       v-else

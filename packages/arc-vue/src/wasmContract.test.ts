@@ -1,0 +1,50 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES } from './wasmContract';
+
+/**
+ * The cross-language contract. Both sides declare the same literals; only this
+ * test proves they still agree. It reads the Rust sources rather than the built
+ * Wasm so it runs without a wasm-pack build — and so editing a Rust literal
+ * fails here immediately.
+ */
+
+function readCrateSource(relativePath: string): string {
+  const path = fileURLToPath(
+    new URL(`../../../crates/koyori-arc-core/src/${relativePath}`, import.meta.url),
+  );
+  return readFileSync(path, 'utf8');
+}
+
+function rustErrorCodes(): Record<string, string> {
+  const source = readCrateSource('error.rs');
+  const codes: Record<string, string> = {};
+  for (const [, name, value] of source.matchAll(
+    /pub const (CODE_[A-Z_]+): &str = "([^"]*)";/g,
+  )) {
+    codes[name] = value;
+  }
+  return codes;
+}
+
+function rustEmptySvg(): string {
+  const source = readCrateSource('backend/svg.rs');
+  const match = source.match(
+    /pub fn empty_svg\(\) -> String \{\s*r#"([\s\S]*?)"#\s*\.to_string\(\)/,
+  );
+  expect(match, 'empty_svg() literal found in backend/svg.rs').not.toBeNull();
+  return match![1];
+}
+
+describe('koyori-arc-core contract', () => {
+  it('mirrors every error code, by name and by value', () => {
+    const fromRust = rustErrorCodes();
+    expect(Object.keys(fromRust).length).toBeGreaterThan(0);
+    expect(fromRust).toEqual(RUST_ERROR_CODES);
+  });
+
+  it('mirrors the empty-chart markup byte for byte', () => {
+    expect(rustEmptySvg()).toBe(EMPTY_SVG_MARKUP);
+  });
+});
