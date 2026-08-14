@@ -138,6 +138,30 @@ fn render_canvas_commands_parse_error_json() {
 }
 
 #[wasm_bindgen_test]
+fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
+    assert_eq!(koyori_arc_core::render_svg_error("[]", "[]"), None);
+    assert_eq!(koyori_arc_core::render_svg_error(TASKS, DEPS), None);
+
+    let refused = r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
+    let reported = koyori_arc_core::render_svg_error(refused, "[]").expect("refusal reported");
+    let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
+    assert_eq!(v["code"].as_str(), Some("input_limit"));
+    // The SVG entry point itself still answers with the empty chart.
+    assert_eq!(
+        koyori_arc_core::render_svg(refused, "[]", None, None),
+        koyori_arc_core::empty_svg_markup()
+    );
+}
+
+#[wasm_bindgen_test]
+fn empty_svg_markup_matches_what_refusals_return() {
+    assert_eq!(
+        koyori_arc_core::render_svg("not json", "[]", None, None),
+        koyori_arc_core::empty_svg_markup()
+    );
+}
+
+#[wasm_bindgen_test]
 fn render_canvas_commands_empty_tasks() {
     let json = koyori_arc_core::render_canvas_commands("[]", "[]", None, None);
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");

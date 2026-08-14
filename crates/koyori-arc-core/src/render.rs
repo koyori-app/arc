@@ -4,6 +4,9 @@ use wasm_bindgen::prelude::*;
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::display_list::constants::{HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H};
+use crate::error::{
+    RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
+};
 use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
 
@@ -38,106 +41,131 @@ pub const MAX_CANVAS_DATE_SPAN_DAYS: i64 = ((MAX_CANVAS_SIDE_PX as f64
     - CHART_RIGHT_PADDING_PX)
     / PX_PER_DAY) as i64;
 
-fn json_error(msg: impl Into<String>) -> String {
-    serde_json::json!({ "error": msg.into() }).to_string()
-}
-
-fn raw_json_limit_error(tasks_json: &str, deps_json: &str) -> Option<String> {
+fn raw_json_limit_error(tasks_json: &str, deps_json: &str) -> Option<RenderError> {
     if tasks_json.len() > MAX_TASKS_JSON_BYTES {
-        return Some(format!(
-            "tasks JSON byte size exceeds limit ({MAX_TASKS_JSON_BYTES})"
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("tasks JSON byte size exceeds limit ({MAX_TASKS_JSON_BYTES})"),
         ));
     }
     if deps_json.len() > MAX_DEPS_JSON_BYTES {
-        return Some(format!(
-            "dependencies JSON byte size exceeds limit ({MAX_DEPS_JSON_BYTES})"
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("dependencies JSON byte size exceeds limit ({MAX_DEPS_JSON_BYTES})"),
         ));
     }
     None
 }
 
-fn common_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
+fn common_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<RenderError> {
     if tasks.len() > MAX_TASKS {
-        return Some(format!("task count exceeds limit ({MAX_TASKS})"));
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("task count exceeds limit ({MAX_TASKS})"),
+        ));
     }
     if deps.len() > MAX_DEPS {
-        return Some(format!("dependency count exceeds limit ({MAX_DEPS})"));
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("dependency count exceeds limit ({MAX_DEPS})"),
+        ));
     }
     None
 }
 
-/// Days of headroom every task date must keep below `NaiveDate::MAX`. The
-/// display list steps the weekly grid forward by one week past the last task
-/// date and derives an implicit end date as `start + 1 day`, so dates without
-/// this headroom are rejected before any date arithmetic runs.
+/// Days of headroom the *rendered* latest date must keep below `NaiveDate::MAX`:
+/// the display list steps the weekly grid one full week past it. The implicit
+/// end date the renderer derives for `end: null` is **not** folded into this
+/// number — `latest_rendered_date` derives that, so this constant stays exactly
+/// the grid's one-week step.
 pub const DATE_HEADROOM_DAYS: i64 = 7;
 
-fn date_headroom_error(tasks: &[GanttTask]) -> Option<String> {
+/// The last date the renderer actually touches for a task: an explicit `end`
+/// (never before its own `start`), or the `start + 1 day` the display list
+/// derives when `end` is null. `None` means that derived end already overflows
+/// `NaiveDate::MAX`, which is itself a lack of headroom.
+///
+/// Every date limit derives from this one function, so the guard and the span
+/// arithmetic can never disagree about which date is the last one.
+fn latest_rendered_date(task: &GanttTask) -> Option<NaiveDate> {
+    match task.end {
+        Some(end) => Some(end.max(task.start)),
+        None => task.start.checked_add_signed(Duration::days(1)),
+    }
+}
+
+fn date_headroom_error(tasks: &[GanttTask]) -> Option<RenderError> {
     let lacks_headroom = tasks.iter().any(|t| {
-        let latest = t.end.unwrap_or(t.start).max(t.start);
-        latest
-            .checked_add_signed(Duration::days(DATE_HEADROOM_DAYS))
+        latest_rendered_date(t)
+            .and_then(|latest| latest.checked_add_signed(Duration::days(DATE_HEADROOM_DAYS)))
             .is_none()
     });
     lacks_headroom.then(|| {
-        format!("date is too close to the maximum supported date (needs {DATE_HEADROOM_DAYS} days of headroom)")
+        RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("date is too close to the maximum supported date (needs {DATE_HEADROOM_DAYS} days of headroom past the last rendered date)"),
+        )
     })
 }
 
 /// Rejects dates without headroom *before* computing anything, then computes
-/// the span with checked arithmetic so an overflow yields a value, not a panic.
-fn rendered_date_span_days(tasks: &[GanttTask]) -> Result<i64, String> {
+/// the span from the same derived latest date the guard checked.
+fn rendered_date_span_days(tasks: &[GanttTask]) -> Result<i64, RenderError> {
     if tasks.is_empty() {
         return Ok(0);
     }
-    if let Some(msg) = date_headroom_error(tasks) {
-        return Err(msg);
+    if let Some(err) = date_headroom_error(tasks) {
+        return Err(err);
     }
     let min_start = tasks.iter().map(|t| t.start).min().unwrap();
+    // `date_headroom_error` returned `None`, so every task has a latest date.
     let max_date = tasks
         .iter()
-        .map(|t| {
-            t.end.unwrap_or_else(|| {
-                t.start
-                    .checked_add_signed(Duration::days(1))
-                    .unwrap_or(t.start)
-            })
-        })
+        .filter_map(latest_rendered_date)
         .max()
-        .unwrap();
+        .unwrap_or(min_start);
     Ok((max_date - min_start).num_days().max(0))
 }
 
-fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
-    if let Some(msg) = common_graph_limit_error(tasks, deps) {
-        return Some(msg);
+fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<RenderError> {
+    if let Some(err) = common_graph_limit_error(tasks, deps) {
+        return Some(err);
     }
     let span_days = match rendered_date_span_days(tasks) {
         Ok(days) => days,
-        Err(msg) => return Some(msg),
+        Err(err) => return Some(err),
     };
     if span_days > MAX_DATE_SPAN_DAYS {
-        return Some(format!("date range exceeds limit ({MAX_DATE_SPAN_DAYS} days)"));
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("date range exceeds limit ({MAX_DATE_SPAN_DAYS} days)"),
+        ));
     }
     None
 }
 
-fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<String> {
-    if let Some(msg) = common_graph_limit_error(tasks, deps) {
-        return Some(msg);
+fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<RenderError> {
+    if let Some(err) = common_graph_limit_error(tasks, deps) {
+        return Some(err);
     }
     if tasks.len() > MAX_CANVAS_ROWS {
-        return Some(format!(
-            "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
+            ),
         ));
     }
     let span_days = match rendered_date_span_days(tasks) {
         Ok(days) => days,
-        Err(msg) => return Some(msg),
+        Err(err) => return Some(err),
     };
     if span_days > MAX_CANVAS_DATE_SPAN_DAYS {
-        return Some(format!(
-            "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+            ),
         ));
     }
     let width_px = span_days as f64 * PX_PER_DAY
@@ -148,11 +176,31 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<St
         + LEGEND_H
         + CHART_BOTTOM_PADDING_PX;
     if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
-        return Some(format!(
-            "canvas area exceeds limit ({MAX_CANVAS_AREA_PX} pixels)"
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!("canvas area exceeds limit ({MAX_CANVAS_AREA_PX} pixels)"),
         ));
     }
     None
+}
+
+/// Every Wasm SVG rejection runs through here — `render_svg` and
+/// `render_svg_error` share one implementation so they can never disagree.
+fn prepare_svg_input(
+    tasks_json: &str,
+    deps_json: &str,
+) -> Result<(Vec<GanttTask>, Vec<GanttDep>), RenderError> {
+    if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
+        return Err(err);
+    }
+    let tasks: Vec<GanttTask> = serde_json::from_str(tasks_json)
+        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
+    let deps: Vec<GanttDep> = serde_json::from_str(deps_json)
+        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
+    if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
+        return Err(err);
+    }
+    Ok((tasks, deps))
 }
 
 /// Native entry point — accepts typed structs directly.
@@ -216,23 +264,35 @@ pub fn render_svg(
     today_iso: Option<String>,
     viewport_json: Option<String>,
 ) -> String {
-    if raw_json_limit_error(tasks_json, deps_json).is_some() {
+    let Ok((tasks, deps)) = prepare_svg_input(tasks_json, deps_json) else {
         return empty_svg();
-    }
-    let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
-        Ok(v) => v,
-        Err(_) => return empty_svg(),
     };
-    let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
-        Ok(v) => v,
-        Err(_) => return empty_svg(),
-    };
-    if svg_graph_limit_error(&tasks, &deps).is_some() {
-        return empty_svg();
-    }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     render(&tasks, &deps, today, scroll_viewport)
+}
+
+/// Wasm entry point — why `render_svg` would refuse this input, as the same
+/// `{"error":…,"code":…}` JSON `render_canvas_commands` returns, or `undefined`
+/// when the input is renderable.
+///
+/// `render_svg` deliberately returns a blank chart for both "nothing to draw"
+/// and "refused", which are not the same thing to a user. This is the channel
+/// that tells them apart; it shares `prepare_svg_input` with `render_svg`
+/// rather than re-deriving the rules.
+#[wasm_bindgen]
+pub fn render_svg_error(tasks_json: &str, deps_json: &str) -> Option<String> {
+    prepare_svg_input(tasks_json, deps_json)
+        .err()
+        .map(|e| e.to_json())
+}
+
+/// Wasm entry point — the exact markup `render_svg` returns when there is
+/// nothing to draw. JS compares against this instead of sniffing the markup
+/// for `width="0"`, which a real chart with a 0% bar also contains.
+#[wasm_bindgen]
+pub fn empty_svg_markup() -> String {
+    empty_svg()
 }
 
 /// Wasm entry point — returns a JSON-serialized `CommandBuffer` for JS-side Canvas2D replay.
@@ -244,24 +304,26 @@ pub fn render_canvas_commands(
     today_iso: Option<String>,
     viewport_json: Option<String>,
 ) -> String {
-    if let Some(msg) = raw_json_limit_error(tasks_json, deps_json) {
-        return json_error(msg);
+    if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
+        return err.to_json();
     }
     let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
         Ok(v) => v,
-        Err(e) => return json_error(format!("parse error: {e}")),
+        Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
-        Err(e) => return json_error(format!("parse error: {e}")),
+        Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
-    if let Some(msg) = canvas_graph_limit_error(&tasks, &deps) {
-        return json_error(msg);
+    if let Some(err) = canvas_graph_limit_error(&tasks, &deps) {
+        return err.to_json();
     }
     let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
-    serde_json::to_string(&buffer).unwrap_or_else(|e| json_error(format!("serialize error: {e}")))
+    serde_json::to_string(&buffer).unwrap_or_else(|e| {
+        RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
+    })
 }
 
 #[cfg(test)]
@@ -432,9 +494,10 @@ mod tests {
 
     #[test]
     fn json_error_produces_valid_json_with_quotes() {
-        let s = super::json_error(r#"parse error: bad "quote""#);
+        let s = RenderError::new(CODE_PARSE_ERROR, r#"parse error: bad "quote""#).to_json();
         let v: serde_json::Value = serde_json::from_str(&s).expect("valid json");
         assert_eq!(v["error"].as_str().unwrap(), r#"parse error: bad "quote""#);
+        assert_eq!(v["code"].as_str(), Some("parse_error"));
     }
 
     #[test]
@@ -726,6 +789,70 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("canvas date range"));
+    }
+
+    #[test]
+    fn wasm_errors_carry_machine_readable_codes() {
+        // JS matches on `code`; the message beside it is display-only. These
+        // assertions pin the wire values, so renaming a code constant fails here
+        // as well as in the Vue contract test that reads `error.rs`.
+        let parse = render_canvas_commands("not json", "[]", None, None);
+        let v: serde_json::Value = serde_json::from_str(&parse).expect("valid json");
+        assert_eq!(v["code"].as_str(), Some("parse_error"), "got: {parse:.200}");
+
+        let oversized = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
+        let raw_limit = render_canvas_commands(&oversized, "[]", None, None);
+        let v: serde_json::Value = serde_json::from_str(&raw_limit).expect("valid json");
+        assert_eq!(v["code"].as_str(), Some("input_limit"));
+
+        let too_many = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
+        let capacity = render_canvas_commands(
+            &serde_json::to_string(&too_many).unwrap(),
+            "[]",
+            None,
+            None,
+        );
+        let v: serde_json::Value = serde_json::from_str(&capacity).expect("valid json");
+        assert_eq!(v["code"].as_str(), Some("canvas_capacity"));
+    }
+
+    #[test]
+    fn svg_entry_separates_nothing_to_draw_from_refused_input() {
+        // Both still render the same empty chart, so the reason has to travel
+        // on its own channel instead of being inferred from the markup.
+        let refused = max_date_tasks_json(NaiveDate::MAX, None);
+        assert_eq!(
+            render_svg(&refused, "[]", None, None),
+            crate::backend::svg::empty_svg()
+        );
+        assert_eq!(
+            render_svg("[]", "[]", None, None),
+            crate::backend::svg::empty_svg()
+        );
+
+        assert_eq!(render_svg_error("[]", "[]"), None, "nothing to draw is not an error");
+
+        let reported = render_svg_error(&refused, "[]").expect("refusal is reported");
+        let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
+        assert_eq!(v["code"].as_str(), Some("input_limit"));
+        assert!(v["error"].as_str().unwrap().contains("date"), "got: {reported}");
+    }
+
+    #[test]
+    fn svg_entry_rejects_start_seven_days_below_maximum_with_null_end() {
+        // `end: None` makes the display list derive `start + 1 day`, so the
+        // weekly grid steps up to `start + 8 days`. A guard that reserves
+        // headroom above `start` alone accepts this input. The existing
+        // `NaiveDate::MAX` cases start one day higher and therefore never
+        // exercise this one-day gap.
+        let start = NaiveDate::MAX
+            .checked_sub_signed(Duration::days(DATE_HEADROOM_DAYS))
+            .expect("7 days below NaiveDate::MAX");
+        let tasks_json = max_date_tasks_json(start, None);
+        assert_eq!(
+            render_svg(&tasks_json, "[]", None, None),
+            crate::backend::svg::empty_svg()
+        );
     }
 
     #[test]
