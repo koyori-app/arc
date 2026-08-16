@@ -6,6 +6,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GanttChart from './GanttChart.vue';
 import type { GanttTask } from './types.ts';
+import { EMPTY_SVG_MARKUP } from './wasmContract';
 
 const renderSvgMock = vi.fn(() => '<svg></svg>');
 const renderCanvasMock = vi.fn(() => '');
@@ -13,7 +14,9 @@ const renderCanvasMock = vi.fn(() => '');
 vi.mock('@koyori-app/arc', () => ({
   default: vi.fn(() => Promise.resolve()),
   render_svg: (...args: unknown[]) => renderSvgMock(...args),
+  render_svg_error: () => '',
   render_canvas_commands: (...args: unknown[]) => renderCanvasMock(...args),
+  empty_svg_markup: () => EMPTY_SVG_MARKUP,
 }));
 
 function makeTasks(count: number): GanttTask[] {
@@ -475,5 +478,76 @@ describe('GanttChart WASM viewport gate', () => {
     assertAllRecentCallsOmitViewport(renderSvgMock, 0, 'non-virtual high tier');
 
     wrapper.unmount();
+  });
+});
+
+/**
+ * The canvas capacity-error fallback calls `render_svg` directly with an
+ * explicit viewport built from the component's scroll metrics — it does not go
+ * through `svgHtml`, so `viewportPending` cannot gate it at the computed. It is
+ * gated one step earlier instead: while the viewport is pending,
+ * `canvasCommandsJson` is '' and `paintCanvas` never reaches the fallback.
+ * This test pins that transitive gate: across a high→low flip, every fallback
+ * `render_svg` call must carry the re-measured client_height, never a stale or
+ * default one.
+ */
+describe('GanttChart canvas fallback × viewport gate', () => {
+  beforeEach(() => {
+    renderSvgMock.mockClear();
+    renderCanvasMock.mockClear();
+  });
+
+  it('capacity fallback across high→low flip: every fallback render_svg call carries the measured client_height', async () => {
+    // A buffer only Rust can produce: `code` marks it a capacity error, the
+    // one failure with an SVG fallback (`resolveCanvasFailure`).
+    const capacityBuffer = JSON.stringify({
+      viewport_width: 0,
+      viewport_height: 0,
+      ops: [],
+      palette: { colors: [] },
+      error: 'canvas too large',
+      code: 'canvas_capacity',
+    });
+    renderCanvasMock.mockReturnValue(capacityBuffer);
+    // `resolveCanvasFailure` only accepts a fallback that looks rendered
+    // (`isRenderedSvg`: starts with '<svg ' and differs from the empty markup)
+    // — the suite default '<svg></svg>' would drop to the error branch.
+    renderSvgMock.mockReturnValue('<svg data-fallback="1"></svg>');
+    // 480 deliberately differs from both the internal clientHeight default
+    // (600) and the fallback's own cap (min(h, 600)): a fallback that renders
+    // before the flip window's re-measure would carry 600 and fail here.
+    const heightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(480);
+    try {
+      const wrapper = await mountHarness('high', 20, 'canvas');
+      await nextTick();
+
+      // Positive control: the fallback path is actually engaged (canvas
+      // replaced by SVG), otherwise every scan below inspects a dead branch.
+      expect(wrapper.find('.koyori-gantt-svg').exists()).toBe(true);
+      expect(wrapper.find('canvas').exists()).toBe(false);
+
+      const callsBeforeFlip = renderSvgMock.mock.calls.length;
+
+      (wrapper.vm as HarnessVm).setTier('low');
+      await flushPromises();
+      await nextTick();
+      await nextTick();
+      await nextTick();
+
+      // The flip window must re-run the fallback (assertScanned inside the
+      // helper), and every viewport it hands render_svg must be the measured
+      // 480 — a call issued while the viewport was still pending would carry
+      // the stale default 600 instead.
+      assertAllCallsCarryViewport(renderSvgMock, callsBeforeFlip, 'fallback post-flip');
+      assertViewportClientHeightIs(renderSvgMock, callsBeforeFlip, 480, 'fallback post-flip');
+
+      wrapper.unmount();
+    } finally {
+      heightSpy.mockRestore();
+      renderCanvasMock.mockReset();
+      renderSvgMock.mockReset();
+    }
   });
 });
