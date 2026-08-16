@@ -42,6 +42,8 @@ const props = defineProps<{
   today?: string; // ISO 8601 date string, e.g. "2026-06-16"
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
+  /** Override auto-detected device tier (VRT / Storybook should pin this). */
+  deviceTier?: 'low' | 'high';
 }>();
 
 const emit = defineEmits<{
@@ -76,18 +78,27 @@ const emptySvgMarkup = ref(EMPTY_SVG_MARKUP);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
+function syncScrollViewport(el?: HTMLElement | null) {
+  const scrollEl = el ?? scrollRef.value;
+  if (!scrollEl) return;
+  scrollY.value = scrollEl.scrollTop;
+  clientHeight.value = scrollEl.clientHeight;
+}
+
 onMounted(async () => {
   await init();
   // Read once, before `ready` unblocks the computeds that compare against it.
   emptySvgMarkup.value = empty_svg_markup();
   ready.value = true;
   await nextTick();
-  if (scrollRef.value) {
-    clientHeight.value = scrollRef.value.clientHeight;
+  syncScrollViewport();
+  if (requestedVirtualization.value) {
+    viewportReady.value = true;
   }
 });
 
 function detectDeviceTier(): 'low' | 'high' {
+  if (props.deviceTier) return props.deviceTier;
   if (typeof navigator === 'undefined') return 'low';
   const nav = navigator as Navigator & { deviceMemory?: number };
   if (nav.deviceMemory === undefined) return 'low';
@@ -96,8 +107,22 @@ function detectDeviceTier(): 'low' | 'high' {
   return 'high';
 }
 
-const deviceTier = detectDeviceTier();
-const useVirtualization = computed(() => deviceTier === 'low');
+const deviceTier = computed(() => detectDeviceTier());
+/** CSS class: requested virtualization state (does not wait for DOM measure). */
+const requestedVirtualization = computed(() => deviceTier.value === 'low');
+/** WASM viewport: only after DOM reflects CSS and scroll metrics are synced. */
+const viewportReady = ref(false);
+
+watch(requestedVirtualization, async (virtual) => {
+  if (!virtual) {
+    viewportReady.value = false;
+    return;
+  }
+  viewportReady.value = false;
+  await nextTick();
+  syncScrollViewport();
+  viewportReady.value = true;
+}, { flush: 'post' });
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
@@ -105,15 +130,26 @@ const chartHeight = computed(() => {
 });
 
 const viewportJson = computed(() => {
-  if (!useVirtualization.value) return undefined;
+  if (!requestedVirtualization.value || !viewportReady.value) return undefined;
   return JSON.stringify({
     scroll_y: scrollY.value,
     client_height: clientHeight.value,
   });
 });
 
-const svgHtml = computed(() => {
+/**
+ * Single chokepoint for both WASM entry points: while virtualization is
+ * requested but the viewport is not yet measured (initial mount, tier-flip
+ * window), defer the render instead of issuing a full-range WASM call.
+ * Non-virtual (high tier) renders are never delayed.
+ */
+const viewportPending = computed(
+  () => requestedVirtualization.value && !viewportReady.value,
+);
+
+const svgHtml = computed<string | null>(() => {
   if (!ready.value || props.tasks.length === 0 || useCanvas.value) return '';
+  if (viewportPending.value) return null;
   return render_svg(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -124,6 +160,7 @@ const svgHtml = computed(() => {
 
 const canvasCommandsJson = computed(() => {
   if (!ready.value || props.tasks.length === 0 || !useCanvas.value) return '';
+  if (viewportPending.value) return '';
   return render_canvas_commands(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -132,7 +169,8 @@ const canvasCommandsJson = computed(() => {
   );
 });
 
-watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
+// null = deferred (viewport pending): keep the last painted SVG, no blanking.
+watch(svgHtml, (v) => { if (v !== null) svg.value = v; }, { immediate: true });
 
 /**
  * `render_svg` answers a blank chart to both "no tasks" and "input refused".
@@ -243,9 +281,7 @@ async function paintCanvas() {
 watch(canvasCommandsJson, () => { void nextTick().then(paintCanvas); }, { immediate: true });
 
 function onScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  scrollY.value = el.scrollTop;
-  clientHeight.value = el.clientHeight;
+  syncScrollViewport(e.target as HTMLElement);
 }
 
 function onSvgClick(e: MouseEvent) {
@@ -283,7 +319,7 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailure }"
+    :class="{ 'koyori-gantt-scroll--virtual': requestedVirtualization || canvasFailure }"
     @scroll="onScroll"
   >
     <div v-if="displayError" class="koyori-gantt-error" role="alert">

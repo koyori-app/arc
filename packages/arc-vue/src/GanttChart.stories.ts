@@ -25,8 +25,11 @@ const meta: Meta<typeof GanttChart> = {
 export default meta;
 type Story = StoryObj<typeof GanttChart>;
 
+const vrtArgs = { deviceTier: 'high' as const };
+
 export const Default: Story = {
   args: {
+    ...vrtArgs,
     tasks,
     deps,
     today: '2026-06-06',
@@ -42,12 +45,14 @@ export const Default: Story = {
 
 export const Empty: Story = {
   args: {
+    ...vrtArgs,
     tasks: [],
   },
 };
 
 export const NoDependencies: Story = {
   args: {
+    ...vrtArgs,
     tasks,
   },
 };
@@ -73,6 +78,7 @@ const progressLineTasks: GanttTask[] = [
 
 export const ProgressLineEdgeCases: Story = {
   args: {
+    ...vrtArgs,
     tasks: progressLineTasks,
     today: '2026-06-06',
   },
@@ -87,6 +93,7 @@ export const ProgressLineEdgeCases: Story = {
 
 export const CanvasBackend: Story = {
   args: {
+    ...vrtArgs,
     tasks,
     deps,
     today: '2026-06-06',

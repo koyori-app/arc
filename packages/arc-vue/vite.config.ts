@@ -9,6 +9,9 @@ export default defineConfig({
     dts({ include: ['src'] }),
   ],
   test: {
+    // Default environment. Per-file DOM needs are declared with a
+    // `@vitest-environment` docblock at the top of the file — Vitest 4 removed
+    // `environmentMatchGlobs`, so config-side matching is silently ignored.
     environment: 'node',
     include: ['src/**/*.test.ts'],
   },
