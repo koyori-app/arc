@@ -29,6 +29,29 @@ export const EMPTY_SVG_MARKUP =
   + 'aria-label="Empty Gantt chart" font-family="sans-serif" font-size="12">'
   + '<title>Empty Gantt chart</title><desc>No tasks to display</desc></svg>';
 
+/**
+ * Keys are the Rust constant names in
+ * `crates/koyori-arc-core/src/display_list/constants.rs`.
+ *
+ * Only the constants the JS side reproduces are listed — the crate owns many
+ * more (colours, arrow geometry) that never cross the boundary. The contract
+ * test checks each key below against the Rust source rather than demanding the
+ * two sets match, so adding a Rust-only constant does not go red for no reason.
+ */
+export const RUST_LAYOUT = {
+  ROW_H: 40,
+  HEADER_H: 30,
+  LEGEND_H: 40,
+} as const;
+
+/**
+ * `CHART_BOTTOM_PADDING_PX` in `crates/koyori-arc-core/src/render.rs`.
+ *
+ * Private on the Rust side, so it reaches JS only through the height the chart
+ * has to reserve. The contract test reads it out of `render.rs` all the same.
+ */
+export const CHART_BOTTOM_PADDING_PX = 10;
+
 /** A refusal from a Wasm entry point. `code` drives control flow; `message` is for display. */
 export interface RenderFailure {
   message: string;

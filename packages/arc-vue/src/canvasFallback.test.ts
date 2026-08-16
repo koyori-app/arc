@@ -16,6 +16,7 @@ describe('resolveCanvasFailure', () => {
       expect(resolveCanvasFailure(
         capacityFailure('canvas row count exceeds limit (407 rows / 16384px)'),
         svg,
+        EMPTY_SVG_MARKUP,
       )).toEqual({ mode: 'svg', svg });
       expect(svg).toContain(`height="${height}"`);
     },
@@ -34,6 +35,7 @@ describe('resolveCanvasFailure', () => {
     expect(resolveCanvasFailure(
       capacityFailure('canvas row count exceeds limit (407 rows / 16384px)'),
       svg,
+      EMPTY_SVG_MARKUP,
     )).toEqual({ mode: 'svg', svg });
   });
 
@@ -41,12 +43,14 @@ describe('resolveCanvasFailure', () => {
     expect(resolveCanvasFailure(
       { message: 'task count exceeds limit (10000)', code: RUST_ERROR_CODES.CODE_INPUT_LIMIT },
       EMPTY_SVG_MARKUP,
+      EMPTY_SVG_MARKUP,
     )).toEqual({ mode: 'error', message: 'task count exceeds limit (10000)' });
   });
 
   it('shows an error when SVG fallback unexpectedly renders empty', () => {
     expect(resolveCanvasFailure(
       capacityFailure('canvas area exceeds limit (33554432 pixels)'),
+      EMPTY_SVG_MARKUP,
       EMPTY_SVG_MARKUP,
     )).toEqual({
       mode: 'error',
@@ -59,6 +63,7 @@ describe('resolveCanvasFailure', () => {
     expect(resolveCanvasFailure(
       capacityFailure('completely reworded on the Rust side'),
       svg,
+      EMPTY_SVG_MARKUP,
     )).toEqual({ mode: 'svg', svg });
   });
 
@@ -67,6 +72,7 @@ describe('resolveCanvasFailure', () => {
     expect(resolveCanvasFailure(
       { message: 'canvas row count exceeds limit (407 rows / 16384px)' },
       svg,
+      EMPTY_SVG_MARKUP,
     )).toEqual({
       mode: 'error',
       message: 'canvas row count exceeds limit (407 rows / 16384px)',

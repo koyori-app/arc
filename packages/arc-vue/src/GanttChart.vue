@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
-import init, { render_svg, render_svg_error, render_canvas_commands } from '@koyori-app/arc';
+import init, {
+  render_svg,
+  render_svg_error,
+  render_canvas_commands,
+  empty_svg_markup,
+} from '@koyori-app/arc';
 import type { GanttTask, GanttDep } from './types.ts';
 import {
   parseCommandBuffer,
@@ -38,11 +43,28 @@ const hitRegions = ref<TaskHitRegion[]>([]);
 const canvasFallbackSvg = ref('');
 const canvasError = ref('');
 const canvasFailure = ref<RenderFailure | null>(null);
+/**
+ * The empty-chart markup of the `@koyori-app/arc` build actually loaded.
+ *
+ * Two checks that look redundant answer different questions, so keep both:
+ * - `EMPTY_SVG_MARKUP` in `wasmContract.ts` is checked against the Rust source
+ *   by `wasmContract.test.ts`. That catches drift *inside this repo*, at build
+ *   time, without needing a Wasm build.
+ * - This ref is what every *runtime* comparison uses. `arc-vue` and
+ *   `@koyori-app/arc` ship as separate packages and can be installed at
+ *   different versions, and no test in this repo can see that pairing. Asking
+ *   the loaded module is the only way to be right about it.
+ *
+ * Deleting either one because "it is already covered" reopens one of the two.
+ */
+const emptySvgMarkup = ref(EMPTY_SVG_MARKUP);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
 onMounted(async () => {
   await init();
+  // Read once, before `ready` unblocks the computeds that compare against it.
+  emptySvgMarkup.value = empty_svg_markup();
   ready.value = true;
   await nextTick();
   if (scrollRef.value) {
@@ -107,7 +129,7 @@ const svgFailure = computed<RenderFailure | null>(() => {
   if (!ready.value || props.tasks.length === 0 || useCanvas.value) return null;
   // Only a blank chart can be hiding a refusal, and `render_svg` returns this
   // exact markup when it refuses — so the happy path never pays a second parse.
-  if (svgHtml.value !== EMPTY_SVG_MARKUP) return null;
+  if (svgHtml.value !== emptySvgMarkup.value) return null;
   const reported = render_svg_error(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
@@ -146,7 +168,7 @@ function renderCanvasFallback(failure: RenderFailure) {
       // resolveCanvasFailure turns a failed fallback into a visible error.
     }
   }
-  const resolution = resolveCanvasFailure(failure, fallbackSvg);
+  const resolution = resolveCanvasFailure(failure, fallbackSvg, emptySvgMarkup.value);
   if (resolution.mode === 'svg') {
     canvasFallbackSvg.value = resolution.svg;
     canvasError.value = '';

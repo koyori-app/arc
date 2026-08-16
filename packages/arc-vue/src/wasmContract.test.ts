@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES } from './wasmContract';
+import {
+  CHART_BOTTOM_PADDING_PX,
+  EMPTY_SVG_MARKUP,
+  RUST_ERROR_CODES,
+  RUST_LAYOUT,
+} from './wasmContract';
 
 /**
  * The cross-language contract. Both sides declare the same literals; only this
@@ -37,6 +42,26 @@ function rustEmptySvg(): string {
   return match![1];
 }
 
+function rustLayoutConstants(): Record<string, number> {
+  const source = readCrateSource('display_list/constants.rs');
+  const values: Record<string, number> = {};
+  for (const [, name, value] of source.matchAll(
+    /pub const ([A-Z_]+): f64 = ([0-9]+(?:\.[0-9]+)?);/g,
+  )) {
+    values[name] = Number(value);
+  }
+  return values;
+}
+
+function rustChartBottomPadding(): number {
+  const source = readCrateSource('render.rs');
+  const match = source.match(
+    /const CHART_BOTTOM_PADDING_PX: f64 = ([0-9]+(?:\.[0-9]+)?);/,
+  );
+  expect(match, 'CHART_BOTTOM_PADDING_PX literal found in render.rs').not.toBeNull();
+  return Number(match![1]);
+}
+
 describe('koyori-arc-core contract', () => {
   it('mirrors every error code, by name and by value', () => {
     const fromRust = rustErrorCodes();
@@ -46,5 +71,19 @@ describe('koyori-arc-core contract', () => {
 
   it('mirrors the empty-chart markup byte for byte', () => {
     expect(rustEmptySvg()).toBe(EMPTY_SVG_MARKUP);
+  });
+
+  it('mirrors every layout constant the chart height is built from', () => {
+    const fromRust = rustLayoutConstants();
+    expect(Object.keys(fromRust).length).toBeGreaterThan(0);
+    for (const [name, pinned] of Object.entries(RUST_LAYOUT)) {
+      expect(fromRust, `${name} found in display_list/constants.rs`)
+        .toHaveProperty(name);
+      expect(fromRust[name], name).toBe(pinned);
+    }
+  });
+
+  it('mirrors the chart bottom padding', () => {
+    expect(rustChartBottomPadding()).toBe(CHART_BOTTOM_PADDING_PX);
   });
 });
