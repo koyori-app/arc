@@ -470,8 +470,10 @@ mod tests {
         assert!(!svg.contains("<img"));
     }
 
+    /// Named for the entry it actually exercises: `render()` takes typed structs
+    /// and is not what `arc-vue` calls. The JSON entry has its own test below.
     #[test]
-    fn wasm_id_xss_payload_escaped_in_output() {
+    fn native_id_xss_payload_escaped_in_output() {
         let tasks = vec![GanttTask {
             id: "x\" onmouseover=\"alert(1)\"".to_string(),
             title: "Safe".to_string(),
@@ -480,6 +482,22 @@ mod tests {
             end: Some(date(2026, 6, 2)),
         }];
         let svg = render(&tasks, &[], None, None);
+        assert!(svg.contains(r#"data-task-id="x&quot; onmouseover=&quot;alert(1)&quot;""#));
+        assert!(!svg.contains(r#"onmouseover="alert"#));
+    }
+
+    /// The Wasm entry `arc-vue` really calls. The struct above arrives here as
+    /// JSON, so the hostile id crosses `serde_json` before reaching the writer —
+    /// a hop the native test does not take.
+    #[test]
+    fn wasm_entry_id_xss_payload_escaped_in_output() {
+        let tasks_json = r#"[{"id":"x\" onmouseover=\"alert(1)\"","title":"Safe","progress_pct":0,"start":"2026-06-01","end":"2026-06-02"}]"#;
+        let svg = render_svg(tasks_json, "[]", None, None);
+        assert_ne!(
+            svg,
+            crate::backend::svg::empty_svg(),
+            "the payload must be rendered, not refused, or this proves nothing: {svg}"
+        );
         assert!(svg.contains(r#"data-task-id="x&quot; onmouseover=&quot;alert(1)&quot;""#));
         assert!(!svg.contains(r#"onmouseover="alert"#));
     }
