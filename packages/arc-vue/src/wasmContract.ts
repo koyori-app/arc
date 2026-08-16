@@ -37,12 +37,25 @@ export const EMPTY_SVG_MARKUP =
  * more (colours, arrow geometry) that never cross the boundary. The contract
  * test checks each key below against the Rust source rather than demanding the
  * two sets match, so adding a Rust-only constant does not go red for no reason.
+ *
+ * The bar goes both ways: a value JS never reproduces does not belong here.
+ * `CHART_RIGHT_PADDING_PX`, for one, is spent entirely inside the crate — JS
+ * never computes a chart width — and pinning it would only invite a caller to
+ * start reproducing it.
+ *
+ * Reproduced where:
+ * - `ROW_H`, `HEADER_H`, `LEGEND_H`, `CHART_BOTTOM_PADDING_PX` — the chart
+ *   height `chartHeightForTaskCount()` reserves before Wasm answers.
+ * - `ROW_H`, `LABEL_W`, `BAR_H` — the loading skeleton's row metrics, which
+ *   stand in for real rows and must line up with them.
  */
 export const RUST_LAYOUT = {
   ROW_H: 40,
   HEADER_H: 30,
   LEGEND_H: 40,
   CHART_BOTTOM_PADDING_PX: 10,
+  LABEL_W: 120,
+  BAR_H: 20,
 } as const;
 
 /** A refusal from a Wasm entry point. `code` drives control flow; `message` is for display. */

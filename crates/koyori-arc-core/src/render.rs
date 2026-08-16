@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::display_list::constants::{
-    CHART_BOTTOM_PADDING_PX, HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H,
+    chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
@@ -31,16 +31,12 @@ pub const MAX_CANVAS_SIDE_PX: usize = 16_384;
 /// individually supported. This leaves headroom for browser/GPU copies and
 /// avoids a 16,384 x 16,384 canvas allocating roughly 1 GiB per buffer.
 pub const MAX_CANVAS_AREA_PX: usize = 32 * 1024 * 1024;
-const CHART_RIGHT_PADDING_PX: f64 = 20.0;
-pub const MAX_CANVAS_ROWS: usize = ((MAX_CANVAS_SIDE_PX as f64
-    - HEADER_H
-    - LEGEND_H
-    - CHART_BOTTOM_PADDING_PX)
-    / ROW_H) as usize;
-pub const MAX_CANVAS_DATE_SPAN_DAYS: i64 = ((MAX_CANVAS_SIDE_PX as f64
-    - LABEL_W
-    - CHART_RIGHT_PADDING_PX)
-    / PX_PER_DAY) as i64;
+/// The rows and days left over once the chart's fixed chrome is paid for.
+/// `CHART_CHROME_H`/`_W` are the same sums `build_display_list` adds, so a term
+/// added to the chart cannot slip past these guards.
+pub const MAX_CANVAS_ROWS: usize = ((MAX_CANVAS_SIDE_PX as f64 - CHART_CHROME_H) / ROW_H) as usize;
+pub const MAX_CANVAS_DATE_SPAN_DAYS: i64 =
+    ((MAX_CANVAS_SIDE_PX as f64 - CHART_CHROME_W) / PX_PER_DAY) as i64;
 
 fn raw_json_limit_error(tasks_json: &str, deps_json: &str) -> Option<RenderError> {
     if tasks_json.len() > MAX_TASKS_JSON_BYTES {
@@ -169,13 +165,8 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Re
             ),
         ));
     }
-    let width_px = span_days as f64 * PX_PER_DAY
-        + LABEL_W
-        + CHART_RIGHT_PADDING_PX;
-    let height_px = tasks.len() as f64 * ROW_H
-        + HEADER_H
-        + LEGEND_H
-        + CHART_BOTTOM_PADDING_PX;
+    let width_px = chart_width(span_days as f64);
+    let height_px = chart_height(tasks.len() as f64);
     if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -622,14 +613,8 @@ mod tests {
 
     #[test]
     fn canvas_row_limit_is_derived_from_max_side() {
-        let accepted_height = MAX_CANVAS_ROWS as f64 * ROW_H
-            + HEADER_H
-            + LEGEND_H
-            + CHART_BOTTOM_PADDING_PX;
-        let rejected_height = (MAX_CANVAS_ROWS + 1) as f64 * ROW_H
-            + HEADER_H
-            + LEGEND_H
-            + CHART_BOTTOM_PADDING_PX;
+        let accepted_height = chart_height(MAX_CANVAS_ROWS as f64);
+        let rejected_height = chart_height((MAX_CANVAS_ROWS + 1) as f64);
         assert!(accepted_height <= MAX_CANVAS_SIDE_PX as f64);
         assert!(rejected_height > MAX_CANVAS_SIDE_PX as f64);
 
@@ -657,12 +642,8 @@ mod tests {
 
     #[test]
     fn canvas_date_limit_is_derived_from_max_side_and_does_not_reduce_svg_limit() {
-        let accepted_width = MAX_CANVAS_DATE_SPAN_DAYS as f64 * PX_PER_DAY
-            + LABEL_W
-            + CHART_RIGHT_PADDING_PX;
-        let rejected_width = (MAX_CANVAS_DATE_SPAN_DAYS + 1) as f64 * PX_PER_DAY
-            + LABEL_W
-            + CHART_RIGHT_PADDING_PX;
+        let accepted_width = chart_width(MAX_CANVAS_DATE_SPAN_DAYS as f64);
+        let rejected_width = chart_width((MAX_CANVAS_DATE_SPAN_DAYS + 1) as f64);
         assert!(accepted_width <= MAX_CANVAS_SIDE_PX as f64);
         assert!(rejected_width > MAX_CANVAS_SIDE_PX as f64);
 
@@ -686,13 +667,8 @@ mod tests {
     #[test]
     fn canvas_rejects_near_maximum_sides_when_area_is_too_large() {
         let tasks = canvas_tasks(MAX_CANVAS_ROWS, MAX_CANVAS_DATE_SPAN_DAYS);
-        let width_px = MAX_CANVAS_DATE_SPAN_DAYS as f64 * PX_PER_DAY
-            + LABEL_W
-            + CHART_RIGHT_PADDING_PX;
-        let height_px = MAX_CANVAS_ROWS as f64 * ROW_H
-            + HEADER_H
-            + LEGEND_H
-            + CHART_BOTTOM_PADDING_PX;
+        let width_px = chart_width(MAX_CANVAS_DATE_SPAN_DAYS as f64);
+        let height_px = chart_height(MAX_CANVAS_ROWS as f64);
         assert!(width_px <= MAX_CANVAS_SIDE_PX as f64);
         assert!(height_px <= MAX_CANVAS_SIDE_PX as f64);
         assert!(width_px * height_px > 267_000_000.0);

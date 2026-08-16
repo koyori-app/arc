@@ -19,7 +19,22 @@ import {
   isCanvasCapacityError,
   resolveCanvasFailure,
 } from './canvasFallback';
-import { EMPTY_SVG_MARKUP, parseRenderError, type RenderFailure } from './wasmContract';
+import {
+  EMPTY_SVG_MARKUP,
+  RUST_LAYOUT,
+  parseRenderError,
+  type RenderFailure,
+} from './wasmContract';
+
+/**
+ * The loading skeleton mimics a real chart row, so its metrics are the crate's.
+ * `v-bind` in `<style>` is what keeps them from being retyped as CSS literals:
+ * these are the same numbers `wasmContract.test.ts` pins to
+ * `display_list/constants.rs`, not a second set that happens to match today.
+ */
+const skeletonRowH = `${RUST_LAYOUT.ROW_H}px`;
+const skeletonLabelW = `${RUST_LAYOUT.LABEL_W}px`;
+const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -325,24 +340,34 @@ function onCanvasClick(e: MouseEvent) {
 .koyori-gantt-svg :deep(svg) {
   display: block;
 }
-/* Mirrors render.rs layout constants (ROW_H=40, LABEL_W=120, BAR_H=20) */
+/* Row metrics come from the crate via v-bind — see skeletonRowH above.
+   The gap and the bar's minimum width are the skeleton's own, so they are
+   named here once and the bar's max-width subtracts the names, never a
+   hand-added total. */
+.koyori-gantt-skeleton {
+  --koyori-skeleton-gap: 4px;
+  --koyori-skeleton-bar-min-w: 8px;
+}
 .koyori-gantt-skeleton-row {
   display: flex;
   align-items: center;
-  height: 40px;
-  gap: 4px;
+  height: v-bind(skeletonRowH);
+  gap: var(--koyori-skeleton-gap);
 }
 .koyori-gantt-skeleton-label {
-  width: 120px;
+  width: v-bind(skeletonLabelW);
   height: 12px;
   border-radius: 4px;
   background: #e5e7eb;
   flex-shrink: 0;
 }
 .koyori-gantt-skeleton-bar {
-  height: 20px;
-  min-width: 8px;
-  max-width: calc(100% - 132px);
+  height: v-bind(skeletonBarH);
+  min-width: var(--koyori-skeleton-bar-min-w);
+  max-width: calc(
+    100% - v-bind(skeletonLabelW) - var(--koyori-skeleton-gap)
+      - var(--koyori-skeleton-bar-min-w)
+  );
   border-radius: 4px;
   background: #d1d5db;
   animation: koyori-gantt-shimmer 1.4s ease-in-out infinite;

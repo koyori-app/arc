@@ -148,6 +148,66 @@ fn p1_render_matches_ir_path() {
     assert_eq!(render_direct(&graph, None), render_via_ir(&graph, None));
 }
 
+/// The SVG backend must not state a dimension of its own.
+///
+/// A number typed into this writer is a second definition of a value
+/// `display_list/constants.rs` owns, and the golden fixtures cannot see it:
+/// they are produced by this same writer, so both sides of the comparison move
+/// together. Measured on `45058a8`, before the writer read the primitives —
+/// changing the bar radius, the progress-label font size or the status-line
+/// dash in `build.rs` moved the IR and Canvas goldens and left every SVG
+/// golden green, and raising the today-marker stroke width failed nothing at
+/// all. The goldens pin the bytes; this pins where the bytes come from.
+///
+/// `empty_svg()` and the tests below it are excluded: that document is a fixed
+/// blob with no display list behind it, and its bytes are pinned separately by
+/// `wasmContract.test.ts`.
+#[test]
+fn p1_svg_backend_restates_no_dimension() {
+    const ATTRS: [&str; 13] = [
+        "x",
+        "y",
+        "width",
+        "height",
+        "rx",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "font-size",
+        "font-weight",
+        "stroke-width",
+        "stroke-dasharray",
+    ];
+    let source = include_str!("../src/backend/svg.rs");
+    let end = source
+        .find("fn escape_xml(")
+        .expect("svg.rs writer section ends at escape_xml");
+    let mut restated = Vec::new();
+    for (i, line) in source[..end].lines().enumerate() {
+        for attr in ATTRS {
+            let needle = format!("{attr}=\"");
+            let mut from = 0;
+            while let Some(offset) = line[from..].find(&needle) {
+                let at = from + offset;
+                from = at + needle.len();
+                // Whole attribute names only: `x="` must not match `viewBox="`.
+                let preceded_by_name = line[..at]
+                    .ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-');
+                let literal_value = line[from..].starts_with(|c: char| c.is_ascii_digit());
+                if !preceded_by_name && literal_value {
+                    restated.push(format!("  svg.rs:{}: {}", i + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        restated.is_empty(),
+        "the SVG writer states dimensions the display list already carries:\n{}",
+        restated.join("\n"),
+    );
+}
+
 // --- P2: NativeBackend stub ---
 
 #[test]
