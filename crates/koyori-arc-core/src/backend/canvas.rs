@@ -1,3 +1,4 @@
+use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEFAULT_FONT_WEIGHT};
 use crate::display_list::types::*;
 use crate::display_list::DisplayList;
 
@@ -113,8 +114,8 @@ fn collect_draw_ops(prim: &Primitive, ops: &mut Vec<DrawOp>) {
                 text: t.content.clone(),
                 color_id: t.fill.map(color_id_tag).unwrap_or(255),
                 anchor: anchor.unwrap_or(0),
-                size: t.font_size.unwrap_or(12.0),
-                weight: t.font_weight.unwrap_or(400),
+                size: t.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX),
+                weight: t.font_weight.unwrap_or(DEFAULT_FONT_WEIGHT),
             });
         }
         Primitive::Group(g) => {

@@ -62,8 +62,8 @@ pub fn build_display_list(
         .fold(0.0_f64, f64::max)
         .ceil() as i64;
 
-    let chart_w = total_days as f64 * PX_PER_DAY + LABEL_W + 20.0;
-    let chart_h = rows.len() as f64 * ROW_H + HEADER_H + LEGEND_H + 10.0;
+    let chart_w = chart_width(total_days as f64);
+    let chart_h = chart_height(rows.len() as f64);
 
     let viewport = Viewport {
         width: chart_w,
@@ -94,10 +94,16 @@ pub fn build_display_list(
 
     // Grid layer
     let mut grid_prims = Vec::new();
+    // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
+    // but the native entry points have no such guard, so every step here is
+    // checked: an overflow stops the grid instead of panicking.
     let first_monday = {
         let mut d = epoch;
         while d.weekday() != Weekday::Mon {
-            d += Duration::days(1);
+            match d.checked_add_signed(Duration::days(1)) {
+                Some(next) => d = next,
+                None => break,
+            }
         }
         d
     };
@@ -126,7 +132,10 @@ pub fn build_display_list(
             baseline: TextBaseline::Auto,
             semantic: TextSemantic::GridLabel,
         }));
-        grid_day += Duration::weeks(1);
+        grid_day = match grid_day.checked_add_signed(Duration::weeks(1)) {
+            Some(next) => next,
+            None => break,
+        };
     }
     layers.push(Layer {
         kind: LayerKind::Grid,
@@ -147,10 +156,13 @@ pub fn build_display_list(
         let prog_pct = task.progress_pct.clamp(0, 100);
         let tier = ProgressTier::from_pct(prog_pct);
         let pct_label = format!("{prog_pct}%");
-        let end_label = task
-            .end
-            .map(format_date)
-            .unwrap_or_else(|| format_date(task.start + Duration::days(1)));
+        let end_label = task.end.map(format_date).unwrap_or_else(|| {
+            format_date(
+                task.start
+                    .checked_add_signed(Duration::days(1))
+                    .unwrap_or(task.start),
+            )
+        });
         let tooltip = format!(
             "{}: {} – {} ({pct_label})",
             task.title,
@@ -182,8 +194,8 @@ pub fn build_display_list(
                 y: cy,
                 content: pct_label,
                 fill: Some(ColorId::ProgressTextOnBg),
-                font_size: Some(11.0),
-                font_weight: Some(600),
+                font_size: Some(PROGRESS_LABEL_FONT_PX),
+                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
                 anchor: None,
                 baseline: TextBaseline::Middle,
                 semantic: TextSemantic::ProgressPercent,
@@ -196,7 +208,7 @@ pub fn build_display_list(
                     width: w,
                     height: BAR_H,
                     fill: ColorId::BarBg,
-                    rx: Some(4.0),
+                    rx: Some(BAR_CORNER_RADIUS_PX),
                     semantic: RectSemantic::BarBackground,
                 }));
                 if prog_w > 0.0 {
@@ -206,7 +218,7 @@ pub fn build_display_list(
                         width: prog_w,
                         height: BAR_H,
                         fill: tier_fill_color(tier),
-                        rx: 4.0,
+                        rx: BAR_CORNER_RADIUS_PX,
                         tier,
                         semantic: RoundRectSemantic::BarProgress,
                     }));
@@ -218,8 +230,8 @@ pub fn build_display_list(
                 y: y + BAR_H / 2.0,
                 content: pct_label,
                 fill: Some(fill),
-                font_size: Some(11.0),
-                font_weight: Some(600),
+                font_size: Some(PROGRESS_LABEL_FONT_PX),
+                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
                 anchor: Some(anchor),
                 baseline: TextBaseline::Middle,
                 semantic: TextSemantic::ProgressPercent,
@@ -227,8 +239,10 @@ pub fn build_display_list(
         }
 
         let display_title = truncate_title(&task.title, TITLE_MAX_CHARS);
+        let label_x = LABEL_W - LABEL_GAP_PX;
+        let hit_left = label_x - LABEL_HIT_W;
         children.push(Primitive::Text(TextPrim {
-            x: LABEL_W - 4.0,
+            x: label_x,
             y: y + BAR_H / 2.0,
             content: display_title,
             fill: None,
@@ -246,9 +260,9 @@ pub fn build_display_list(
             height: BAR_H,
         };
         let group_bbox = BBox {
-            x: LABEL_W - 4.0 - 100.0,
+            x: hit_left,
             y,
-            width: x + w.max(BAR_H) - (LABEL_W - 104.0),
+            width: x + w.max(BAR_H) - hit_left,
             height: BAR_H,
         };
         task_bboxes.push(TaskBBox {
@@ -300,9 +314,9 @@ pub fn build_display_list(
 
         let mut start_x = from_x + from_w / 2.0;
         while to_x < start_x + ROW_PADDING && start_x > from_x + ROW_PADDING {
-            start_x -= 10.0;
+            start_x -= DEP_BACKOFF_STEP_PX;
         }
-        start_x -= 10.0;
+        start_x -= DEP_BACKOFF_STEP_PX;
 
         let start_y = HEADER_H + from_r.row as f64 * ROW_H + BAR_PAD + BAR_H;
         let end_x = to_x - ARROW_LEAD;
@@ -402,8 +416,8 @@ pub fn build_display_list(
             primitives: vec![Primitive::Polyline(PolylinePrim {
                 points: pts,
                 stroke: ColorId::Progress,
-                stroke_width: 2.0,
-                stroke_dash: Some("6,3".to_string()),
+                stroke_width: PROGRESS_LINE_STROKE_W,
+                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
                 semantic: PolylineSemantic::ProgressStatusLine,
             })],
         });
@@ -412,7 +426,7 @@ pub fn build_display_list(
     // Legend layer
     let legend_y1 = chart_h - LEGEND_H + 14.0;
     let legend_x = LABEL_W + 8.0;
-    let legend_y2 = chart_h - 10.0;
+    let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
     let sw = 10.0;
     let gap = 4.0;
 
@@ -433,8 +447,8 @@ pub fn build_display_list(
                     x2: legend_x + 28.0,
                     y2: legend_y1,
                     stroke: ColorId::Progress,
-                    stroke_width: 2.0,
-                    stroke_dash: Some("6,3".to_string()),
+                    stroke_width: PROGRESS_LINE_STROKE_W,
+                    stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
                     semantic: LineSemantic::LegendProgressLine,
                 }),
                 Primitive::Text(TextPrim {
@@ -483,6 +497,17 @@ pub fn build_display_list(
             baseline: TextBaseline::Middle,
             semantic: TextSemantic::LegendTier,
         }));
+        // Advance per *byte* of a UTF-8 label, not per glyph — it happens to equal
+        // the 9.0 font size above and is not derived from it. Left as its own
+        // literal so tightening one never silently moves the other.
+        //
+        // Known limit, deliberately not fixed here: `len()` counts UTF-8 bytes,
+        // so every label above is a Japanese string costing three bytes per
+        // glyph and advancing about three times the width it means to. With
+        // enough legend entries the row runs past the viewBox and the tail is
+        // clipped. Correcting it moves the legend geometry, which every SVG
+        // golden pins byte for byte, so it is tracked separately as issue #28
+        // rather than folded into this change.
         lx += label.len() as f64 * 9.0 + gap + sw;
     }
     legend_prims.push(Primitive::Group(GroupPrim {

@@ -75,6 +75,12 @@ function createMockCtx() {
 }
 
 describe('replayCommands', () => {
+  it('parseCommandBuffer returns error buffer for invalid json', () => {
+    const buffer = parseCommandBuffer('not json');
+    expect(buffer.error).toBe('invalid json');
+    expect(buffer.ops).toEqual([]);
+  });
+
   it('parses golden CommandBuffer JSON', () => {
     const buffer = parseCommandBuffer(goldenJson);
     expect(buffer.viewport_width).toBe(350);

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
-import init, { render_svg, render_canvas_commands } from '@koyori-app/arc';
+import init, {
+  render_svg,
+  render_svg_error,
+  render_canvas_commands,
+  empty_svg_markup,
+} from '@koyori-app/arc';
 import type { GanttTask, GanttDep } from './types.ts';
 import {
   parseCommandBuffer,
@@ -8,6 +13,28 @@ import {
   findTaskAtPoint,
   type TaskHitRegion,
 } from './replayCommands';
+import { resetCanvasElement } from './canvasLifecycle';
+import {
+  chartHeightForTaskCount,
+  isCanvasCapacityError,
+  resolveCanvasFailure,
+} from './canvasFallback';
+import {
+  EMPTY_SVG_MARKUP,
+  RUST_LAYOUT,
+  parseRenderError,
+  type RenderFailure,
+} from './wasmContract';
+
+/**
+ * The loading skeleton mimics a real chart row, so its metrics are the crate's.
+ * `v-bind` in `<style>` is what keeps them from being retyped as CSS literals:
+ * these are the same numbers `wasmContract.test.ts` pins to
+ * `display_list/constants.rs`, not a second set that happens to match today.
+ */
+const skeletonRowH = `${RUST_LAYOUT.ROW_H}px`;
+const skeletonLabelW = `${RUST_LAYOUT.LABEL_W}px`;
+const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -21,11 +48,6 @@ const emit = defineEmits<{
   taskClick: [task: GanttTask];
 }>();
 
-/** Mirrors koyori-arc-core display_list constants */
-const ROW_H = 40;
-const HEADER_H = 30;
-const LEGEND_H = 40;
-
 const ready = ref(false);
 const svg = ref('');
 const scrollY = ref(0);
@@ -33,11 +55,31 @@ const clientHeight = ref(600);
 const scrollRef = ref<HTMLElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const hitRegions = ref<TaskHitRegion[]>([]);
+const canvasFallbackSvg = ref('');
+const canvasError = ref('');
+const canvasFailure = ref<RenderFailure | null>(null);
+/**
+ * The empty-chart markup of the `@koyori-app/arc` build actually loaded.
+ *
+ * Two checks that look redundant answer different questions, so keep both:
+ * - `EMPTY_SVG_MARKUP` in `wasmContract.ts` is checked against the Rust source
+ *   by `wasmContract.test.ts`. That catches drift *inside this repo*, at build
+ *   time, without needing a Wasm build.
+ * - This ref is what every *runtime* comparison uses. `arc-vue` and
+ *   `@koyori-app/arc` ship as separate packages and can be installed at
+ *   different versions, and no test in this repo can see that pairing. Asking
+ *   the loaded module is the only way to be right about it.
+ *
+ * Deleting either one because "it is already covered" reopens one of the two.
+ */
+const emptySvgMarkup = ref(EMPTY_SVG_MARKUP);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
 onMounted(async () => {
   await init();
+  // Read once, before `ready` unblocks the computeds that compare against it.
+  emptySvgMarkup.value = empty_svg_markup();
   ready.value = true;
   await nextTick();
   if (scrollRef.value) {
@@ -58,8 +100,8 @@ const deviceTier = detectDeviceTier();
 const useVirtualization = computed(() => deviceTier === 'low');
 
 const chartHeight = computed(() => {
-  if (props.tasks.length === 0) return 0;
-  return props.tasks.length * ROW_H + HEADER_H + LEGEND_H + 10;
+  if (displayError.value) return 0;
+  return chartHeightForTaskCount(props.tasks.length);
 });
 
 const viewportJson = computed(() => {
@@ -92,13 +134,97 @@ const canvasCommandsJson = computed(() => {
 
 watch(svgHtml, (v) => { svg.value = v; }, { immediate: true });
 
+/**
+ * `render_svg` answers a blank chart to both "no tasks" and "input refused".
+ * `render_svg_error` is the channel that tells them apart, so a refusal reaches
+ * the same role="alert" the Canvas path already uses instead of silently
+ * showing an empty chart.
+ */
+const svgFailure = computed<RenderFailure | null>(() => {
+  if (!ready.value || props.tasks.length === 0 || useCanvas.value) return null;
+  // Only a blank chart can be hiding a refusal, and `render_svg` returns this
+  // exact markup when it refuses — so the happy path never pays a second parse.
+  if (svgHtml.value !== emptySvgMarkup.value) return null;
+  const reported = render_svg_error(
+    JSON.stringify(props.tasks),
+    JSON.stringify(props.deps ?? []),
+  );
+  return reported ? parseRenderError(reported) : null;
+});
+
+const displayError = computed(() => canvasError.value || svgFailure.value?.message || '');
+
+function resetCanvas(canvas: HTMLCanvasElement | null) {
+  hitRegions.value = [];
+  resetCanvasElement(canvas);
+}
+
+function clearCanvasFailure() {
+  canvasFallbackSvg.value = '';
+  canvasError.value = '';
+  canvasFailure.value = null;
+}
+
+function renderCanvasFallback(failure: RenderFailure) {
+  canvasFailure.value = failure;
+  let fallbackSvg = '';
+  if (isCanvasCapacityError(failure)) {
+    try {
+      fallbackSvg = render_svg(
+        JSON.stringify(props.tasks),
+        JSON.stringify(props.deps ?? []),
+        props.today ?? undefined,
+        JSON.stringify({
+          scroll_y: scrollY.value,
+          client_height: Math.min(clientHeight.value, 600),
+        }),
+      );
+    } catch {
+      // resolveCanvasFailure turns a failed fallback into a visible error.
+    }
+  }
+  const resolution = resolveCanvasFailure(failure, fallbackSvg, emptySvgMarkup.value);
+  if (resolution.mode === 'svg') {
+    canvasFallbackSvg.value = resolution.svg;
+    canvasError.value = '';
+  } else {
+    canvasFallbackSvg.value = '';
+    canvasError.value = resolution.message;
+  }
+}
+
+watch([scrollY, clientHeight], () => {
+  if (canvasFallbackSvg.value && canvasFailure.value) {
+    renderCanvasFallback(canvasFailure.value);
+  }
+});
+
 async function paintCanvas() {
-  const canvas = canvasRef.value;
   const json = canvasCommandsJson.value;
-  if (!canvas || !json) return;
+  if (!json) {
+    resetCanvas(canvasRef.value);
+    clearCanvasFailure();
+    return;
+  }
+
+  let canvas = canvasRef.value;
+  if (!canvas) {
+    // A fallback/error replaces the canvas with v-if. Clear it first, then
+    // wait for Vue to mount a fresh canvas before replaying recovered output.
+    clearCanvasFailure();
+    await nextTick();
+    canvas = canvasRef.value;
+    if (!canvas) return;
+  }
 
   const buffer = parseCommandBuffer(json);
-  if (buffer.error) return;
+  if (buffer.error) {
+    resetCanvas(canvas);
+    renderCanvasFallback({ message: buffer.error, code: buffer.code });
+    return;
+  }
+
+  clearCanvasFailure();
 
   canvas.width = buffer.viewport_width;
   canvas.height = buffer.viewport_height;
@@ -106,7 +232,10 @@ async function paintCanvas() {
   canvas.style.height = `${buffer.viewport_height}px`;
 
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) {
+    resetCanvas(canvas);
+    return;
+  }
   const result = replayCommands(ctx, buffer);
   hitRegions.value = result.hitRegions;
 }
@@ -143,7 +272,7 @@ function onCanvasClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="koyori-gantt" @click="!useCanvas && onSvgClick($event)">
+  <div class="koyori-gantt" @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)">
     <div v-if="!ready" class="koyori-gantt-skeleton" aria-hidden="true">
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
         <div class="koyori-gantt-skeleton-label" />
@@ -154,15 +283,19 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization }"
+    :class="{ 'koyori-gantt-scroll--virtual': useVirtualization || canvasFailure }"
     @scroll="onScroll"
   >
+    <div v-if="displayError" class="koyori-gantt-error" role="alert">
+      Unable to render Gantt chart: {{ displayError }}
+    </div>
     <div
+      v-else
       class="koyori-gantt-inner"
       :style="{ height: `${chartHeight}px` }"
     >
       <canvas
-        v-if="useCanvas"
+        v-if="useCanvas && !canvasFallbackSvg"
         ref="canvasRef"
         class="koyori-gantt-canvas"
         role="img"
@@ -170,7 +303,7 @@ function onCanvasClick(e: MouseEvent) {
         @click="onCanvasClick"
       />
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <div v-else class="koyori-gantt-svg" v-html="svg" />
+      <div v-else class="koyori-gantt-svg" v-html="canvasFallbackSvg || svg" />
     </div>
   </div>
   </div>
@@ -188,6 +321,10 @@ function onCanvasClick(e: MouseEvent) {
   position: relative;
   width: 100%;
 }
+.koyori-gantt-error {
+  padding: 12px;
+  color: #991b1b;
+}
 .koyori-gantt-svg {
   position: absolute;
   top: 0;
@@ -203,24 +340,34 @@ function onCanvasClick(e: MouseEvent) {
 .koyori-gantt-svg :deep(svg) {
   display: block;
 }
-/* Mirrors render.rs layout constants (ROW_H=40, LABEL_W=120, BAR_H=20) */
+/* Row metrics come from the crate via v-bind — see skeletonRowH above.
+   The gap and the bar's minimum width are the skeleton's own, so they are
+   named here once and the bar's max-width subtracts the names, never a
+   hand-added total. */
+.koyori-gantt-skeleton {
+  --koyori-skeleton-gap: 4px;
+  --koyori-skeleton-bar-min-w: 8px;
+}
 .koyori-gantt-skeleton-row {
   display: flex;
   align-items: center;
-  height: 40px;
-  gap: 4px;
+  height: v-bind(skeletonRowH);
+  gap: var(--koyori-skeleton-gap);
 }
 .koyori-gantt-skeleton-label {
-  width: 120px;
+  width: v-bind(skeletonLabelW);
   height: 12px;
   border-radius: 4px;
   background: #e5e7eb;
   flex-shrink: 0;
 }
 .koyori-gantt-skeleton-bar {
-  height: 20px;
-  min-width: 8px;
-  max-width: calc(100% - 132px);
+  height: v-bind(skeletonBarH);
+  min-width: var(--koyori-skeleton-bar-min-w);
+  max-width: calc(
+    100% - v-bind(skeletonLabelW) - var(--koyori-skeleton-gap)
+      - var(--koyori-skeleton-bar-min-w)
+  );
   border-radius: 4px;
   background: #d1d5db;
   animation: koyori-gantt-shimmer 1.4s ease-in-out infinite;

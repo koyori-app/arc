@@ -21,6 +21,8 @@ export interface CommandBuffer {
   ops: DrawOp[];
   palette: { colors: [ColorIdName, string][] };
   error?: string;
+  /** Machine-readable code from `koyori-arc-core`; see `wasmContract.ts`. */
+  code?: string;
 }
 
 export type DrawOp =
@@ -249,7 +251,19 @@ export function replayCommands(
 }
 
 export function parseCommandBuffer(json: string): CommandBuffer {
-  return JSON.parse(json) as CommandBuffer;
+  try {
+    return JSON.parse(json) as CommandBuffer;
+  } catch {
+    // No `code`: this failure happened in transit, not in Rust, so it must not
+    // be mistaken for a capacity error that has an SVG fallback.
+    return {
+      viewport_width: 0,
+      viewport_height: 0,
+      ops: [],
+      palette: { colors: [] },
+      error: 'invalid json',
+    };
+  }
 }
 
 export function findTaskAtPoint(
