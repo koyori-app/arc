@@ -42,15 +42,8 @@ export const RUST_LAYOUT = {
   ROW_H: 40,
   HEADER_H: 30,
   LEGEND_H: 40,
+  CHART_BOTTOM_PADDING_PX: 10,
 } as const;
-
-/**
- * `CHART_BOTTOM_PADDING_PX` in `crates/koyori-arc-core/src/render.rs`.
- *
- * Private on the Rust side, so it reaches JS only through the height the chart
- * has to reserve. The contract test reads it out of `render.rs` all the same.
- */
-export const CHART_BOTTOM_PADDING_PX = 10;
 
 /** A refusal from a Wasm entry point. `code` drives control flow; `message` is for display. */
 export interface RenderFailure {

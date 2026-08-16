@@ -10,6 +10,7 @@ pub const ARROW_HEAD: f64 = 4.0;
 pub const ROW_PADDING: f64 = ROW_H - BAR_H;
 pub const TITLE_MAX_CHARS: usize = 16;
 pub const LEGEND_H: f64 = 40.0;
+pub const CHART_BOTTOM_PADDING_PX: f64 = 10.0;
 /// Visible rows ± buffer for row virtualization (§5.2, §6.5).
 pub const ROW_BUFFER: u32 = 2;
 /// Phase 1 DOM_CAP design target (§6.5.3).

@@ -1,6 +1,5 @@
 import {
   CANVAS_CAPACITY_CODE,
-  CHART_BOTTOM_PADDING_PX,
   RUST_LAYOUT,
   type RenderFailure,
 } from './wasmContract';
@@ -9,13 +8,13 @@ export type CanvasFailureResolution =
   | { mode: 'svg'; svg: string }
   | { mode: 'error'; message: string };
 
-/** Reserves exactly the height `render.rs` draws into, so scrolling matches the chart. */
+/** Reserves exactly the height the display list builds, so scrolling matches the chart. */
 export function chartHeightForTaskCount(taskCount: number): number {
   if (taskCount === 0) return 0;
   return taskCount * RUST_LAYOUT.ROW_H
     + RUST_LAYOUT.HEADER_H
     + RUST_LAYOUT.LEGEND_H
-    + CHART_BOTTOM_PADDING_PX;
+    + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
 }
 
 /**

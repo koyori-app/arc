@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  CHART_BOTTOM_PADDING_PX,
   EMPTY_SVG_MARKUP,
   RUST_ERROR_CODES,
   RUST_LAYOUT,
@@ -53,15 +52,6 @@ function rustLayoutConstants(): Record<string, number> {
   return values;
 }
 
-function rustChartBottomPadding(): number {
-  const source = readCrateSource('render.rs');
-  const match = source.match(
-    /const CHART_BOTTOM_PADDING_PX: f64 = ([0-9]+(?:\.[0-9]+)?);/,
-  );
-  expect(match, 'CHART_BOTTOM_PADDING_PX literal found in render.rs').not.toBeNull();
-  return Number(match![1]);
-}
-
 describe('koyori-arc-core contract', () => {
   it('mirrors every error code, by name and by value', () => {
     const fromRust = rustErrorCodes();
@@ -81,9 +71,5 @@ describe('koyori-arc-core contract', () => {
         .toHaveProperty(name);
       expect(fromRust[name], name).toBe(pinned);
     }
-  });
-
-  it('mirrors the chart bottom padding', () => {
-    expect(rustChartBottomPadding()).toBe(CHART_BOTTOM_PADDING_PX);
   });
 });

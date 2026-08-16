@@ -3,7 +3,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
-use crate::display_list::constants::{HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H};
+use crate::display_list::constants::{
+    CHART_BOTTOM_PADDING_PX, HEADER_H, LABEL_W, LEGEND_H, PX_PER_DAY, ROW_H,
+};
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
@@ -30,7 +32,6 @@ pub const MAX_CANVAS_SIDE_PX: usize = 16_384;
 /// avoids a 16,384 x 16,384 canvas allocating roughly 1 GiB per buffer.
 pub const MAX_CANVAS_AREA_PX: usize = 32 * 1024 * 1024;
 const CHART_RIGHT_PADDING_PX: f64 = 20.0;
-const CHART_BOTTOM_PADDING_PX: f64 = 10.0;
 pub const MAX_CANVAS_ROWS: usize = ((MAX_CANVAS_SIDE_PX as f64
     - HEADER_H
     - LEGEND_H

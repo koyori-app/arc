@@ -63,7 +63,7 @@ pub fn build_display_list(
         .ceil() as i64;
 
     let chart_w = total_days as f64 * PX_PER_DAY + LABEL_W + 20.0;
-    let chart_h = rows.len() as f64 * ROW_H + HEADER_H + LEGEND_H + 10.0;
+    let chart_h = rows.len() as f64 * ROW_H + HEADER_H + LEGEND_H + CHART_BOTTOM_PADDING_PX;
 
     let viewport = Viewport {
         width: chart_w,
@@ -424,7 +424,7 @@ pub fn build_display_list(
     // Legend layer
     let legend_y1 = chart_h - LEGEND_H + 14.0;
     let legend_x = LABEL_W + 8.0;
-    let legend_y2 = chart_h - 10.0;
+    let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
     let sw = 10.0;
     let gap = 4.0;
 
