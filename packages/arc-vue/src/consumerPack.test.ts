@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,9 +9,29 @@ import { describe, expect, it } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(__dirname, '..');
 const corePkg = join(pkgRoot, '../../crates/koyori-arc-core/pkg');
+const builtCss = join(pkgRoot, 'dist', 'arc-vue.css');
+
+/**
+ * This test inspects build output, so it states that precondition itself rather
+ * than relying on the CI step order. Reading dist/ directly would fail with a
+ * bare ENOENT for anyone who runs `pnpm test` before `pnpm build` — in a fresh
+ * clone, or after the workflow steps are reordered.
+ */
+function requireBuiltDist(): void {
+  if (existsSync(builtCss)) return;
+  throw new Error(
+    [
+      `Missing build output: ${builtCss}`,
+      'This test packs the package and resolves @koyori-app/arc-vue/style.css, both of which read dist/.',
+      'Run `pnpm build` in packages/arc-vue first, then re-run `pnpm test`.',
+    ].join('\n'),
+  );
+}
 
 describe('consumer pack', () => {
   it('packs dist CSS and resolves @koyori-app/arc-vue/style.css', () => {
+    requireBuiltDist();
+
     const pkg = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, string | { import?: string }>;
       sideEffects: string[];
@@ -21,7 +41,6 @@ describe('consumer pack', () => {
     expect(styleExport).toBe('./dist/arc-vue.css');
     expect(pkg.sideEffects).toEqual(['**/*.css']);
 
-    const builtCss = join(pkgRoot, 'dist', 'arc-vue.css');
     expect(readFileSync(builtCss, 'utf8').length).toBeGreaterThan(0);
 
     const tmp = mkdtempSync(join(tmpdir(), 'arc-vue-pack-'));
