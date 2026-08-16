@@ -500,6 +500,14 @@ pub fn build_display_list(
         // Advance per *byte* of a UTF-8 label, not per glyph — it happens to equal
         // the 9.0 font size above and is not derived from it. Left as its own
         // literal so tightening one never silently moves the other.
+        //
+        // Known limit, deliberately not fixed here: `len()` counts UTF-8 bytes,
+        // so every label above is a Japanese string costing three bytes per
+        // glyph and advancing about three times the width it means to. With
+        // enough legend entries the row runs past the viewBox and the tail is
+        // clipped. Correcting it moves the legend geometry, which every SVG
+        // golden pins byte for byte, so it is tracked separately as issue #28
+        // rather than folded into this change.
         lx += label.len() as f64 * 9.0 + gap + sw;
     }
     legend_prims.push(Primitive::Group(GroupPrim {

@@ -162,6 +162,11 @@ fn p1_render_matches_ir_path() {
 /// `empty_svg()` and the tests below it are excluded: that document is a fixed
 /// blob with no display list behind it, and its bytes are pinned separately by
 /// `wasmContract.test.ts`.
+///
+/// This test is itself a source scan, so it also states how much it expects to
+/// have looked at — the same guard `wasmContract.test.ts` puts on its own
+/// extraction counts, so that a scan which stops finding anything cannot pass
+/// as a writer which restates nothing.
 #[test]
 fn p1_svg_backend_restates_no_dimension() {
     const ATTRS: [&str; 13] = [
@@ -184,6 +189,7 @@ fn p1_svg_backend_restates_no_dimension() {
         .find("fn escape_xml(")
         .expect("svg.rs writer section ends at escape_xml");
     let mut restated = Vec::new();
+    let mut scanned = 0usize;
     for (i, line) in source[..end].lines().enumerate() {
         for attr in ATTRS {
             let needle = format!("{attr}=\"");
@@ -194,13 +200,30 @@ fn p1_svg_backend_restates_no_dimension() {
                 // Whole attribute names only: `x="` must not match `viewBox="`.
                 let preceded_by_name = line[..at]
                     .ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-');
+                if preceded_by_name {
+                    continue;
+                }
+                scanned += 1;
                 let literal_value = line[from..].starts_with(|c: char| c.is_ascii_digit());
-                if !preceded_by_name && literal_value {
+                if literal_value {
                     restated.push(format!("  svg.rs:{}: {}", i + 1, line.trim()));
                 }
             }
         }
     }
+    // "No violation" and "nothing was examined" must not be the same green.
+    // The scan finds its own subject by string matching, so a rename of the
+    // `escape_xml` sentinel, a rewrite of how attributes are emitted, or a
+    // typo in ATTRS would silently shrink it to zero sites and still pass.
+    // 21 whole-name attribute sites are present at `91e1ee2`; a writer that
+    // legitimately emits fewer should lower this number in the same commit,
+    // as a decision that is reviewed rather than a threshold that drifts.
+    const MIN_SCANNED_SITES: usize = 21;
+    assert!(
+        scanned >= MIN_SCANNED_SITES,
+        "the scan examined {scanned} attribute sites, fewer than the {MIN_SCANNED_SITES} \
+         it is known to reach — it is no longer reading the writer it is meant to check",
+    );
     assert!(
         restated.is_empty(),
         "the SVG writer states dimensions the display list already carries:\n{}",
