@@ -7,3 +7,5 @@ storybook-static/
 benches/fixtures/*.json
 benches/results/*.log
 package-lock.json
+.pnpm/
+.cargo/
