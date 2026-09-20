@@ -5,6 +5,16 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Gantt chart dependency graph renderer — Rust core (Wasm target)"
+include = [
+  "/src/**",
+  "/tests/**",
+  "/benches/**",
+  "/examples/**",
+  "/Cargo.toml",
+  "/LICENSE",
+  "/LICENSE-MPL-2.0",
+  "/LICENSE-GPL-2.0-or-later",
+]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
