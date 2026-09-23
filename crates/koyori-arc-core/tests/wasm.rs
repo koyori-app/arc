@@ -142,7 +142,8 @@ fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
     assert_eq!(koyori_arc_core::render_svg_error("[]", "[]"), None);
     assert_eq!(koyori_arc_core::render_svg_error(TASKS, DEPS), None);
 
-    let refused = r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
+    let refused =
+        r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
     let reported = koyori_arc_core::render_svg_error(refused, "[]").expect("refusal reported");
     let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
     assert_eq!(v["code"].as_str(), Some("input_limit"));

@@ -47,11 +47,26 @@ fn main() {
     ];
 
     let deps = vec![
-        GanttDep { blocker_task_id: "t1".to_string(), blocked_task_id: "t2".to_string() },
-        GanttDep { blocker_task_id: "t1".to_string(), blocked_task_id: "t3".to_string() },
-        GanttDep { blocker_task_id: "t2".to_string(), blocked_task_id: "t4".to_string() },
-        GanttDep { blocker_task_id: "t3".to_string(), blocked_task_id: "t4".to_string() },
-        GanttDep { blocker_task_id: "t4".to_string(), blocked_task_id: "t5".to_string() },
+        GanttDep {
+            blocker_task_id: "t1".to_string(),
+            blocked_task_id: "t2".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t1".to_string(),
+            blocked_task_id: "t3".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t2".to_string(),
+            blocked_task_id: "t4".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t3".to_string(),
+            blocked_task_id: "t4".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t4".to_string(),
+            blocked_task_id: "t5".to_string(),
+        },
     ];
 
     let today = date(2026, 6, 6);

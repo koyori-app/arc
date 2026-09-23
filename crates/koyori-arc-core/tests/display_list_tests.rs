@@ -4,9 +4,9 @@ use bincode::config;
 use chrono::NaiveDate;
 use koyori_arc_core::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
 use koyori_arc_core::{
-    build_display_list, compute_row_window, BackendOutput, CanvasBackend, CommandBuffer,
-    DOM_CAP, DrawOp, GanttDep, GanttGraph, GanttTask, HEADER_H, NativeBackend, NativeDrawOp,
-    RenderBackend, ROW_H, ScrollViewport, SvgBackend,
+    build_display_list, compute_row_window, BackendOutput, CanvasBackend, CommandBuffer, DrawOp,
+    GanttDep, GanttGraph, GanttTask, NativeBackend, NativeDrawOp, RenderBackend, ScrollViewport,
+    SvgBackend, DOM_CAP, HEADER_H, ROW_H,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -62,7 +62,10 @@ fn p0_ir_golden_two_tasks() {
     let list = build_display_list(&graph, epoch(&graph), None, None);
     let json = serde_json::to_string_pretty(&list).expect("serialize");
     let golden = include_str!("fixtures/ir_golden/two_tasks.json");
-    assert_eq!(json, golden, "IR snapshot drift — update fixtures if intentional");
+    assert_eq!(
+        json, golden,
+        "IR snapshot drift — update fixtures if intentional"
+    );
 }
 
 #[test]
@@ -198,8 +201,8 @@ fn p1_svg_backend_restates_no_dimension() {
                 let at = from + offset;
                 from = at + needle.len();
                 // Whole attribute names only: `x="` must not match `viewBox="`.
-                let preceded_by_name = line[..at]
-                    .ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-');
+                let preceded_by_name =
+                    line[..at].ends_with(|c: char| c.is_ascii_alphanumeric() || c == '-');
                 if preceded_by_name {
                     continue;
                 }
@@ -244,10 +247,7 @@ fn p2_native_stub_primitive_counts_match() {
     assert!(native.ops.len() > 0);
     assert_eq!(native.viewport_width, list.viewport.width);
     assert_eq!(native.viewport_height, list.viewport.height);
-    assert_eq!(
-        list.metadata.primitive_count,
-        list.count_primitives()
-    );
+    assert_eq!(list.metadata.primitive_count, list.count_primitives());
 }
 
 #[test]
@@ -316,10 +316,7 @@ fn p4_ir_contains_no_dom_concepts() {
         "CanvasRenderingContext",
     ];
     for term in forbidden {
-        assert!(
-            !json.contains(term),
-            "IR leaked DOM concept: {term}"
-        );
+        assert!(!json.contains(term), "IR leaked DOM concept: {term}");
     }
 }
 
