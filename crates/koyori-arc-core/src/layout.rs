@@ -276,7 +276,7 @@ mod tests {
         rows.iter().map(|r| (r.task_id.as_str(), r.row)).collect()
     }
 
-    fn row_of<'a>(rows: &'a [RowLayout], id: &str) -> usize {
+    fn row_of(rows: &[RowLayout], id: &str) -> usize {
         rows.iter()
             .find(|r| r.task_id == id)
             .map(|r| r.row)

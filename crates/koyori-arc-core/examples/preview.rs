@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use koyori_arc_core::{render, GanttDep, GanttTask};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -114,7 +114,7 @@ fn main() {
     open_browser(&html_path);
 }
 
-fn open_browser(path: &PathBuf) {
+fn open_browser(path: &Path) {
     let path_str = path.to_string_lossy();
     // WSL2: wslpath converts the Linux path to a Windows path so explorer.exe can open it
     if let Ok(out) = Command::new("wslpath").args(["-w", &path_str]).output() {

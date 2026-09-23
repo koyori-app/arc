@@ -120,9 +120,9 @@ pub fn generate_dense_deps(tasks: &[GanttTask]) -> Vec<GanttDep> {
             continue;
         }
         let start = i.saturating_sub(5);
-        for j in start..i {
+        for blocker in &tasks[start..i] {
             deps.push(GanttDep {
-                blocker_task_id: tasks[j].id.clone(),
+                blocker_task_id: blocker.id.clone(),
                 blocked_task_id: task.id.clone(),
             });
         }
