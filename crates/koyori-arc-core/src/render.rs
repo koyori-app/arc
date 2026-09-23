@@ -322,14 +322,16 @@ pub fn render_canvas_commands(
 mod tests {
     use super::*;
     #[cfg(test)]
-    use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD, COLOR_TODAY};
-    use crate::display_list::constants::{
-        COLOR_HEADER_BG, COLOR_TIER_DONE, COLOR_TIER_HIGH, COLOR_TIER_LOW, COLOR_TIER_MID,
-    };
+    use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD};
+    use crate::display_list::types::{ColorId, Palette};
     use chrono::NaiveDate;
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn palette_hex(id: ColorId) -> String {
+        Palette::standard().resolve(id).to_string()
     }
 
     fn two_tasks() -> (Vec<GanttTask>, Vec<GanttDep>) {
@@ -438,7 +440,7 @@ mod tests {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
         let svg = render(&t, &d, Some(today), None);
-        assert!(svg.contains(COLOR_TODAY));
+        assert!(svg.contains(&palette_hex(ColorId::Today)));
     }
 
     #[test]
@@ -446,7 +448,8 @@ mod tests {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None, None);
         assert!(!svg.contains(&format!(
-            r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
+            r#"stroke="{}" stroke-width="2" stroke-dasharray="4,3""#,
+            palette_hex(ColorId::Today)
         )));
     }
 
@@ -454,7 +457,7 @@ mod tests {
     fn date_header_present() {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None, None);
-        assert!(svg.contains(COLOR_HEADER_BG));
+        assert!(svg.contains(&palette_hex(ColorId::HeaderBg)));
     }
 
     #[test]
@@ -1053,7 +1056,8 @@ mod tests {
             "out-of-range today falls back to legacy"
         );
         assert!(!svg.contains(&format!(
-            r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
+            r#"stroke="{}" stroke-width="2" stroke-dasharray="4,3""#,
+            palette_hex(ColorId::Today)
         )));
     }
 
@@ -1090,10 +1094,10 @@ mod tests {
             },
         ];
         let svg = render(&tasks, &[], None, None);
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_LOW}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_MID}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_HIGH}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_DONE}""#)));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierLow))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierMid))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierHigh))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierDone))));
         assert!(svg.contains(r#"class="bar-progress bar-tier-low""#));
         assert!(svg.contains(r#"class="bar-progress bar-tier-done""#));
         assert!(svg.contains(r#"class="bar-bg""#));
