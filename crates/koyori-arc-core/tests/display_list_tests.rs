@@ -244,7 +244,7 @@ fn p2_native_stub_primitive_counts_match() {
         BackendOutput::NativeDrawList(n) => n,
         _ => panic!("expected native"),
     };
-    assert!(native.ops.len() > 0);
+    assert!(!native.ops.is_empty());
     assert_eq!(native.viewport_width, list.viewport.width);
     assert_eq!(native.viewport_height, list.viewport.height);
     assert_eq!(list.metadata.primitive_count, list.count_primitives());
@@ -636,14 +636,24 @@ fn extract_task_groups(svg: &str) -> Vec<String> {
 }
 
 #[test]
-fn p1_viewport_none_matches_full_render() {
+fn p1_viewport_full_coverage_matches_full_render() {
     let graph = two_task_graph();
     let ep = epoch(&graph);
     let full = build_display_list(&graph, ep, None, None);
-    let via_none = build_display_list(&graph, ep, None, None);
+    // A viewport tall enough to cover every row: the virtualization
+    // branch must degrade to exactly the non-virtualized output.
+    let via_full_viewport = build_display_list(
+        &graph,
+        ep,
+        None,
+        Some(ScrollViewport {
+            scroll_y: 0.0,
+            client_height: 1_000_000.0,
+        }),
+    );
     assert_eq!(
         serde_json::to_string(&full).unwrap(),
-        serde_json::to_string(&via_none).unwrap()
+        serde_json::to_string(&via_full_viewport).unwrap()
     );
 }
 
