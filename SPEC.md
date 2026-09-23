@@ -46,19 +46,29 @@ pub struct GanttDep {
 ### ネイティブ (Rust)
 
 ```rust
-pub fn render(tasks: &[GanttTask], deps: &[GanttDep], today: Option<NaiveDate>) -> String
+pub fn render(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    today: Option<NaiveDate>,
+    scroll_viewport: Option<ScrollViewport>,
+) -> String
 ```
 
 ### Wasm
 
 ```rust
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) -> String
+pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>) -> String
+
+#[wasm_bindgen]
+pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>) -> String
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
 - `today_iso`: 今日マーカー用の ISO 8601 日付文字列（例: `"2026-06-16"`）。省略可
-- パースエラー時は `<!-- parse error: ... -->` を返す（例外を投げない）
+- `viewport_json`: 仮想スクロール用 `ScrollViewport` の JSON 文字列。省略可
+- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error` から理由を取得できる
+- `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
 
 ### arc-vue
 
@@ -139,7 +149,9 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
 | `LABEL_W` | 120.0 |
 | `HEADER_H` | 30.0 |
 
-行割り当ては現状タスク配列の順序通り（`layout::assign_rows`）。トポロジカルソートによる依存関係を考慮した行割り当ては未実装。
+`layout::assign_rows` の返却順は入力タスク順を保つが、各要素の `row` は依存関係を反映する。
+Tarjan 法で強連結成分を縮約し、成分間をトポロジカル順に並べる。循環依存は同じ成分として扱い、
+入力位置を使って決定的に並べる。
 
 ## テスト
 
@@ -158,7 +170,6 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>) 
 ### P2
 
 - arc-vue: 表示モード切り替え UI、ツールチップ（ネイティブ SVG `<title>` 以外のリッチツールチップ）
-- 依存関係を考慮したトポロジカル行割り当て
 
 ### P3
 
