@@ -26,7 +26,7 @@ fn render_svg_contains_titles() {
 #[wasm_bindgen_test]
 fn render_svg_with_today_marker() {
     let svg = koyori_arc_core::render_svg(TASKS, DEPS, Some("2026-06-03".to_string()), None);
-    // COLOR_TODAY = "#f59e0b"
+    // Palette::standard() の ColorId::Today（#f59e0b）。palette を変えたらここも落ちる。
     assert!(svg.contains("f59e0b"));
 }
 
