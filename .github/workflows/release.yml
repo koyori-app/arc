@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # 系譜の検証（master の祖先か）に全履歴が要る。浅い clone では
+          # merge-base が共通祖先を見つけられず、正しいタグまで拒みうる。
+          fetch-depth: 0
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -33,11 +37,43 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # pnpm 9 delegates publish to the system npm, and trusted publishing (OIDC)
-      # requires npm >= 11.5.1 (the npm bundled with Actions' Node is 10.x and
-      # fails with a misleading E404). Upgrade npm before publishing.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+      # 取り消せぬレジストリへ流す前の門。release イベントは任意の ref から
+      # 作れるため、(1) タグ名と cargo metadata の版の一致、(2) 対象 SHA が
+      # master の祖先であること、(3) trusted publishing (OIDC) が要求する
+      # npm >= 11.5.1 を満たすこと——を検めてから publish に進む。
+      # 速く落ちる順に並べる: 版の照合（網も履歴も要らぬ）→ 系譜 → npm。
+      - name: Verify tag, lineage and npm before publishing
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          if [ "$tag" = "$ver" ]; then
+            echo "::error::タグ ${tag} が v で始まらない（vX.Y.Z の形が要る）"
+            exit 1
+          fi
+          crate_ver=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="koyori-arc-core") | .version')
+          if [ "$ver" != "$crate_ver" ]; then
+            echo "::error::タグ ${tag} と koyori-arc-core の版 ${crate_ver} が食い違う。タグか Cargo.toml を直してから release を作り直すこと"
+            exit 1
+          fi
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/master; then
+            echo "::error::${GITHUB_SHA} は master の祖先ではない。master に merge されていない ref からの release は publish しない"
+            exit 1
+          fi
+          npm_ver=$(npm --version)
+          if ! printf '11.5.1\n%s\n' "$npm_ver" | sort -V -C; then
+            echo "::error::npm ${npm_ver} は trusted publishing の要件 (>= 11.5.1) を満たさない"
+            exit 1
+          fi
+
+      # trusted publishing (OIDC) は npm >= 11.5.1 を要する。かつては
+      # `npm install -g npm@latest` で上げていたが、latest は可変参照であり
+      # 取り消せぬ publish の直前に検証なしの道具を引き込む。Node 24 の同梱
+      # npm は 11.19.0 (2026-09-24 実測・nodejs.org の dist index) で要件を
+      # 満たすため、グローバルインストール自体を消した。要件は上の検証が
+      # 門として確かめる——同梱 npm が要件を割れば publish の前に止まる。
 
       - name: Build npm package
         run: bash scripts/build-npm.sh
