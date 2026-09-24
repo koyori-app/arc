@@ -107,5 +107,17 @@ export function replayCommands(ctx, buffer) {
 }
 
 export function parseCommandBuffer(json) {
-  return JSON.parse(json);
+  const parsed = JSON.parse(json);
+  if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') {
+    // render_canvas_commands signals failure as {code, error} instead of a
+    // CommandBuffer (e.g. canvas_capacity when the row count exceeds the
+    // 16384px canvas height limit). Passing that through used to crash the
+    // caller later with an unrelated message; surface it here instead.
+    const err = new Error(
+      `render_canvas_commands returned an error (code=${parsed.code ?? 'unknown'}): ${parsed.error}`,
+    );
+    err.renderErrorCode = parsed.code ?? 'unknown';
+    throw err;
+  }
+  return parsed;
 }

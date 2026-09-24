@@ -40,7 +40,15 @@
         const t0 = performance.now();
         const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today, viewportJson);
         const wasmMs = performance.now() - t0;
-        const buffer = parseCommandBuffer(bufJson);
+        let buffer;
+        try {
+          buffer = parseCommandBuffer(bufJson);
+        } catch (err) {
+          if (err.renderErrorCode) {
+            return { renderError: { code: err.renderErrorCode, message: err.message } };
+          }
+          throw err;
+        }
         const byteLength = new TextEncoder().encode(bufJson).length;
         const canvasOps = buffer.ops?.length ?? 0;
 

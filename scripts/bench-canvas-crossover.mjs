@@ -17,6 +17,10 @@ const MICRO_COUNTS = [50, 200, 500, 1000, 2000, 5000];
 const DENSITIES = ['sparse', 'dense'];
 const FIXTURES = MICRO_COUNTS.flatMap((n) => DENSITIES.map((d) => `${n}_${d}`));
 
+// L3 fixture/backend pairs we could not measure (e.g. canvas capacity
+// exceeded). Logged at the end and recorded as l3_skipped in the payload.
+const l3Skips = [];
+
 const L2_WARMUP = 3;
 const L2_ITERS = 10;
 const L3_WARMUP = 1;
@@ -198,6 +202,21 @@ async function benchL3NodeFallback() {
       const tasksJson = JSON.stringify(fx.tasks);
       const depsJson = JSON.stringify(fx.deps);
 
+      // Probe once: capacity-exceeded fixtures return an error payload, not
+      // a CommandBuffer. Skip them instead of crashing mid-bench.
+      if (backend === 'canvas') {
+        try {
+          parseCommandBuffer(render_canvas_commands(tasksJson, depsJson, fx.today));
+        } catch (err) {
+          if (err.renderErrorCode) {
+            console.warn(`${name} ${backend}: skipped (${err.renderErrorCode}): ${err.message}`);
+            l3Skips.push({ fixture: name, backend, code: err.renderErrorCode, message: err.message });
+            continue;
+          }
+          throw err;
+        }
+      }
+
       for (let i = 0; i < L3_WARMUP; i++) {
         if (backend === 'svg') {
           render_svg(tasksJson, depsJson, fx.today);
@@ -284,6 +303,15 @@ async function benchL3Playwright(chromium, opts) {
         });
         await page.goto(`${baseUrl}/scripts/bench-dom-harness.html?${q.toString()}`);
         await page.waitForFunction(() => window.__benchReady === true);
+
+        const probe = await page.evaluate(() => window.__runBench());
+        if (probe.renderError) {
+          console.warn(
+            `${name} ${backend}: skipped (${probe.renderError.code}): ${probe.renderError.message}`,
+          );
+          l3Skips.push({ fixture: name, backend, ...probe.renderError });
+          continue;
+        }
 
         for (let i = 0; i < L3_WARMUP; i++) await page.evaluate(() => window.__runBench());
 
@@ -411,6 +439,7 @@ async function main() {
     l3_warmup: L3_WARMUP,
     l3_iters: L3_ITERS,
     crossovers,
+    l3_skipped: l3Skips,
     max_canvas_l2_p50_ms: round(maxCanvasL2),
     l2_canvas_gate: {
       fixture: GATE_FIXTURE,
@@ -429,6 +458,10 @@ async function main() {
     JSON.stringify(payload, null, 2),
   );
   console.log('\nWrote benches/results/canvas-vs-svg-crossover.json');
+  if (l3Skips.length) {
+    console.warn(`L3 skipped ${l3Skips.length} fixture/backend pair(s) (see l3_skipped in the payload):`);
+    for (const s of l3Skips) console.warn(`  ${s.fixture} ${s.backend}: ${s.code}`);
+  }
   console.log('Crossovers:', JSON.stringify(crossovers, null, 2));
   console.log(
     `L2 canvas gate (canvas ≤ svg ×${L2_TOLERANCE} @ ${GATE_FIXTURE}): ` +
