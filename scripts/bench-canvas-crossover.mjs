@@ -102,9 +102,17 @@ async function benchL2Node() {
     const tasksJson = JSON.stringify(fx.tasks);
     const depsJson = JSON.stringify(fx.deps);
 
+    // Probe once: capacity-exceeded fixtures return {code, error} instead
+    // of a CommandBuffer. Timing that error return as "canvas" made the
+    // relative gate compare a real svg render against an instant error
+    // response, so a green gate guaranteed nothing.
+    const canvasProbe = JSON.parse(render_canvas_commands(tasksJson, depsJson, fx.today));
+    const canvasError =
+      typeof canvasProbe.error === 'string' ? (canvasProbe.code ?? 'unknown') : null;
+
     for (let i = 0; i < L2_WARMUP; i++) {
       render_svg(tasksJson, depsJson, fx.today);
-      render_canvas_commands(tasksJson, depsJson, fx.today);
+      if (!canvasError) render_canvas_commands(tasksJson, depsJson, fx.today);
     }
 
     const svgSamples = [];
@@ -119,30 +127,35 @@ async function benchL2Node() {
       svgSamples.push(performance.now() - t0);
       lastSvgBytes = Buffer.byteLength(svg, 'utf8');
 
-      const t1 = performance.now();
-      const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
-      canvasSamples.push(performance.now() - t1);
-      lastCanvasBytes = Buffer.byteLength(bufJson, 'utf8');
-      const parsed = JSON.parse(bufJson);
-      lastCanvasOps = parsed.ops?.length ?? 0;
+      if (!canvasError) {
+        const t1 = performance.now();
+        const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
+        canvasSamples.push(performance.now() - t1);
+        lastCanvasBytes = Buffer.byteLength(bufJson, 'utf8');
+        const parsed = JSON.parse(bufJson);
+        lastCanvasOps = parsed.ops?.length ?? 0;
+      }
     }
 
     const svgStats = stats(svgSamples);
-    const canvasStats = stats(canvasSamples);
+    const canvasStats = canvasError ? null : stats(canvasSamples);
     const row = {
       fixture: name,
       tasks: fx.tasks.length,
       deps: fx.deps.length,
       svg_l2_p50_ms: svgStats.p50,
       svg_l2_p95_ms: svgStats.p95,
-      canvas_l2_p50_ms: canvasStats.p50,
-      canvas_l2_p95_ms: canvasStats.p95,
+      canvas_l2_p50_ms: canvasStats ? canvasStats.p50 : null,
+      canvas_l2_p95_ms: canvasStats ? canvasStats.p95 : null,
       svg_bytes: lastSvgBytes,
-      canvas_bytes: lastCanvasBytes,
-      canvas_ops: lastCanvasOps,
+      canvas_bytes: canvasError ? null : lastCanvasBytes,
+      canvas_ops: canvasError ? null : lastCanvasOps,
+      canvas_error: canvasError,
     };
     console.log(
-      `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas p50=${row.canvas_l2_p50_ms}ms`,
+      canvasError
+        ? `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas SKIPPED (${canvasError})`
+        : `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas p50=${row.canvas_l2_p50_ms}ms`,
     );
     results.push(row);
   }
@@ -332,6 +345,7 @@ function computeCrossover(l2Rows, l3Rows) {
       const l3Svg = l3Rows.find((r) => r.fixture === fx && r.backend === 'svg');
       const l3Canvas = l3Rows.find((r) => r.fixture === fx && r.backend === 'canvas');
       if (!l2 || !l3Svg || !l3Canvas) continue;
+      if (l2.canvas_l2_p50_ms == null) continue;
 
       const svgTotal = l2.svg_l2_p50_ms + l3Svg.l3_p50_ms;
       const canvasTotal = l2.canvas_l2_p50_ms + l3Canvas.l3_p50_ms;
@@ -374,7 +388,10 @@ async function main() {
   writeFileSync(join(root, 'benches/results/canvas-crossover-l3.json'), JSON.stringify(l3, null, 2));
 
   const crossovers = computeCrossover(l2, l3);
-  const maxCanvasL2 = Math.max(...l2.map((r) => r.canvas_l2_p50_ms));
+  const measuredCanvasL2 = l2.filter((r) => r.canvas_l2_p50_ms != null);
+  const maxCanvasL2 = measuredCanvasL2.length
+    ? Math.max(...measuredCanvasL2.map((r) => r.canvas_l2_p50_ms))
+    : null;
 
   // Relative L2 gate (cmd_265): fail-closed when gate metrics are missing/invalid.
   const gateEval = evaluateGateFromL2Rows(l2, {
@@ -411,7 +428,7 @@ async function main() {
     l3_warmup: L3_WARMUP,
     l3_iters: L3_ITERS,
     crossovers,
-    max_canvas_l2_p50_ms: round(maxCanvasL2),
+    max_canvas_l2_p50_ms: maxCanvasL2 != null ? round(maxCanvasL2) : null,
     l2_canvas_gate: {
       fixture: GATE_FIXTURE,
       tolerance: L2_TOLERANCE,
