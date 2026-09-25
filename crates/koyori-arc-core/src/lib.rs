@@ -16,7 +16,10 @@ pub use backend::{
 };
 pub use display_list::constants::{DOM_CAP, HEADER_H, ROW_H};
 pub use display_list::types::{
-    ChartMetadata, ColorId, Layer, Palette, Primitive, RectPrim, TaskBBox, TextPrim, Viewport,
+    BBox, ChartMetadata, ColorId, Coord, GroupPrim, Layer, LayerKind, LinePrim, LineSemantic,
+    Palette, PathPrim, PathSemantic, PolygonPrim, PolygonSemantic, PolylinePrim, PolylineSemantic,
+    Primitive, ProgressTier, RectPrim, RectSemantic, RoundRectPrim, RoundRectSemantic, TaskBBox,
+    TextAnchor, TextBaseline, TextPrim, TextSemantic, Viewport,
 };
 pub use display_list::{build_display_list, compute_row_window, DisplayList, ScrollViewport};
 pub use error::{
