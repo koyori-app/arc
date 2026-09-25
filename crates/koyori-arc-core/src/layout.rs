@@ -134,9 +134,7 @@ pub fn assign_rows(tasks: &[GanttTask], deps: &[GanttDep]) -> Vec<RowLayout> {
         }
     }
 
-    let mut root_sccs: Vec<usize> = (0..scc_count)
-        .filter(|&s| scc_indegree[s] == 0)
-        .collect();
+    let mut root_sccs: Vec<usize> = (0..scc_count).filter(|&s| scc_indegree[s] == 0).collect();
     root_sccs.sort_unstable_by_key(|&scc| scc_min_index[scc]);
 
     for scc in root_sccs {
@@ -278,8 +276,11 @@ mod tests {
         rows.iter().map(|r| (r.task_id.as_str(), r.row)).collect()
     }
 
-    fn row_of<'a>(rows: &'a [RowLayout], id: &str) -> usize {
-        rows.iter().find(|r| r.task_id == id).map(|r| r.row).unwrap()
+    fn row_of(rows: &[RowLayout], id: &str) -> usize {
+        rows.iter()
+            .find(|r| r.task_id == id)
+            .map(|r| r.row)
+            .unwrap()
     }
 
     fn assert_input_order_preserved(rows: &[RowLayout], tasks: &[GanttTask]) {
@@ -357,12 +358,7 @@ mod tests {
     fn cycle_downstream_keeps_blocker_above_blocked() {
         // D listed first but depends on B inside cycle {A,B,C}
         let tasks = vec![task("d"), task("a"), task("b"), task("c")];
-        let deps = vec![
-            dep("a", "b"),
-            dep("b", "c"),
-            dep("c", "a"),
-            dep("b", "d"),
-        ];
+        let deps = vec![dep("a", "b"), dep("b", "c"), dep("c", "a"), dep("b", "d")];
         let rows = assign_rows(&tasks, &deps);
         assert_input_order_preserved(&rows, &tasks);
         assert!(
@@ -376,11 +372,7 @@ mod tests {
     #[test]
     fn unknown_dependency_ids_are_ignored() {
         let tasks = vec![task("a"), task("b")];
-        let deps = vec![
-            dep("missing", "b"),
-            dep("a", "ghost"),
-            dep("a", "b"),
-        ];
+        let deps = vec![dep("missing", "b"), dep("a", "ghost"), dep("a", "b")];
         let rows = assign_rows(&tasks, &deps);
         assert_input_order_preserved(&rows, &tasks);
         assert!(row_of(&rows, "a") < row_of(&rows, "b"));
@@ -462,9 +454,7 @@ mod tests {
         let tasks: Vec<GanttTask> = std::iter::once(task("sink"))
             .chain((0..K).map(|i| task(&format!("b{i}"))))
             .collect();
-        let deps: Vec<GanttDep> = (0..K)
-            .map(|i| dep(&format!("b{i}"), "sink"))
-            .collect();
+        let deps: Vec<GanttDep> = (0..K).map(|i| dep(&format!("b{i}"), "sink")).collect();
 
         let started = std::time::Instant::now();
         let rows = assign_rows(&tasks, &deps);

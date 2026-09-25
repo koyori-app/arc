@@ -136,7 +136,3 @@ fn collect_native_ops(prim: &Primitive, ops: &mut Vec<NativeDrawOp>) {
         }
     }
 }
-
-pub fn count_draw_ops(list: &DisplayList) -> usize {
-    build_native_draw_list(list).ops.len()
-}
