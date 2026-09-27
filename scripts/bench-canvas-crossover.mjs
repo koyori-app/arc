@@ -208,7 +208,11 @@ async function benchL3NodeFallback() {
         try {
           parseCommandBuffer(render_canvas_commands(tasksJson, depsJson, fx.today));
         } catch (err) {
-          if (err.renderErrorCode) {
+          // Skip only capacity refusals: those are expected for oversized
+          // fixtures. Any other render error (input_limit / parse_error /
+          // serialize_error) means the bench inputs or bindings are broken --
+          // fail the run instead of silently thinning the measurement.
+          if (err.renderErrorCode === 'canvas_capacity') {
             console.warn(`${name} ${backend}: skipped (${err.renderErrorCode}): ${err.message}`);
             l3Skips.push({ fixture: name, backend, code: err.renderErrorCode, message: err.message });
             continue;
@@ -306,6 +310,12 @@ async function benchL3Playwright(chromium, opts) {
 
         const probe = await page.evaluate(() => window.__runBench());
         if (probe.renderError) {
+          // Same rule as the node path: only capacity refusals are expected.
+          if (probe.renderError.code !== 'canvas_capacity') {
+            throw new Error(
+              `${name} ${backend}: render failed (${probe.renderError.code}): ${probe.renderError.message}`,
+            );
+          }
           console.warn(
             `${name} ${backend}: skipped (${probe.renderError.code}): ${probe.renderError.message}`,
           );

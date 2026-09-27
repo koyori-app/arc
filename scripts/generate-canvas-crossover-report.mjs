@@ -72,6 +72,16 @@ function main() {
   }
   md.push('');
 
+  // Skipped L3 pairs sit right under the crossover table so a reader sees
+  // the missing points and the reason on the same screen.
+  if (bench.l3_skipped?.length) {
+    md.push(`> L3 未測定 ${bench.l3_skipped.length} 対（capacity 超過等）:`);
+    for (const s of bench.l3_skipped) {
+      md.push(`> - ${s.fixture} / ${s.backend}: ${s.code}`);
+    }
+    md.push('');
+  }
+
   md.push('## Merged totals (p50 ms)');
   md.push('');
   md.push('| Fixture | Tasks | SVG L2 | Canvas L2 | SVG L3 | Canvas L3 | SVG total | Canvas total |');
