@@ -6,10 +6,10 @@ use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend,
 use crate::display_list::constants::{
     chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
+use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::graph::{GanttDep, GanttGraph, GanttTask};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
@@ -322,14 +322,16 @@ pub fn render_canvas_commands(
 mod tests {
     use super::*;
     #[cfg(test)]
-    use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD, COLOR_TODAY};
-    use crate::display_list::constants::{
-        COLOR_HEADER_BG, COLOR_TIER_DONE, COLOR_TIER_HIGH, COLOR_TIER_LOW, COLOR_TIER_MID,
-    };
+    use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD};
+    use crate::display_list::types::{ColorId, Palette};
     use chrono::NaiveDate;
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn palette_hex(id: ColorId) -> String {
+        Palette::standard().resolve(id).to_string()
     }
 
     fn two_tasks() -> (Vec<GanttTask>, Vec<GanttDep>) {
@@ -360,7 +362,10 @@ mod tests {
     fn output_is_valid_svg_root() {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None, None);
-        assert!(svg.starts_with("<svg "), "expected <svg ...>, got: {svg:.80}");
+        assert!(
+            svg.starts_with("<svg "),
+            "expected <svg ...>, got: {svg:.80}"
+        );
         assert!(svg.ends_with("</svg>"));
     }
 
@@ -435,7 +440,7 @@ mod tests {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
         let svg = render(&t, &d, Some(today), None);
-        assert!(svg.contains(COLOR_TODAY));
+        assert!(svg.contains(&palette_hex(ColorId::Today)));
     }
 
     #[test]
@@ -443,7 +448,8 @@ mod tests {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None, None);
         assert!(!svg.contains(&format!(
-            r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
+            r#"stroke="{}" stroke-width="2" stroke-dasharray="4,3""#,
+            palette_hex(ColorId::Today)
         )));
     }
 
@@ -451,7 +457,7 @@ mod tests {
     fn date_header_present() {
         let (t, d) = two_tasks();
         let svg = render(&t, &d, None, None);
-        assert!(svg.contains(COLOR_HEADER_BG));
+        assert!(svg.contains(&palette_hex(ColorId::HeaderBg)));
     }
 
     #[test]
@@ -583,12 +589,7 @@ mod tests {
                 end: Some(date(2026, 6, 2)),
             })
             .collect();
-        let svg = render_svg(
-            &serde_json::to_string(&tasks).unwrap(),
-            "[]",
-            None,
-            None,
-        );
+        let svg = render_svg(&serde_json::to_string(&tasks).unwrap(), "[]", None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -637,25 +638,20 @@ mod tests {
         assert!(rejected_height > MAX_CANVAS_SIDE_PX as f64);
 
         let accepted = canvas_tasks(MAX_CANVAS_ROWS, 1);
-        let accepted_json = render_canvas_commands(
-            &serde_json::to_string(&accepted).unwrap(),
-            "[]",
-            None,
-            None,
-        );
+        let accepted_json =
+            render_canvas_commands(&serde_json::to_string(&accepted).unwrap(), "[]", None, None);
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
         assert!(accepted_value["viewport_height"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
 
         let rejected = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
-        let rejected_json = render_canvas_commands(
-            &serde_json::to_string(&rejected).unwrap(),
-            "[]",
-            None,
-            None,
-        );
+        let rejected_json =
+            render_canvas_commands(&serde_json::to_string(&rejected).unwrap(), "[]", None, None);
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
-        assert!(rejected_value["error"].as_str().unwrap().contains("canvas row count"));
+        assert!(rejected_value["error"]
+            .as_str()
+            .unwrap()
+            .contains("canvas row count"));
     }
 
     #[test]
@@ -676,7 +672,10 @@ mod tests {
         let rejected_tasks_json = serde_json::to_string(&rejected).unwrap();
         let rejected_json = render_canvas_commands(&rejected_tasks_json, "[]", None, None);
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
-        assert!(rejected_value["error"].as_str().unwrap().contains("canvas date range"));
+        assert!(rejected_value["error"]
+            .as_str()
+            .unwrap()
+            .contains("canvas date range"));
 
         let svg = render_svg(&rejected_tasks_json, "[]", None, None);
         assert_ne!(svg, crate::backend::svg::empty_svg());
@@ -691,12 +690,8 @@ mod tests {
         assert!(height_px <= MAX_CANVAS_SIDE_PX as f64);
         assert!(width_px * height_px > 267_000_000.0);
 
-        let json = render_canvas_commands(
-            &serde_json::to_string(&tasks).unwrap(),
-            "[]",
-            None,
-            None,
-        );
+        let json =
+            render_canvas_commands(&serde_json::to_string(&tasks).unwrap(), "[]", None, None);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"].as_str().unwrap().contains("canvas area"));
     }
@@ -801,12 +796,8 @@ mod tests {
         assert_eq!(v["code"].as_str(), Some("input_limit"));
 
         let too_many = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
-        let capacity = render_canvas_commands(
-            &serde_json::to_string(&too_many).unwrap(),
-            "[]",
-            None,
-            None,
-        );
+        let capacity =
+            render_canvas_commands(&serde_json::to_string(&too_many).unwrap(), "[]", None, None);
         let v: serde_json::Value = serde_json::from_str(&capacity).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("canvas_capacity"));
     }
@@ -825,12 +816,19 @@ mod tests {
             crate::backend::svg::empty_svg()
         );
 
-        assert_eq!(render_svg_error("[]", "[]"), None, "nothing to draw is not an error");
+        assert_eq!(
+            render_svg_error("[]", "[]"),
+            None,
+            "nothing to draw is not an error"
+        );
 
         let reported = render_svg_error(&refused, "[]").expect("refusal is reported");
         let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
-        assert!(v["error"].as_str().unwrap().contains("date"), "got: {reported}");
+        assert!(
+            v["error"].as_str().unwrap().contains("date"),
+            "got: {reported}"
+        );
     }
 
     #[test]
@@ -1014,7 +1012,10 @@ mod tests {
             .nth(1)
             .and_then(|s| s.split('"').next())
             .expect("progress polyline");
-        assert!(poly.starts_with("210,"), "legacy start at progress x, got: {poly}");
+        assert!(
+            poly.starts_with("210,"),
+            "legacy start at progress x, got: {poly}"
+        );
     }
 
     #[test]
@@ -1027,7 +1028,10 @@ mod tests {
             .nth(1)
             .and_then(|s| s.split('"').next())
             .expect("progress polyline");
-        assert!(poly.starts_with("180,"), "anchored start at today x, got: {poly}");
+        assert!(
+            poly.starts_with("180,"),
+            "anchored start at today x, got: {poly}"
+        );
         let last_pt = poly.split(' ').next_back().expect("last point");
         assert!(
             last_pt.starts_with("180,"),
@@ -1047,9 +1051,13 @@ mod tests {
             .nth(1)
             .and_then(|s| s.split('"').next())
             .expect("progress polyline");
-        assert!(poly.starts_with("210,"), "out-of-range today falls back to legacy");
+        assert!(
+            poly.starts_with("210,"),
+            "out-of-range today falls back to legacy"
+        );
         assert!(!svg.contains(&format!(
-            r#"stroke="{COLOR_TODAY}" stroke-width="2" stroke-dasharray="4,3""#
+            r#"stroke="{}" stroke-width="2" stroke-dasharray="4,3""#,
+            palette_hex(ColorId::Today)
         )));
     }
 
@@ -1086,10 +1094,10 @@ mod tests {
             },
         ];
         let svg = render(&tasks, &[], None, None);
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_LOW}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_MID}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_HIGH}""#)));
-        assert!(svg.contains(&format!(r#"fill="{COLOR_TIER_DONE}""#)));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierLow))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierMid))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierHigh))));
+        assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierDone))));
         assert!(svg.contains(r#"class="bar-progress bar-tier-low""#));
         assert!(svg.contains(r#"class="bar-progress bar-tier-done""#));
         assert!(svg.contains(r#"class="bar-bg""#));

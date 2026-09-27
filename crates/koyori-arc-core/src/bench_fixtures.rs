@@ -17,8 +17,12 @@ pub enum TaskCount {
 }
 
 impl TaskCount {
-    pub const ALL: [TaskCount; 4] =
-        [TaskCount::N100, TaskCount::N500, TaskCount::N2000, TaskCount::N5000];
+    pub const ALL: [TaskCount; 4] = [
+        TaskCount::N100,
+        TaskCount::N500,
+        TaskCount::N2000,
+        TaskCount::N5000,
+    ];
 
     pub fn get(self) -> usize {
         self as usize
@@ -116,9 +120,9 @@ pub fn generate_dense_deps(tasks: &[GanttTask]) -> Vec<GanttDep> {
             continue;
         }
         let start = i.saturating_sub(5);
-        for j in start..i {
+        for blocker in &tasks[start..i] {
             deps.push(GanttDep {
-                blocker_task_id: tasks[j].id.clone(),
+                blocker_task_id: blocker.id.clone(),
                 blocked_task_id: task.id.clone(),
             });
         }
@@ -146,7 +150,11 @@ pub fn generate_fixture(count: TaskCount, density: DepDensity) -> BenchFixture {
 pub fn generate_fixture_n(count: usize, density: DepDensity) -> BenchFixture {
     let tasks = generate_tasks(count);
     let deps = generate_deps(&tasks, density);
-    BenchFixture { tasks, deps, today: today().format("%Y-%m-%d").to_string() }
+    BenchFixture {
+        tasks,
+        deps,
+        today: today().format("%Y-%m-%d").to_string(),
+    }
 }
 
 pub fn fixture_id(count: TaskCount, density: DepDensity) -> String {

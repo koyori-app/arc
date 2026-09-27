@@ -85,3 +85,11 @@ describe('check-canvas-crossover-gates integration', () => {
     assert.equal(gates.gates.find((g) => g.id === 'L2_canvas')?.pass, false);
   });
 });
+
+describe('bench-canvas-crossover module', () => {
+  // Import-time smoke: ESM link errors (a gate-lib export renamed or
+  // removed, a syntax error) fail here instead of mid-bench at runtime.
+  it('imports cleanly without running the bench', async () => {
+    await import('./bench-canvas-crossover.mjs');
+  });
+});

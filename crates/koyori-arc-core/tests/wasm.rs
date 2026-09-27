@@ -26,7 +26,7 @@ fn render_svg_contains_titles() {
 #[wasm_bindgen_test]
 fn render_svg_with_today_marker() {
     let svg = koyori_arc_core::render_svg(TASKS, DEPS, Some("2026-06-03".to_string()), None);
-    // COLOR_TODAY = "#f59e0b"
+    // Palette::standard() の ColorId::Today（#f59e0b）。palette を変えたらここも落ちる。
     assert!(svg.contains("f59e0b"));
 }
 
@@ -142,7 +142,8 @@ fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
     assert_eq!(koyori_arc_core::render_svg_error("[]", "[]"), None);
     assert_eq!(koyori_arc_core::render_svg_error(TASKS, DEPS), None);
 
-    let refused = r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
+    let refused =
+        r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
     let reported = koyori_arc_core::render_svg_error(refused, "[]").expect("refusal reported");
     let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
     assert_eq!(v["code"].as_str(), Some("input_limit"));

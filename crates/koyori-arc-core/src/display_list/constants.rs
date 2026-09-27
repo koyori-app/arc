@@ -65,13 +65,3 @@ pub const DEFAULT_FONT_WEIGHT: u16 = 400;
 pub const ROW_BUFFER: u32 = 2;
 /// Phase 1 DOM_CAP design target (§6.5.3).
 pub const DOM_CAP: u32 = 500;
-pub const ELEMS_PER_ROW_MAX: u32 = 15;
-pub const ELEMS_CHROME: u32 = 200;
-
-pub const COLOR_BAR_BG: &str = "#d1d5db";
-pub const COLOR_TIER_LOW: &str = "#f59e0b";
-pub const COLOR_TIER_MID: &str = "#6366f1";
-pub const COLOR_TIER_HIGH: &str = "#0ea5e9";
-pub const COLOR_TIER_DONE: &str = "#22c55e";
-pub const COLOR_TODAY: &str = "#f59e0b";
-pub const COLOR_HEADER_BG: &str = "#f3f4f6";

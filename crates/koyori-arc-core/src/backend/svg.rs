@@ -120,10 +120,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
             });
 
             if let Some(id) = &g.task_id {
-                svg.push_str(&format!(
-                    r#"<g data-task-id="{id}">"#,
-                    id = escape_xml(id),
-                ));
+                svg.push_str(&format!(r#"<g data-task-id="{id}">"#, id = escape_xml(id),));
             } else if is_progress_legend {
                 svg.push_str(r#"<g class="progress-line-legend" aria-hidden="true">"#);
             } else if is_tier_legend {
@@ -234,10 +231,7 @@ mod tests {
         let escaped = escape_xml(malicious);
         assert!(!escaped.contains('"'));
         assert!(escaped.contains("&quot;"));
-        assert_eq!(
-            escaped,
-            "x&quot; onmouseover=&quot;alert(1)&quot;"
-        );
+        assert_eq!(escaped, "x&quot; onmouseover=&quot;alert(1)&quot;");
     }
 
     #[test]
