@@ -1,0 +1,146 @@
+# VRT (Visual Regression Testing) ワークフロー
+#
+# packages/arc-vue の Storybook をビルドし、VRT (https://vrt.koyori.app) に
+# アップロードして baseline スナップショットと比較する。
+# 差分があると VRT 側で検出され、UI 上でレビューできる。
+#
+# Chromatic とのギャップ確認のため、当分は chromatic.yml と並行稼働する。
+# 比較が目的なので、発火条件（push: master / pull_request）と draft の skip は
+# chromatic に揃えてある——同じ変更で両方が回らねば比べられない。
+#
+# 必要なシークレット:
+#   VRT_TOKEN
+#     VRT の UI の Settings -> Personal access tokens で発行する。
+#     スコープは `write:build` と `read:build` の両方が必要。
+#     (アップロードに write:build、結果を待つために read:build が要る)
+#     トークンは vrt-actions 側でログに出さない実装になっている。
+#     未設定のあいだは vrt ジョブを skip する（CI を赤くしない）。
+
+name: VRT
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # secrets はジョブの if では読めない（contexts の availability 表:
+  # jobs.<job_id>.if で使えるのは github / needs / vars / inputs のみ）。
+  # そこで先行ジョブが「トークンが設定されているか」だけを output に出し、
+  # 本体は needs 経由で判定する。値そのものはどこにも出さない。
+  check-token:
+    runs-on: ubuntu-latest
+    outputs:
+      has-token: ${{ steps.probe.outputs.has-token }}
+    steps:
+      - name: Probe VRT_TOKEN presence
+        id: probe
+        env:
+          VRT_TOKEN: ${{ secrets.VRT_TOKEN }}
+        run: |
+          if [ -n "$VRT_TOKEN" ]; then
+            echo "has-token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-token=false" >> "$GITHUB_OUTPUT"
+            echo "VRT_TOKEN is not configured; skipping the vrt job."
+          fi
+
+  vrt:
+    needs: check-token
+    # skip する形が三つ:
+    #   1. VRT_TOKEN 未設定（トークンが入るまで赤くしない）
+    #   2. fork 由来の PR（repository secret が渡らず必ず失敗するため。
+    #      task の vrt.yml と同じ筋）
+    #   3. draft PR（chromatic.yml が draft を skip しており、並行比較の
+    #      目的上「chromatic が回る時だけ vrt も回る」に揃える）
+    if: >-
+      needs.check-token.outputs.has-token == 'true' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.draft != true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ref に PR の head コミットを明示するのは、VRT に記録される commit SHA が
+      # GitHub のコミットステータスを貼る先になるため。既定の「master への
+      # マージコミット」は GitHub 上に残らず、ステータスを貼れない。
+      # push イベントでは pull_request コンテキストが空なので github.sha に落ちる。
+      # （--only-changed を使わないので、git 履歴のための fetch-depth: 0 は不要）
+      - name: Checkout arc
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # ── ここから WASM の段取り（chromatic.yml と同じ順）──
+      # arc の storybook は scripts/build-npm.sh で crates/koyori-arc-core/pkg/ を
+      # 生成してからでないと建たない。Rust toolchain・wasm32 target・wasm-pack が要る。
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@205232b9cc28eb4b4b460460835d993f6fc018e1 # wasm-pack
+
+      - name: Build npm package (pkg/ を生成)
+        run: bash scripts/build-npm.sh
+      # ── WASM の段取りここまで ──
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 11.11.0
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # --stats-json は chromatic.yml の build と同じ命に揃えるために付ける
+      # （arc-vue の storybook が preview-stats.json を出すだけで、害は無い）。
+      - name: Build Storybook
+        run: pnpm build-storybook --stats-json
+        working-directory: packages/arc-vue
+
+      # vrt-actions で Storybook を VRT にアップロードする。
+      # only-changed: false —— arc の story は現状一枚で節約の値打ちが無く、
+      #   chromatic との並行比較では「撮らなかった」を作らないことを優先する。
+      # wait: 比較完了まで待ち、結果を終了コードで返す
+      #   passed=0 / changes_detected=1 / failed=2
+      # branch と commit は vrt-actions が PR の head 情報を優先して解決する。
+      - name: Upload to VRT
+        uses: koyori-app/vrt-actions@ca529f2000f543930dda075f0a7501eeb56d1a1e # main @ 2026-08-26
+        with:
+          token: ${{ secrets.VRT_TOKEN }}
+          project: koyori/arc
+          url: https://vrt.koyori.app/api
+          mode: storybook
+          dir: packages/arc-vue/storybook-static
+          only-changed: false
+          wait: true
+          # 差分あり (changes_detected) はこのジョブを赤にしない。
+          # このジョブが表すのは「撮影と比較が問題なく走ったか」で、
+          # 壊れたビルド (failed) は従来どおり赤のまま。差分の通知は VRT 側の
+          # commit status (context `vrt`) と PR コメントが担う。
+          # chromatic.yml の exitZeroOnChanges: true と同じ思想である。
+          # （chromatic の autoAcceptChanges: master に対応する旗は
+          #   vrt-actions に無いため、master の build は VRT の盤で人が承認する）
+          exit-zero-on-changes: true
+          # 既定値 latest だと将来の CLI Release 公開で挙動が変わりうるため、
+          # 動作確認済みのバージョンに固定する（task の vrt.yml と同じ判断）。
+          cli-version: cli-v0.1.2
