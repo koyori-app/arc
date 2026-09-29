@@ -14,7 +14,7 @@
 #     スコープは `write:build` と `read:build` の両方が必要。
 #     (アップロードに write:build、結果を待つために read:build が要る)
 #     トークンは vrt-actions 側でログに出さない実装になっている。
-#     未設定のあいだは vrt ジョブを skip する（CI を赤くしない）。
+#     2026-09-30 に登録済み。未設定なら vrt ジョブは失敗する。
 
 name: VRT
 
@@ -31,40 +31,16 @@ permissions:
   contents: read
 
 jobs:
-  # secrets はジョブの if では読めない（contexts の availability 表:
-  # jobs.<job_id>.if で使えるのは github / needs / vars / inputs のみ）。
-  # そこで先行ジョブが「トークンが設定されているか」だけを output に出し、
-  # 本体は needs 経由で判定する。値そのものはどこにも出さない。
-  check-token:
-    runs-on: ubuntu-latest
-    outputs:
-      has-token: ${{ steps.probe.outputs.has-token }}
-    steps:
-      - name: Probe VRT_TOKEN presence
-        id: probe
-        env:
-          VRT_TOKEN: ${{ secrets.VRT_TOKEN }}
-        run: |
-          if [ -n "$VRT_TOKEN" ]; then
-            echo "has-token=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-token=false" >> "$GITHUB_OUTPUT"
-            echo "VRT_TOKEN is not configured; skipping the vrt job."
-          fi
-
   vrt:
-    needs: check-token
-    # skip する形が三つ:
-    #   1. VRT_TOKEN 未設定（トークンが入るまで赤くしない）
-    #   2. fork 由来の PR（repository secret が渡らず必ず失敗するため。
+    # skip する形が二つ:
+    #   1. fork 由来の PR（repository secret が渡らず必ず失敗するため。
     #      task の vrt.yml と同じ筋）
-    #   3. draft PR（chromatic.yml が draft を skip しており、並行比較の
+    #   2. draft PR（chromatic.yml が draft を skip しており、並行比較の
     #      目的上「chromatic が回る時だけ vrt も回る」に揃える）
     if: >-
-      needs.check-token.outputs.has-token == 'true' &&
-      (github.event_name != 'pull_request' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.draft != true))
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.draft != true)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
