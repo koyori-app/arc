@@ -87,8 +87,10 @@ function main() {
   md.push('| Fixture | Tasks | SVG L2 | Canvas L2 | SVG L3 | Canvas L3 | SVG total | Canvas total |');
   md.push('|---------|------:|-------:|----------:|-------:|----------:|----------:|-------------:|');
   for (const row of bench.merged) {
+    // Unmeasured pairs (L3 skipped) carry null; show — instead of a number.
+    const cell = (v) => v ?? '—';
     md.push(
-      `| ${row.fixture} | ${row.tasks} | ${row.svg_l2_p50_ms} | ${row.canvas_l2_p50_ms} | ${row.svg_l3_p50_ms} | ${row.canvas_l3_p50_ms} | ${row.svg_total_p50_ms} | ${row.canvas_total_p50_ms} |`,
+      `| ${row.fixture} | ${row.tasks} | ${cell(row.svg_l2_p50_ms)} | ${cell(row.canvas_l2_p50_ms)} | ${cell(row.svg_l3_p50_ms)} | ${cell(row.canvas_l3_p50_ms)} | ${cell(row.svg_total_p50_ms)} | ${cell(row.canvas_total_p50_ms)} |`,
     );
   }
   md.push('');
