@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join, extname, normalize } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { computeMergedTotals } from './canvas-crossover-merge.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -423,21 +424,7 @@ async function main() {
   const gateSvgL2 = gateEval.svgL2;
   const l2GatePass = gateEval.pass;
 
-  const merged = FIXTURES.map((fx) => {
-    const l2Row = l2.find((r) => r.fixture === fx);
-    const l3Svg = l3.find((r) => r.fixture === fx && r.backend === 'svg');
-    const l3Canvas = l3.find((r) => r.fixture === fx && r.backend === 'canvas');
-    return {
-      fixture: fx,
-      tasks: l2Row?.tasks ?? 0,
-      svg_total_p50_ms: round((l2Row?.svg_l2_p50_ms ?? 0) + (l3Svg?.l3_p50_ms ?? 0)),
-      canvas_total_p50_ms: round((l2Row?.canvas_l2_p50_ms ?? 0) + (l3Canvas?.l3_p50_ms ?? 0)),
-      svg_l2_p50_ms: l2Row?.svg_l2_p50_ms,
-      canvas_l2_p50_ms: l2Row?.canvas_l2_p50_ms,
-      svg_l3_p50_ms: l3Svg?.l3_p50_ms,
-      canvas_l3_p50_ms: l3Canvas?.l3_p50_ms,
-    };
-  });
+  const merged = computeMergedTotals(FIXTURES, l2, l3);
 
   const payload = {
     timestamp: new Date().toISOString(),
