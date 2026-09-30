@@ -1,0 +1,5 @@
+# 行末を LF へ固定する（Windows の core.autocrlf の差で CRLF が混じるのを防ぐ）。
+# text=auto: text か binary かは git が中身で判ずるため、画像や wasm を壊さない。
+# CRLF が要る file（.bat / .cmd など）は現状この repo に無い。
+# 要る物が入ったら `*.bat text eol=crlf` の形の除外をここへ足すこと。
+* text=auto eol=lf
