@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use koyori_arc_core::{render, GanttDep, GanttTask};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -47,11 +47,26 @@ fn main() {
     ];
 
     let deps = vec![
-        GanttDep { blocker_task_id: "t1".to_string(), blocked_task_id: "t2".to_string() },
-        GanttDep { blocker_task_id: "t1".to_string(), blocked_task_id: "t3".to_string() },
-        GanttDep { blocker_task_id: "t2".to_string(), blocked_task_id: "t4".to_string() },
-        GanttDep { blocker_task_id: "t3".to_string(), blocked_task_id: "t4".to_string() },
-        GanttDep { blocker_task_id: "t4".to_string(), blocked_task_id: "t5".to_string() },
+        GanttDep {
+            blocker_task_id: "t1".to_string(),
+            blocked_task_id: "t2".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t1".to_string(),
+            blocked_task_id: "t3".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t2".to_string(),
+            blocked_task_id: "t4".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t3".to_string(),
+            blocked_task_id: "t4".to_string(),
+        },
+        GanttDep {
+            blocker_task_id: "t4".to_string(),
+            blocked_task_id: "t5".to_string(),
+        },
     ];
 
     let today = date(2026, 6, 6);
@@ -99,7 +114,7 @@ fn main() {
     open_browser(&html_path);
 }
 
-fn open_browser(path: &PathBuf) {
+fn open_browser(path: &Path) {
     let path_str = path.to_string_lossy();
     // WSL2: wslpath converts the Linux path to a Windows path so explorer.exe can open it
     if let Ok(out) = Command::new("wslpath").args(["-w", &path_str]).output() {

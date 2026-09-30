@@ -20,8 +20,8 @@ pub fn compute_row_window(
     }
     let max_row = total_rows - 1;
     let first_visible = ((scroll.scroll_y - HEADER_H).max(0.0) / ROW_H).floor() as usize;
-    let last_visible = ((scroll.scroll_y + scroll.client_height - HEADER_H).max(0.0) / ROW_H)
-        .ceil() as usize;
+    let last_visible =
+        ((scroll.scroll_y + scroll.client_height - HEADER_H).max(0.0) / ROW_H).ceil() as usize;
     let first = first_visible.saturating_sub(ROW_BUFFER as usize);
     let last = (last_visible + ROW_BUFFER as usize).min(max_row);
     Some((first, last))
@@ -34,11 +34,7 @@ fn row_in_window(row: usize, window: Option<(usize, usize)>) -> bool {
     }
 }
 
-fn dep_incident_to_window(
-    from_row: usize,
-    to_row: usize,
-    window: Option<(usize, usize)>,
-) -> bool {
+fn dep_incident_to_window(from_row: usize, to_row: usize, window: Option<(usize, usize)>) -> bool {
     match window {
         None => true,
         Some((first, last)) => {
@@ -430,41 +426,39 @@ pub fn build_display_list(
     let sw = 10.0;
     let gap = 4.0;
 
-    let mut legend_prims = vec![
-        Primitive::Group(GroupPrim {
-            task_id: None,
-            tooltip: None,
-            bbox: BBox {
-                x: legend_x,
-                y: legend_y1 - 4.0,
-                width: 400.0,
-                height: 20.0,
-            },
-            children: vec![
-                Primitive::Line(LinePrim {
-                    x1: legend_x,
-                    y1: legend_y1,
-                    x2: legend_x + 28.0,
-                    y2: legend_y1,
-                    stroke: ColorId::Progress,
-                    stroke_width: PROGRESS_LINE_STROKE_W,
-                    stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
-                    semantic: LineSemantic::LegendProgressLine,
-                }),
-                Primitive::Text(TextPrim {
-                    x: legend_x + 34.0,
-                    y: legend_y1 + 4.0,
-                    content: "進捗ステータスライン（各タスクの完了位置を結ぶ）".to_string(),
-                    fill: Some(ColorId::GridLabel),
-                    font_size: Some(10.0),
-                    font_weight: None,
-                    anchor: None,
-                    baseline: TextBaseline::Middle,
-                    semantic: TextSemantic::LegendProgress,
-                }),
-            ],
-        }),
-    ];
+    let mut legend_prims = vec![Primitive::Group(GroupPrim {
+        task_id: None,
+        tooltip: None,
+        bbox: BBox {
+            x: legend_x,
+            y: legend_y1 - 4.0,
+            width: 400.0,
+            height: 20.0,
+        },
+        children: vec![
+            Primitive::Line(LinePrim {
+                x1: legend_x,
+                y1: legend_y1,
+                x2: legend_x + 28.0,
+                y2: legend_y1,
+                stroke: ColorId::Progress,
+                stroke_width: PROGRESS_LINE_STROKE_W,
+                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
+                semantic: LineSemantic::LegendProgressLine,
+            }),
+            Primitive::Text(TextPrim {
+                x: legend_x + 34.0,
+                y: legend_y1 + 4.0,
+                content: "進捗ステータスライン（各タスクの完了位置を結ぶ）".to_string(),
+                fill: Some(ColorId::GridLabel),
+                font_size: Some(10.0),
+                font_weight: None,
+                anchor: None,
+                baseline: TextBaseline::Middle,
+                semantic: TextSemantic::LegendProgress,
+            }),
+        ],
+    })];
 
     let tier_items: [(ColorId, &str); 5] = [
         (ColorId::BarBg, "未達"),
@@ -577,12 +571,7 @@ fn tier_fill_color(tier: ProgressTier) -> ColorId {
     }
 }
 
-fn progress_label_style(
-    x: f64,
-    w: f64,
-    prog_w: f64,
-    label: &str,
-) -> (f64, TextAnchor, ColorId) {
+fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextAnchor, ColorId) {
     let approx_text_w = label.len() as f64 * 6.5;
     if w >= approx_text_w + 8.0 {
         let on_fg = prog_w >= w * 0.45;
@@ -593,6 +582,10 @@ fn progress_label_style(
         };
         (x + w / 2.0, TextAnchor::Middle, fill)
     } else {
-        (x + w.max(0.0) + 4.0, TextAnchor::Start, ColorId::ProgressTextOnBg)
+        (
+            x + w.max(0.0) + 4.0,
+            TextAnchor::Start,
+            ColorId::ProgressTextOnBg,
+        )
     }
 }
