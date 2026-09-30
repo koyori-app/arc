@@ -98,10 +98,7 @@ fn interior_segments_are_diagonal(pts: &[(f64, f64)]) -> bool {
 
 /// True when any segment vertically spans a full task row (bar penetration).
 #[cfg(test)]
-fn has_vertical_bar_penetration(
-    pts: &[(f64, f64)],
-    tasks: &[(f64, f64, f64, f64, f64)],
-) -> bool {
+fn has_vertical_bar_penetration(pts: &[(f64, f64)], tasks: &[(f64, f64, f64, f64, f64)]) -> bool {
     for w in pts.windows(2) {
         let (a, b) = (w[0], w[1]);
         if (a.0 - b.0).abs() >= f64::EPSILON {
@@ -156,10 +153,7 @@ mod tests {
 
     #[test]
     fn two_tasks_diagonal_segment_between_midpoints_legacy() {
-        let tasks = [
-            (0.0, 100.0, 0.0, 40.0, 0.5),
-            (0.0, 100.0, 40.0, 80.0, 0.75),
-        ];
+        let tasks = [(0.0, 100.0, 0.0, 40.0, 0.5), (0.0, 100.0, 40.0, 80.0, 0.75)];
         let pts = progress_line(&tasks, None);
         assert_eq!(pts.len(), 2);
         assert_eq!(pts[0], (50.0, 20.0));
@@ -184,10 +178,7 @@ mod tests {
 
     #[test]
     fn two_tasks_today_anchored_diagonal_through_midpoints() {
-        let tasks = [
-            (0.0, 100.0, 0.0, 40.0, 0.5),
-            (0.0, 100.0, 40.0, 80.0, 0.75),
-        ];
+        let tasks = [(0.0, 100.0, 0.0, 40.0, 0.5), (0.0, 100.0, 40.0, 80.0, 0.75)];
         let pts = progress_line(&tasks, Some(20.0));
         assert_eq!(pts.first(), Some(&(20.0, 0.0)));
         assert_eq!(pts.last(), Some(&(20.0, 80.0)));
@@ -203,7 +194,9 @@ mod tests {
         let anchored = progress_line(&[(10.0, 110.0, 0.0, 40.0, 0.25)], Some(5.0));
         let expected_x = 10.0 + (110.0 - 10.0) * 0.25;
         assert_eq!(legacy[0].0, expected_x);
-        assert!(anchored.iter().any(|(x, _)| (*x - expected_x).abs() < f64::EPSILON));
+        assert!(anchored
+            .iter()
+            .any(|(x, _)| (*x - expected_x).abs() < f64::EPSILON));
     }
 
     #[test]
