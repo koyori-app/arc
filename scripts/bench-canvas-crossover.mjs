@@ -321,6 +321,14 @@ async function benchL3NodeFallback() {
             l3Skips.push({ fixture: name, backend, code: err.renderErrorCode, message: err.message });
             continue;
           }
+          // Name the fixture and backend, as the Playwright path below does;
+          // the run stops here before any row names it. The same error is
+          // rethrown, so `renderErrorCode` and the error type stay as they were.
+          if (err instanceof Error) {
+            err.message = err.renderErrorCode
+              ? `${name} ${backend}: render failed (${err.renderErrorCode}): ${err.message}`
+              : `${name} ${backend}: ${err.message}`;
+          }
           throw err;
         }
       }
