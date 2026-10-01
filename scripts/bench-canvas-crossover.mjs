@@ -156,10 +156,26 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
   // in `canvas_error` with the canvas timing left empty, so the gate fails
   // closed; any other code throws here, as it does in L3
   // (`isExpectedRenderError`).
-  const canvasError = probeCanvasError(
-    parseCommandBuffer,
-    render_canvas_commands(tasksJson, depsJson, fx.today),
-  );
+  let canvasError;
+  try {
+    canvasError = probeCanvasError(
+      parseCommandBuffer,
+      render_canvas_commands(tasksJson, depsJson, fx.today),
+    );
+  } catch (err) {
+    // The run stops here before any row or log line names the fixture, so
+    // put the name in the message, in the same shape as L3
+    // (`${name} ${backend}: render failed (…)`). L2 probes only canvas, and
+    // the parsed message already says render_canvas_commands, so there is no
+    // backend part. The same error is rethrown, so `renderErrorCode` and the
+    // error type stay as they were.
+    if (err instanceof Error) {
+      err.message = err.renderErrorCode
+        ? `${name}: render failed (${err.renderErrorCode}): ${err.message}`
+        : `${name}: ${err.message}`;
+    }
+    throw err;
+  }
 
   for (let i = 0; i < warmup; i++) {
     render_svg(tasksJson, depsJson, fx.today);

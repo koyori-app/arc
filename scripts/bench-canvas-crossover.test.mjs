@@ -84,7 +84,10 @@ describe('benchL2Fixture', () => {
       const { calls, deps } = stubs(JSON.stringify({ code, error: `${code} happened` }));
       assert.throws(
         () => benchL2Fixture('1000_sparse', FIXTURE, deps, OPTS),
-        (err) => err.renderErrorCode === code,
+        (err) => {
+          assert.match(err.message, /^1000_sparse: /, `${code}: names the fixture`);
+          return err.renderErrorCode === code;
+        },
         code,
       );
       assert.equal(calls.canvas, 1, `${code}: stops at the probe`);
