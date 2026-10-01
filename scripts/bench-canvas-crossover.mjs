@@ -152,8 +152,10 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
   // Probe once: capacity-exceeded fixtures return {code, error} instead
   // of a CommandBuffer. Timing that error return as "canvas" made the
   // relative gate compare a real svg render against an instant error
-  // response, so a green gate guaranteed nothing. Every error code is kept
-  // (fail-closed); see `l3SkipsRenderError` for why L3 differs.
+  // response, so a green gate guaranteed nothing. A capacity refusal is kept
+  // in `canvas_error` with the canvas timing left empty, so the gate fails
+  // closed; any other code throws here, as it does in L3
+  // (`isExpectedRenderError`).
   const canvasError = probeCanvasError(
     parseCommandBuffer,
     render_canvas_commands(tasksJson, depsJson, fx.today),
@@ -230,34 +232,37 @@ async function ensureNodeModule(spec, installCmd) {
  *
  * Whether a response is an error is decided in one place,
  * `parseCommandBuffer` (it throws with `renderErrorCode`); L2 and L3 both go
- * through it. A failure without `renderErrorCode` (broken JSON, broken
- * bindings) is not a canvas answer, so it is rethrown instead of being
- * reported as "canvas could not be measured".
+ * through it. Only an expected refusal (`isExpectedRenderError`) is returned
+ * as a canvas answer. Anything else is rethrown instead of being reported as
+ * "canvas could not be measured": a failure without `renderErrorCode`
+ * (broken JSON, broken bindings), and an unexpected code such as
+ * `parse_error`, which means the bench inputs or bindings are broken.
  */
 function probeCanvasError(parseCommandBuffer, bufJson) {
   try {
     parseCommandBuffer(bufJson);
     return null;
   } catch (err) {
-    if (err?.renderErrorCode) return err.renderErrorCode;
+    if (isExpectedRenderError(err?.renderErrorCode)) return err.renderErrorCode;
     throw err;
   }
 }
 
 /**
- * Whether the L3 bench skips a fixture whose canvas render failed with `code`.
+ * Whether a canvas render error `code` is an expected refusal.
  *
- * Which codes are acceptable is each layer's own policy, and the two differ
- * on purpose:
+ * Only `canvas_capacity` is: oversized fixtures exceed the canvas size limit.
+ * Any other code means the bench inputs or bindings are broken, and both
+ * layers fail the run on it. The layers differ only in what they do with the
+ * expected refusal:
  *
- * - L3 measures DOM cost for the fixtures canvas can draw. A capacity refusal
- *   is expected for oversized fixtures, so it is skipped; any other code means
- *   the bench inputs or bindings are broken and fails the run.
- * - L2 feeds the relative gate. It records every code in `canvas_error` and
+ * - L2 feeds the relative gate. It records the code in `canvas_error` and
  *   leaves the canvas timing empty, so the gate fails closed
  *   (`benchL2Fixture`).
+ * - L3 measures DOM cost for the fixtures canvas can draw, so it skips the
+ *   fixture and records it in `l3_skipped`.
  */
-export function l3SkipsRenderError(code) {
+export function isExpectedRenderError(code) {
   return code === 'canvas_capacity';
 }
 
@@ -295,7 +300,7 @@ async function benchL3NodeFallback() {
           // fixtures. Any other render error (input_limit / parse_error /
           // serialize_error) means the bench inputs or bindings are broken --
           // fail the run instead of silently thinning the measurement.
-          if (l3SkipsRenderError(err.renderErrorCode)) {
+          if (isExpectedRenderError(err.renderErrorCode)) {
             console.warn(`${name} ${backend}: skipped (${err.renderErrorCode}): ${err.message}`);
             l3Skips.push({ fixture: name, backend, code: err.renderErrorCode, message: err.message });
             continue;
@@ -394,7 +399,7 @@ async function benchL3Playwright(chromium, opts) {
         const probe = await page.evaluate(() => window.__runBench());
         if (probe.renderError) {
           // Same rule as the node path: only capacity refusals are expected.
-          if (!l3SkipsRenderError(probe.renderError.code)) {
+          if (!isExpectedRenderError(probe.renderError.code)) {
             throw new Error(
               `${name} ${backend}: render failed (${probe.renderError.code}): ${probe.renderError.message}`,
             );

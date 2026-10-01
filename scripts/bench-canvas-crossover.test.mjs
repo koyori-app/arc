@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { benchL2Fixture, l3SkipsRenderError } from './bench-canvas-crossover.mjs';
+import { benchL2Fixture, isExpectedRenderError } from './bench-canvas-crossover.mjs';
 import { parseCommandBuffer } from './bench-canvas-replay.js';
 import { evaluateGateFromL2Rows } from './canvas-crossover-gate-lib.mjs';
 
@@ -78,13 +78,30 @@ describe('benchL2Fixture', () => {
     const { deps } = stubs('{not json');
     assert.throws(() => benchL2Fixture('1000_sparse', FIXTURE, deps, OPTS), SyntaxError);
   });
+
+  it('throws on a render error code it cannot expect, at the probe', () => {
+    for (const code of ['parse_error', 'input_limit', 'serialize_error', 'unknown']) {
+      const { calls, deps } = stubs(JSON.stringify({ code, error: `${code} happened` }));
+      assert.throws(
+        () => benchL2Fixture('1000_sparse', FIXTURE, deps, OPTS),
+        (err) => err.renderErrorCode === code,
+        code,
+      );
+      assert.equal(calls.canvas, 1, `${code}: stops at the probe`);
+    }
+  });
+
+  it('does not throw on canvas_capacity', () => {
+    const { deps } = stubs(CAPACITY_ERROR);
+    assert.doesNotThrow(() => benchL2Fixture('1000_sparse', FIXTURE, deps, OPTS));
+  });
 });
 
-describe('l3SkipsRenderError', () => {
-  it('skips only canvas_capacity', () => {
-    assert.equal(l3SkipsRenderError('canvas_capacity'), true);
+describe('isExpectedRenderError', () => {
+  it('expects only canvas_capacity', () => {
+    assert.equal(isExpectedRenderError('canvas_capacity'), true);
     for (const code of ['input_limit', 'parse_error', 'serialize_error', 'unknown']) {
-      assert.equal(l3SkipsRenderError(code), false, code);
+      assert.equal(isExpectedRenderError(code), false, code);
     }
   });
 });
