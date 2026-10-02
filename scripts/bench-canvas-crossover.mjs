@@ -99,64 +99,117 @@ function stats(samples) {
   return { p50: round(p50), p95: round(p95), samples: sorted.map(round) };
 }
 
+/**
+ * `parseCommandBuffer` (and `replayCommands`) for L2 and L3.
+ *
+ * bench-canvas-replay.js has no imports of its own, so L2 can load it without
+ * @napi-rs/canvas. Do not use the same-named export of
+ * packages/arc-vue/src/replayCommands.ts: it never throws on {code, error}.
+ */
+function importReplayModule() {
+  return import(pathToFileURL(join(root, 'scripts/bench-canvas-replay.js')).href);
+}
+
 async function benchL2Node() {
   const wasmPath = join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core.js');
   const wasmBytes = readFileSync(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core_bg.wasm'));
   const { initSync, render_svg, render_canvas_commands } = await import(wasmPath);
   initSync(wasmBytes);
+  const { parseCommandBuffer } = await importReplayModule();
 
   const results = [];
   for (const name of FIXTURES) {
     const path = join(root, 'crates/koyori-arc-core/benches/fixtures', `${name}.json`);
     const fx = JSON.parse(readFileSync(path, 'utf8'));
-    const tasksJson = JSON.stringify(fx.tasks);
-    const depsJson = JSON.stringify(fx.deps);
-
-    for (let i = 0; i < L2_WARMUP; i++) {
-      render_svg(tasksJson, depsJson, fx.today);
-      render_canvas_commands(tasksJson, depsJson, fx.today);
-    }
-
-    const svgSamples = [];
-    const canvasSamples = [];
-    let lastSvgBytes = 0;
-    let lastCanvasBytes = 0;
-    let lastCanvasOps = 0;
-
-    for (let i = 0; i < L2_ITERS; i++) {
-      const t0 = performance.now();
-      const svg = render_svg(tasksJson, depsJson, fx.today);
-      svgSamples.push(performance.now() - t0);
-      lastSvgBytes = Buffer.byteLength(svg, 'utf8');
-
-      const t1 = performance.now();
-      const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
-      canvasSamples.push(performance.now() - t1);
-      lastCanvasBytes = Buffer.byteLength(bufJson, 'utf8');
-      const parsed = JSON.parse(bufJson);
-      lastCanvasOps = parsed.ops?.length ?? 0;
-    }
-
-    const svgStats = stats(svgSamples);
-    const canvasStats = stats(canvasSamples);
-    const row = {
-      fixture: name,
-      tasks: fx.tasks.length,
-      deps: fx.deps.length,
-      svg_l2_p50_ms: svgStats.p50,
-      svg_l2_p95_ms: svgStats.p95,
-      canvas_l2_p50_ms: canvasStats.p50,
-      canvas_l2_p95_ms: canvasStats.p95,
-      svg_bytes: lastSvgBytes,
-      canvas_bytes: lastCanvasBytes,
-      canvas_ops: lastCanvasOps,
-    };
+    const row = benchL2Fixture(name, fx, {
+      render_svg,
+      render_canvas_commands,
+      parseCommandBuffer,
+    });
     console.log(
-      `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas p50=${row.canvas_l2_p50_ms}ms`,
+      row.canvas_error
+        ? `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas SKIPPED (${row.canvas_error})`
+        : `${name}: L2 svg p50=${row.svg_l2_p50_ms}ms canvas p50=${row.canvas_l2_p50_ms}ms`,
     );
     results.push(row);
   }
   return results;
+}
+
+/**
+ * One L2 fixture: time svg and canvas generation in Node.
+ *
+ * The render functions and `parseCommandBuffer` are passed in so tests can
+ * drive this without the wasm pkg.
+ */
+export function benchL2Fixture(name, fx, deps, opts = {}) {
+  const { render_svg, render_canvas_commands, parseCommandBuffer } = deps;
+  const warmup = opts.warmup ?? L2_WARMUP;
+  const iters = opts.iters ?? L2_ITERS;
+  const tasksJson = JSON.stringify(fx.tasks);
+  const depsJson = JSON.stringify(fx.deps);
+
+  // Probe once: capacity-exceeded fixtures return {code, error} instead
+  // of a CommandBuffer. Timing that error return as "canvas" made the
+  // relative gate compare a real svg render against an instant error
+  // response, so a green gate guaranteed nothing. A capacity refusal is kept
+  // in `canvas_error` with the canvas timing left empty, so the gate fails
+  // closed; any other code throws here, as it does in L3
+  // (`isExpectedRenderError`).
+  let canvasError;
+  try {
+    canvasError = probeCanvasError(
+      parseCommandBuffer,
+      render_canvas_commands(tasksJson, depsJson, fx.today),
+    );
+  } catch (err) {
+    // The run stops here before any row or log line names the fixture. L2
+    // probes only canvas, and the parsed message already says
+    // render_canvas_commands, so there is no backend part.
+    throw nameFixtureInRenderError(err, name);
+  }
+
+  for (let i = 0; i < warmup; i++) {
+    render_svg(tasksJson, depsJson, fx.today);
+    if (!canvasError) render_canvas_commands(tasksJson, depsJson, fx.today);
+  }
+
+  const svgSamples = [];
+  const canvasSamples = [];
+  let lastSvgBytes = 0;
+  let lastCanvasBytes = 0;
+  let lastCanvasOps = 0;
+
+  for (let i = 0; i < iters; i++) {
+    const t0 = performance.now();
+    const svg = render_svg(tasksJson, depsJson, fx.today);
+    svgSamples.push(performance.now() - t0);
+    lastSvgBytes = Buffer.byteLength(svg, 'utf8');
+
+    if (!canvasError) {
+      const t1 = performance.now();
+      const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
+      canvasSamples.push(performance.now() - t1);
+      lastCanvasBytes = Buffer.byteLength(bufJson, 'utf8');
+      lastCanvasOps = parseCommandBuffer(bufJson).ops?.length ?? 0;
+    }
+  }
+
+  const svgStats = stats(svgSamples);
+  const canvasStats = canvasError ? null : stats(canvasSamples);
+  return {
+    fixture: name,
+    tasks: fx.tasks.length,
+    deps: fx.deps.length,
+    svg_l2_p50_ms: svgStats.p50,
+    svg_l2_p95_ms: svgStats.p95,
+    canvas_l2_p50_ms: canvasStats ? canvasStats.p50 : null,
+    canvas_l2_p95_ms: canvasStats ? canvasStats.p95 : null,
+    svg_bytes: lastSvgBytes,
+    canvas_bytes: canvasError ? null : lastCanvasBytes,
+    canvas_ops: canvasError ? null : lastCanvasOps,
+    canvas_error: canvasError,
+  };
 }
 
 async function tryPlaywright() {
@@ -182,6 +235,64 @@ async function ensureNodeModule(spec, installCmd) {
   }
 }
 
+/**
+ * The canvas error code in `bufJson`, or null when it is a CommandBuffer.
+ *
+ * Whether a response is an error is decided in one place,
+ * `parseCommandBuffer` (it throws with `renderErrorCode`); L2 and L3 both go
+ * through it. Only an expected refusal (`isExpectedRenderError`) is returned
+ * as a canvas answer. Anything else is rethrown instead of being reported as
+ * "canvas could not be measured": a failure without `renderErrorCode`
+ * (broken JSON, broken bindings), and an unexpected code such as
+ * `parse_error`, which means the bench inputs or bindings are broken.
+ */
+function probeCanvasError(parseCommandBuffer, bufJson) {
+  try {
+    parseCommandBuffer(bufJson);
+    return null;
+  } catch (err) {
+    if (isExpectedRenderError(err?.renderErrorCode)) return err.renderErrorCode;
+    throw err;
+  }
+}
+
+/**
+ * Whether a canvas render error `code` is an expected refusal.
+ *
+ * Only `canvas_capacity` is: oversized fixtures exceed the canvas size limit.
+ * Any other code means the bench inputs or bindings are broken, and both
+ * layers fail the run on it. The layers differ only in what they do with the
+ * expected refusal:
+ *
+ * - L2 feeds the relative gate. It records the code in `canvas_error` and
+ *   leaves the canvas timing empty, so the gate fails closed
+ *   (`benchL2Fixture`).
+ * - L3 measures DOM cost for the fixtures canvas can draw, so it skips the
+ *   fixture and records it in `l3_skipped`.
+ */
+export function isExpectedRenderError(code) {
+  return code === 'canvas_capacity';
+}
+
+/**
+ * Put the fixture (and the backend, when given) at the head of a failed
+ * probe's error message, in the shape the L3 Playwright path throws:
+ * `${name} ${backend}: render failed (${code}): …`, or `${name} ${backend}: …`
+ * for a failure without a render error code (broken JSON, broken bindings).
+ *
+ * The same error is changed and returned, so the caller rethrows it with
+ * `renderErrorCode`, its type and its identity kept. A thrown value that is
+ * not an Error is returned untouched.
+ */
+export function nameFixtureInRenderError(err, name, backend) {
+  if (!(err instanceof Error)) return err;
+  const where = backend ? `${name} ${backend}` : name;
+  err.message = err.renderErrorCode
+    ? `${where}: render failed (${err.renderErrorCode}): ${err.message}`
+    : `${where}: ${err.message}`;
+  return err;
+}
+
 async function benchL3NodeFallback() {
   const wasmPath = join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core.js');
   const wasmBytes = readFileSync(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core_bg.wasm'));
@@ -196,9 +307,7 @@ async function benchL3NodeFallback() {
   if (typeof globalThis.Path2D === 'undefined') {
     globalThis.Path2D = Path2D;
   }
-  const { replayCommands, parseCommandBuffer } = await import(
-    pathToFileURL(join(root, 'scripts/bench-canvas-replay.js')).href,
-  );
+  const { replayCommands, parseCommandBuffer } = await importReplayModule();
 
   const results = [];
   for (const backend of ['svg', 'canvas']) {
@@ -218,12 +327,14 @@ async function benchL3NodeFallback() {
           // fixtures. Any other render error (input_limit / parse_error /
           // serialize_error) means the bench inputs or bindings are broken --
           // fail the run instead of silently thinning the measurement.
-          if (err.renderErrorCode === 'canvas_capacity') {
+          if (isExpectedRenderError(err.renderErrorCode)) {
             console.warn(`${name} ${backend}: skipped (${err.renderErrorCode}): ${err.message}`);
             l3Skips.push({ fixture: name, backend, code: err.renderErrorCode, message: err.message });
             continue;
           }
-          throw err;
+          // Name the fixture and backend, as the Playwright path below does;
+          // the run stops here before any row names it.
+          throw nameFixtureInRenderError(err, name, backend);
         }
       }
 
@@ -317,7 +428,7 @@ async function benchL3Playwright(chromium, opts) {
         const probe = await page.evaluate(() => window.__runBench());
         if (probe.renderError) {
           // Same rule as the node path: only capacity refusals are expected.
-          if (probe.renderError.code !== 'canvas_capacity') {
+          if (!isExpectedRenderError(probe.renderError.code)) {
             throw new Error(
               `${name} ${backend}: render failed (${probe.renderError.code}): ${probe.renderError.message}`,
             );
@@ -376,6 +487,7 @@ function computeCrossover(l2Rows, l3Rows) {
       const l3Svg = l3Rows.find((r) => r.fixture === fx && r.backend === 'svg');
       const l3Canvas = l3Rows.find((r) => r.fixture === fx && r.backend === 'canvas');
       if (!l2 || !l3Svg || !l3Canvas) continue;
+      if (l2.canvas_l2_p50_ms == null) continue;
 
       const svgTotal = l2.svg_l2_p50_ms + l3Svg.l3_p50_ms;
       const canvasTotal = l2.canvas_l2_p50_ms + l3Canvas.l3_p50_ms;
@@ -418,7 +530,10 @@ async function main() {
   writeFileSync(join(root, 'benches/results/canvas-crossover-l3.json'), JSON.stringify(l3, null, 2));
 
   const crossovers = computeCrossover(l2, l3);
-  const maxCanvasL2 = Math.max(...l2.map((r) => r.canvas_l2_p50_ms));
+  const measuredCanvasL2 = l2.filter((r) => r.canvas_l2_p50_ms != null);
+  const maxCanvasL2 = measuredCanvasL2.length
+    ? Math.max(...measuredCanvasL2.map((r) => r.canvas_l2_p50_ms))
+    : null;
 
   // Relative L2 gate (cmd_265): fail-closed when gate metrics are missing/invalid.
   const gateEval = evaluateGateFromL2Rows(l2, {
@@ -442,7 +557,7 @@ async function main() {
     l3_iters: L3_ITERS,
     crossovers,
     l3_skipped: l3Skips,
-    max_canvas_l2_p50_ms: round(maxCanvasL2),
+    max_canvas_l2_p50_ms: maxCanvasL2 != null ? round(maxCanvasL2) : null,
     l2_canvas_gate: {
       fixture: GATE_FIXTURE,
       tolerance: L2_TOLERANCE,
