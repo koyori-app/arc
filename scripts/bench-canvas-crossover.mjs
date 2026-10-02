@@ -163,18 +163,10 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
       render_canvas_commands(tasksJson, depsJson, fx.today),
     );
   } catch (err) {
-    // The run stops here before any row or log line names the fixture, so
-    // put the name in the message, in the same shape as L3
-    // (`${name} ${backend}: render failed (…)`). L2 probes only canvas, and
-    // the parsed message already says render_canvas_commands, so there is no
-    // backend part. The same error is rethrown, so `renderErrorCode` and the
-    // error type stay as they were.
-    if (err instanceof Error) {
-      err.message = err.renderErrorCode
-        ? `${name}: render failed (${err.renderErrorCode}): ${err.message}`
-        : `${name}: ${err.message}`;
-    }
-    throw err;
+    // The run stops here before any row or log line names the fixture. L2
+    // probes only canvas, and the parsed message already says
+    // render_canvas_commands, so there is no backend part.
+    throw nameFixtureInRenderError(err, name);
   }
 
   for (let i = 0; i < warmup; i++) {
@@ -282,6 +274,25 @@ export function isExpectedRenderError(code) {
   return code === 'canvas_capacity';
 }
 
+/**
+ * Put the fixture (and the backend, when given) at the head of a failed
+ * probe's error message, in the shape the L3 Playwright path throws:
+ * `${name} ${backend}: render failed (${code}): …`, or `${name} ${backend}: …`
+ * for a failure without a render error code (broken JSON, broken bindings).
+ *
+ * The same error is changed and returned, so the caller rethrows it with
+ * `renderErrorCode`, its type and its identity kept. A thrown value that is
+ * not an Error is returned untouched.
+ */
+export function nameFixtureInRenderError(err, name, backend) {
+  if (!(err instanceof Error)) return err;
+  const where = backend ? `${name} ${backend}` : name;
+  err.message = err.renderErrorCode
+    ? `${where}: render failed (${err.renderErrorCode}): ${err.message}`
+    : `${where}: ${err.message}`;
+  return err;
+}
+
 async function benchL3NodeFallback() {
   const wasmPath = join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core.js');
   const wasmBytes = readFileSync(join(root, 'crates/koyori-arc-core/pkg/koyori_arc_core_bg.wasm'));
@@ -322,14 +333,8 @@ async function benchL3NodeFallback() {
             continue;
           }
           // Name the fixture and backend, as the Playwright path below does;
-          // the run stops here before any row names it. The same error is
-          // rethrown, so `renderErrorCode` and the error type stay as they were.
-          if (err instanceof Error) {
-            err.message = err.renderErrorCode
-              ? `${name} ${backend}: render failed (${err.renderErrorCode}): ${err.message}`
-              : `${name} ${backend}: ${err.message}`;
-          }
-          throw err;
+          // the run stops here before any row names it.
+          throw nameFixtureInRenderError(err, name, backend);
         }
       }
 

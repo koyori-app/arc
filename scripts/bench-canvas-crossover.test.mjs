@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { benchL2Fixture, isExpectedRenderError } from './bench-canvas-crossover.mjs';
+import {
+  benchL2Fixture,
+  isExpectedRenderError,
+  nameFixtureInRenderError,
+} from './bench-canvas-crossover.mjs';
 import { parseCommandBuffer } from './bench-canvas-replay.js';
 import { evaluateGateFromL2Rows } from './canvas-crossover-gate-lib.mjs';
 
@@ -106,5 +110,41 @@ describe('isExpectedRenderError', () => {
     for (const code of ['input_limit', 'parse_error', 'serialize_error', 'unknown']) {
       assert.equal(isExpectedRenderError(code), false, code);
     }
+  });
+});
+
+describe('nameFixtureInRenderError', () => {
+  const renderError = () =>
+    Object.assign(
+      new Error('render_canvas_commands returned an error (code=parse_error): bad input'),
+      { renderErrorCode: 'parse_error' },
+    );
+
+  it('names the fixture and keeps the same error with its renderErrorCode', () => {
+    const err = renderError();
+    const named = nameFixtureInRenderError(err, '50_sparse');
+    assert.equal(named, err, 'the same error object is returned');
+    assert.equal(named.renderErrorCode, 'parse_error');
+    assert.equal(
+      named.message,
+      '50_sparse: render failed (parse_error): render_canvas_commands returned an error (code=parse_error): bad input',
+    );
+  });
+
+  it('names the fixture of a failure without a code and keeps its type', () => {
+    const err = new SyntaxError('Unexpected token');
+    const named = nameFixtureInRenderError(err, '50_sparse');
+    assert.equal(named, err);
+    assert.ok(named instanceof SyntaxError);
+    assert.equal(named.message, '50_sparse: Unexpected token');
+  });
+
+  it('puts the backend after the fixture when one is given', () => {
+    const named = nameFixtureInRenderError(renderError(), '50_sparse', 'canvas');
+    assert.match(named.message, /^50_sparse canvas: render failed \(parse_error\): /);
+  });
+
+  it('passes a non-Error value through untouched', () => {
+    assert.equal(nameFixtureInRenderError('boom', '50_sparse', 'canvas'), 'boom');
   });
 });
