@@ -1,9 +1,9 @@
-use chrono::{Duration, NaiveDate};
+use chrono::{Duration, FixedOffset, NaiveDate};
 use wasm_bindgen::prelude::*;
 
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
-use crate::date_input::parse_date_or_datetime;
+use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::constants::{
     chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
@@ -11,7 +11,7 @@ use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::graph::{GanttDep, GanttGraph, GanttTask};
+use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttTask};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
@@ -181,13 +181,23 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Re
 /// today marker". A value that is present but unreadable is a refusal, not a
 /// silent `None`: dropping it would also switch the progress line from the
 /// today-anchored shape to the legacy one without telling anyone.
-fn parse_today(today_iso: Option<&str>) -> Result<Option<NaiveDate>, RenderError> {
+fn parse_today(
+    today_iso: Option<&str>,
+    offset: Option<FixedOffset>,
+) -> Result<Option<NaiveDate>, RenderError> {
     match today_iso.map(str::trim) {
         None | Some("") => Ok(None),
-        Some(s) => parse_date_or_datetime(s)
+        Some(s) => resolve_date(s, offset)
             .map(Some)
             .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: today: {e}"))),
     }
+}
+
+/// `tz_offset_minutes` as the Wasm entry points receive it. Absent means "use
+/// the day a string is written in"; an unusable number is a refusal.
+fn read_tz_offset(tz_offset_minutes: Option<f64>) -> Result<Option<FixedOffset>, RenderError> {
+    parse_tz_offset(tz_offset_minutes)
+        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))
 }
 
 /// What `prepare_svg_input` hands on once every refusal has been ruled out.
@@ -203,18 +213,20 @@ fn prepare_svg_input(
     tasks_json: &str,
     deps_json: &str,
     today_iso: Option<&str>,
+    tz_offset_minutes: Option<f64>,
 ) -> Result<PreparedSvgInput, RenderError> {
+    let offset = read_tz_offset(tz_offset_minutes)?;
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return Err(err);
     }
-    let tasks: Vec<GanttTask> = serde_json::from_str(tasks_json)
-        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
+    let tasks =
+        parse_tasks_json(tasks_json, offset).map_err(|e| RenderError::new(CODE_PARSE_ERROR, e))?;
     let deps: Vec<GanttDep> = serde_json::from_str(deps_json)
         .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
     if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
         return Err(err);
     }
-    let today = parse_today(today_iso)?;
+    let today = parse_today(today_iso, offset)?;
     Ok(PreparedSvgInput { tasks, deps, today })
 }
 
@@ -274,16 +286,24 @@ pub fn render_canvas(
 /// "2026-06-16T09:00:00+09:00") for the today marker; the calendar day as written is used.
 /// A value that cannot be read refuses the render (see `render_svg_error`).
 /// `viewport_json` is an optional `{"scroll_y":f64,"client_height":f64}` for row virtualization.
+/// `tz_offset_minutes` is the caller's time zone as a signed integer of minutes east of UTC
+/// (JST is 540). Absent keeps the day a date-time string is written in; present converts
+/// date-time strings that carry an offset to that zone's calendar day. Date-only strings are
+/// never converted. An unusable value (not an integer, beyond ±1439) refuses the render.
 #[wasm_bindgen]
 pub fn render_svg(
     tasks_json: &str,
     deps_json: &str,
     today_iso: Option<String>,
     viewport_json: Option<String>,
+    tz_offset_minutes: Option<f64>,
 ) -> String {
-    let Ok(PreparedSvgInput { tasks, deps, today }) =
-        prepare_svg_input(tasks_json, deps_json, today_iso.as_deref())
-    else {
+    let Ok(PreparedSvgInput { tasks, deps, today }) = prepare_svg_input(
+        tasks_json,
+        deps_json,
+        today_iso.as_deref(),
+        tz_offset_minutes,
+    ) else {
         return empty_svg();
     };
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
@@ -299,16 +319,23 @@ pub fn render_svg(
 /// that tells them apart; it shares `prepare_svg_input` with `render_svg`
 /// rather than re-deriving the rules.
 ///
-/// Pass the same `today_iso` given to `render_svg`: an unreadable one is a refusal too.
+/// Pass the same `today_iso` and `tz_offset_minutes` given to `render_svg`: an
+/// unreadable `today_iso` or an unusable offset is a refusal too.
 #[wasm_bindgen]
 pub fn render_svg_error(
     tasks_json: &str,
     deps_json: &str,
     today_iso: Option<String>,
+    tz_offset_minutes: Option<f64>,
 ) -> Option<String> {
-    prepare_svg_input(tasks_json, deps_json, today_iso.as_deref())
-        .err()
-        .map(|e| e.to_json())
+    prepare_svg_input(
+        tasks_json,
+        deps_json,
+        today_iso.as_deref(),
+        tz_offset_minutes,
+    )
+    .err()
+    .map(|e| e.to_json())
 }
 
 /// Wasm entry point — the exact markup `render_svg` returns when there is
@@ -327,13 +354,18 @@ pub fn render_canvas_commands(
     deps_json: &str,
     today_iso: Option<String>,
     viewport_json: Option<String>,
+    tz_offset_minutes: Option<f64>,
 ) -> String {
+    let offset = match read_tz_offset(tz_offset_minutes) {
+        Ok(offset) => offset,
+        Err(err) => return err.to_json(),
+    };
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return err.to_json();
     }
-    let tasks: Vec<GanttTask> = match serde_json::from_str(tasks_json) {
+    let tasks = match parse_tasks_json(tasks_json, offset) {
         Ok(v) => v,
-        Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
+        Err(e) => return RenderError::new(CODE_PARSE_ERROR, e).to_json(),
     };
     let deps: Vec<GanttDep> = match serde_json::from_str(deps_json) {
         Ok(v) => v,
@@ -342,7 +374,7 @@ pub fn render_canvas_commands(
     if let Some(err) = canvas_graph_limit_error(&tasks, &deps) {
         return err.to_json();
     }
-    let today = match parse_today(today_iso.as_deref()) {
+    let today = match parse_today(today_iso.as_deref(), offset) {
         Ok(today) => today,
         Err(err) => return err.to_json(),
     };
@@ -497,7 +529,7 @@ mod tests {
 
     #[test]
     fn parse_error_returns_safe_empty_svg() {
-        let svg = render_svg("not json", "[]", None, None);
+        let svg = render_svg("not json", "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("parse error"));
         assert!(!svg.contains("<!--"));
@@ -506,7 +538,7 @@ mod tests {
     #[test]
     fn parse_error_comment_injection_does_not_break_markup() {
         let payload = r#"not json --><img onerror=alert(1)><!--"#;
-        let svg = render_svg(payload, "[]", None, None);
+        let svg = render_svg(payload, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("<img"));
     }
@@ -533,7 +565,7 @@ mod tests {
     #[test]
     fn wasm_entry_id_xss_payload_escaped_in_output() {
         let tasks_json = r#"[{"id":"x\" onmouseover=\"alert(1)\"","title":"Safe","progress_pct":0,"start":"2026-06-01","end":"2026-06-02"}]"#;
-        let svg = render_svg(tasks_json, "[]", None, None);
+        let svg = render_svg(tasks_json, "[]", None, None, None);
         assert_ne!(
             svg,
             crate::backend::svg::empty_svg(),
@@ -553,7 +585,7 @@ mod tests {
 
     #[test]
     fn canvas_parse_error_json_is_valid() {
-        let json = render_canvas_commands("not json", "[]", None, None);
+        let json = render_canvas_commands("not json", "[]", None, None, None);
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
     }
@@ -562,10 +594,10 @@ mod tests {
     fn raw_byte_limits_reject_tasks_before_deserialization() {
         // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
         let oversized_tasks = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
-        let svg = render_svg(&oversized_tasks, "[]", None, None);
+        let svg = render_svg(&oversized_tasks, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
-        let json = render_canvas_commands(&oversized_tasks, "[]", None, None);
+        let json = render_canvas_commands(&oversized_tasks, "[]", None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -578,10 +610,10 @@ mod tests {
     fn raw_byte_limits_reject_dependencies_before_deserialization() {
         // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
         let oversized_deps = "x".repeat(MAX_DEPS_JSON_BYTES + 1);
-        let svg = render_svg("[]", &oversized_deps, None, None);
+        let svg = render_svg("[]", &oversized_deps, None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
-        let json = render_canvas_commands("[]", &oversized_deps, None, None);
+        let json = render_canvas_commands("[]", &oversized_deps, None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -603,9 +635,9 @@ mod tests {
         .to_string();
         assert!(tasks.len() > MAX_TASKS_JSON_BYTES);
 
-        let svg = render_svg(&tasks, "[]", None, None);
+        let svg = render_svg(&tasks, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
-        let json = render_canvas_commands(&tasks, "[]", None, None);
+        let json = render_canvas_commands(&tasks, "[]", None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -624,7 +656,13 @@ mod tests {
                 end: Some(date(2026, 6, 2)),
             })
             .collect();
-        let svg = render_svg(&serde_json::to_string(&tasks).unwrap(), "[]", None, None);
+        let svg = render_svg(
+            &serde_json::to_string(&tasks).unwrap(),
+            "[]",
+            None,
+            None,
+            None,
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -646,6 +684,7 @@ mod tests {
         let json = render_canvas_commands(
             &serde_json::to_string(&tasks).unwrap(),
             &serde_json::to_string(&deps).unwrap(),
+            None,
             None,
             None,
         );
@@ -673,15 +712,25 @@ mod tests {
         assert!(rejected_height > MAX_CANVAS_SIDE_PX as f64);
 
         let accepted = canvas_tasks(MAX_CANVAS_ROWS, 1);
-        let accepted_json =
-            render_canvas_commands(&serde_json::to_string(&accepted).unwrap(), "[]", None, None);
+        let accepted_json = render_canvas_commands(
+            &serde_json::to_string(&accepted).unwrap(),
+            "[]",
+            None,
+            None,
+            None,
+        );
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
         assert!(accepted_value["viewport_height"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
 
         let rejected = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
-        let rejected_json =
-            render_canvas_commands(&serde_json::to_string(&rejected).unwrap(), "[]", None, None);
+        let rejected_json = render_canvas_commands(
+            &serde_json::to_string(&rejected).unwrap(),
+            "[]",
+            None,
+            None,
+            None,
+        );
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
             .as_str()
@@ -698,21 +747,21 @@ mod tests {
 
         let accepted = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS);
         let accepted_tasks_json = serde_json::to_string(&accepted).unwrap();
-        let accepted_json = render_canvas_commands(&accepted_tasks_json, "[]", None, None);
+        let accepted_json = render_canvas_commands(&accepted_tasks_json, "[]", None, None, None);
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
         assert!(accepted_value["viewport_width"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
 
         let rejected = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS + 1);
         let rejected_tasks_json = serde_json::to_string(&rejected).unwrap();
-        let rejected_json = render_canvas_commands(&rejected_tasks_json, "[]", None, None);
+        let rejected_json = render_canvas_commands(&rejected_tasks_json, "[]", None, None, None);
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
             .as_str()
             .unwrap()
             .contains("canvas date range"));
 
-        let svg = render_svg(&rejected_tasks_json, "[]", None, None);
+        let svg = render_svg(&rejected_tasks_json, "[]", None, None, None);
         assert_ne!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -725,8 +774,13 @@ mod tests {
         assert!(height_px <= MAX_CANVAS_SIDE_PX as f64);
         assert!(width_px * height_px > 267_000_000.0);
 
-        let json =
-            render_canvas_commands(&serde_json::to_string(&tasks).unwrap(), "[]", None, None);
+        let json = render_canvas_commands(
+            &serde_json::to_string(&tasks).unwrap(),
+            "[]",
+            None,
+            None,
+            None,
+        );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"].as_str().unwrap().contains("canvas area"));
     }
@@ -753,14 +807,14 @@ mod tests {
         // `end: None` makes the guard itself compute `start + 1 day`, which
         // overflows `NaiveDate::MAX`. Before the fix this panics inside the guard.
         let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
-        let svg = render_svg(&tasks_json, "[]", None, None);
+        let svg = render_svg(&tasks_json, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
     #[test]
     fn canvas_entry_rejects_maximum_start_date_with_null_end() {
         let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
-        let json = render_canvas_commands(&tasks_json, "[]", None, None);
+        let json = render_canvas_commands(&tasks_json, "[]", None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
             value["error"].as_str().unwrap().contains("date"),
@@ -773,14 +827,14 @@ mod tests {
         // Span is only 10 days, so the span limit accepts it; the panic before
         // the fix comes from the weekly grid stepping past `NaiveDate::MAX`.
         let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
-        let svg = render_svg(&tasks_json, "[]", None, None);
+        let svg = render_svg(&tasks_json, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
     #[test]
     fn canvas_entry_rejects_explicit_maximum_end_date() {
         let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
-        let json = render_canvas_commands(&tasks_json, "[]", None, None);
+        let json = render_canvas_commands(&tasks_json, "[]", None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
             value["error"].as_str().unwrap().contains("date"),
@@ -792,12 +846,12 @@ mod tests {
     fn svg_date_span_boundary_accepts_limit_and_rejects_one_more() {
         let start = date(2026, 1, 1);
         let at_limit = max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS)));
-        let svg = render_svg(&at_limit, "[]", None, None);
+        let svg = render_svg(&at_limit, "[]", None, None, None);
         assert_ne!(svg, crate::backend::svg::empty_svg());
 
         let over_limit =
             max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS + 1)));
-        let svg = render_svg(&over_limit, "[]", None, None);
+        let svg = render_svg(&over_limit, "[]", None, None, None);
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -808,7 +862,7 @@ mod tests {
             start,
             Some(start + Duration::days(MAX_CANVAS_DATE_SPAN_DAYS + 1)),
         );
-        let json = render_canvas_commands(&over_limit, "[]", None, None);
+        let json = render_canvas_commands(&over_limit, "[]", None, None, None);
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(value["error"]
             .as_str()
@@ -821,18 +875,23 @@ mod tests {
         // JS matches on `code`; the message beside it is display-only. These
         // assertions pin the wire values, so renaming a code constant fails here
         // as well as in the Vue contract test that reads `error.rs`.
-        let parse = render_canvas_commands("not json", "[]", None, None);
+        let parse = render_canvas_commands("not json", "[]", None, None, None);
         let v: serde_json::Value = serde_json::from_str(&parse).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("parse_error"), "got: {parse:.200}");
 
         let oversized = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
-        let raw_limit = render_canvas_commands(&oversized, "[]", None, None);
+        let raw_limit = render_canvas_commands(&oversized, "[]", None, None, None);
         let v: serde_json::Value = serde_json::from_str(&raw_limit).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
 
         let too_many = canvas_tasks(MAX_CANVAS_ROWS + 1, 1);
-        let capacity =
-            render_canvas_commands(&serde_json::to_string(&too_many).unwrap(), "[]", None, None);
+        let capacity = render_canvas_commands(
+            &serde_json::to_string(&too_many).unwrap(),
+            "[]",
+            None,
+            None,
+            None,
+        );
         let v: serde_json::Value = serde_json::from_str(&capacity).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("canvas_capacity"));
     }
@@ -843,21 +902,21 @@ mod tests {
         // on its own channel instead of being inferred from the markup.
         let refused = max_date_tasks_json(NaiveDate::MAX, None);
         assert_eq!(
-            render_svg(&refused, "[]", None, None),
+            render_svg(&refused, "[]", None, None, None),
             crate::backend::svg::empty_svg()
         );
         assert_eq!(
-            render_svg("[]", "[]", None, None),
+            render_svg("[]", "[]", None, None, None),
             crate::backend::svg::empty_svg()
         );
 
         assert_eq!(
-            render_svg_error("[]", "[]", None),
+            render_svg_error("[]", "[]", None, None),
             None,
             "nothing to draw is not an error"
         );
 
-        let reported = render_svg_error(&refused, "[]", None).expect("refusal is reported");
+        let reported = render_svg_error(&refused, "[]", None, None).expect("refusal is reported");
         let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
         assert!(
@@ -878,7 +937,7 @@ mod tests {
             .expect("7 days below NaiveDate::MAX");
         let tasks_json = max_date_tasks_json(start, None);
         assert_eq!(
-            render_svg(&tasks_json, "[]", None, None),
+            render_svg(&tasks_json, "[]", None, None, None),
             crate::backend::svg::empty_svg()
         );
     }

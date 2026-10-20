@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 /// Mirrors the task project's `tasks` entity (Gantt-relevant fields only).
@@ -57,4 +57,45 @@ impl GanttTask {
     pub fn progress(&self) -> f64 {
         (self.progress_pct.clamp(0, 100) as f64) / 100.0
     }
+}
+
+/// The task JSON as it arrives, with the dates still strings. The Wasm entry
+/// points read tasks through this so a time zone can decide which calendar day
+/// a date-time string means; `GanttTask`'s own `Deserialize` has no way to be
+/// given one.
+#[derive(Deserialize)]
+struct RawTask {
+    id: String,
+    title: String,
+    progress_pct: i16,
+    start: String,
+    #[serde(default)]
+    end: Option<String>,
+}
+
+/// Reads a tasks JSON array. `offset` is the caller's time zone, or `None` for
+/// "use the day as written" (see `date_input`). Errors are `parse error: ...`
+/// messages; a bad date names the task index and the field.
+pub fn parse_tasks_json(json: &str, offset: Option<FixedOffset>) -> Result<Vec<GanttTask>, String> {
+    let raw: Vec<RawTask> = serde_json::from_str(json).map_err(|e| format!("parse error: {e}"))?;
+    raw.into_iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let start = crate::date_input::resolve_date(&t.start, offset)
+                .map_err(|e| format!("parse error: tasks[{i}].start: {e}"))?;
+            let end = t
+                .end
+                .as_deref()
+                .map(|s| crate::date_input::resolve_date(s, offset))
+                .transpose()
+                .map_err(|e| format!("parse error: tasks[{i}].end: {e}"))?;
+            Ok(GanttTask {
+                id: t.id,
+                title: t.title,
+                progress_pct: t.progress_pct,
+                start,
+                end,
+            })
+        })
+        .collect()
 }
