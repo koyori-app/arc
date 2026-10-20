@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SVG_MARKUP,
+  RUST_CANVAS_LIMITS,
   RUST_ERROR_CODES,
   RUST_LAYOUT,
 } from './wasmContract';
@@ -52,6 +53,21 @@ function rustLayoutConstants(): Record<string, number> {
   return values;
 }
 
+/** `16_384` や `32 * 1024 * 1024` の形の usize 定数を値に直して返す。 */
+function rustCanvasLimits(): Record<string, number> {
+  const source = readCrateSource('render.rs');
+  const values: Record<string, number> = {};
+  for (const [, name, expr] of source.matchAll(
+    /pub const (MAX_CANVAS_[A-Z_]+_PX): usize = ([0-9_ *]+);/g,
+  )) {
+    values[name] = expr
+      .split('*')
+      .map((term) => Number(term.trim().replaceAll('_', '')))
+      .reduce((a, b) => a * b, 1);
+  }
+  return values;
+}
+
 describe('koyori-arc-core contract', () => {
   it('mirrors every error code, by name and by value', () => {
     const fromRust = rustErrorCodes();
@@ -69,6 +85,14 @@ describe('koyori-arc-core contract', () => {
     for (const [name, pinned] of Object.entries(RUST_LAYOUT)) {
       expect(fromRust, `${name} found in display_list/constants.rs`)
         .toHaveProperty(name);
+      expect(fromRust[name], name).toBe(pinned);
+    }
+  });
+
+  it('mirrors the canvas size limits the backing store is clamped to', () => {
+    const fromRust = rustCanvasLimits();
+    for (const [name, pinned] of Object.entries(RUST_CANVAS_LIMITS)) {
+      expect(fromRust, `${name} found in render.rs`).toHaveProperty(name);
       expect(fromRust[name], name).toBe(pinned);
     }
   });
