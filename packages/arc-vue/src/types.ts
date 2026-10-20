@@ -8,8 +8,9 @@ export interface GanttTask {
   progress_pct: number;
   /**
    * Resolved from sprint.start_date or another source. ISO 8601 date
-   * (`2026-06-01`) or date-time (`2026-06-01T09:00:00Z`). The calendar day as
-   * written is used; no time zone conversion happens.
+   * (`2026-06-01`) or date-time (`2026-06-01T09:00:00Z`). A date-only string is
+   * never converted. A date-time with an offset is converted to the calendar
+   * day of `tzOffsetMinutes`, or kept as written when that is not given.
    */
   start: string;
   /**
