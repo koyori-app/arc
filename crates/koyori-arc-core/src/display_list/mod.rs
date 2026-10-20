@@ -1,5 +1,6 @@
 pub mod build;
 pub mod constants;
+pub mod text_metrics;
 pub mod types;
 
 pub use build::{build_display_list, compute_row_window};

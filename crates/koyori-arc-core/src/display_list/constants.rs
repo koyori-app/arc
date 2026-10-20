@@ -13,7 +13,9 @@ pub const ARROW_LEAD: f64 = 13.0;
 pub const ARROW_CURVE: f64 = 4.0;
 pub const ARROW_HEAD: f64 = 4.0;
 pub const ROW_PADDING: f64 = ROW_H - BAR_H;
-pub const TITLE_MAX_CHARS: usize = 16;
+/// Left margin kept clear of row-label text so a long title is cut by its width,
+/// never by the viewBox edge.
+pub const ROW_LABEL_LEFT_MARGIN_PX: f64 = 4.0;
 pub const LEGEND_H: f64 = 40.0;
 pub const CHART_BOTTOM_PADDING_PX: f64 = 10.0;
 /// Free space right of the last day. `build_display_list` spends it on the
@@ -48,8 +50,21 @@ pub const BAR_CORNER_RADIUS_PX: f64 = 4.0;
 pub const LABEL_GAP_PX: f64 = 4.0;
 /// How far left of the label text the row's hover box reaches.
 pub const LABEL_HIT_W: f64 = 100.0;
+/// Widest a row label may be: the label column minus the gap before the bars and
+/// the left margin. A title wider than this is cut with `…` by `text_metrics`.
+pub const ROW_LABEL_MAX_W_PX: f64 = LABEL_W - LABEL_GAP_PX - ROW_LABEL_LEFT_MARGIN_PX;
 /// Step by which a dependency arrow backs off from its blocker's centre.
 pub const DEP_BACKOFF_STEP_PX: f64 = 10.0;
+/// Legend geometry. Text is laid out by its estimated width (see `text_metrics`),
+/// so these are the only numbers the legend spends besides the glyph widths.
+pub const LEGEND_LEFT_PAD_PX: f64 = 8.0;
+pub const LEGEND_SWATCH_PX: f64 = 10.0;
+pub const LEGEND_SWATCH_GAP_PX: f64 = 2.0;
+pub const LEGEND_ITEM_GAP_PX: f64 = 12.0;
+pub const LEGEND_LINE_SAMPLE_W_PX: f64 = 28.0;
+pub const LEGEND_LINE_TEXT_GAP_PX: f64 = 6.0;
+pub const LEGEND_PROGRESS_FONT_PX: f64 = 10.0;
+pub const LEGEND_TIER_FONT_PX: f64 = 9.0;
 /// Stroke of the progress status line. The legend draws a sample of that same
 /// line, so both read these two values or the legend stops depicting it.
 pub const PROGRESS_LINE_STROKE_W: f64 = 2.0;

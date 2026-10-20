@@ -234,7 +234,7 @@ fn rejection_reason_stays_json_data_even_when_it_quotes_the_input() {
     // message stays a JSON string the JS side can render as text — if the quote
     // handling ever breaks, the payload arrives as structure, not as data.
     let hostile = r#"[{"id":"a","title":"t","progress_pct":"\"}]<img src=x onerror=alert(1)>","start":"2026-06-01","end":"2026-06-02"}]"#;
-    let err = render_svg_error(hostile, "[]").expect("this input must be refused");
+    let err = render_svg_error(hostile, "[]", None).expect("this input must be refused");
     let parsed: serde_json::Value = serde_json::from_str(&err)
         .unwrap_or_else(|e| panic!("rejection reason is not valid JSON ({e}): {err}"));
     assert!(

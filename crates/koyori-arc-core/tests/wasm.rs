@@ -92,7 +92,7 @@ fn render_canvas_commands_returns_json_buffer() {
     let json = koyori_arc_core::render_canvas_commands(TASKS, DEPS, None, None);
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert!(v.get("error").is_none());
-    assert_eq!(v["viewport_width"].as_f64().unwrap(), 350.0);
+    assert_eq!(v["viewport_width"].as_f64().unwrap(), 422.0);
     assert!(v["ops"].as_array().unwrap().len() > 10);
 }
 
@@ -139,12 +139,13 @@ fn render_canvas_commands_parse_error_json() {
 
 #[wasm_bindgen_test]
 fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
-    assert_eq!(koyori_arc_core::render_svg_error("[]", "[]"), None);
-    assert_eq!(koyori_arc_core::render_svg_error(TASKS, DEPS), None);
+    assert_eq!(koyori_arc_core::render_svg_error("[]", "[]", None), None);
+    assert_eq!(koyori_arc_core::render_svg_error(TASKS, DEPS, None), None);
 
     let refused =
         r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
-    let reported = koyori_arc_core::render_svg_error(refused, "[]").expect("refusal reported");
+    let reported =
+        koyori_arc_core::render_svg_error(refused, "[]", None).expect("refusal reported");
     let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
     assert_eq!(v["code"].as_str(), Some("input_limit"));
     // The SVG entry point itself still answers with the empty chart.
@@ -168,4 +169,36 @@ fn render_canvas_commands_empty_tasks() {
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert_eq!(v["viewport_width"].as_f64().unwrap(), 0.0);
     assert!(v["ops"].as_array().unwrap().is_empty());
+}
+
+#[wasm_bindgen_test]
+fn datetime_strings_cross_the_wasm_boundary() {
+    let datetimes = r#"[
+      {"id":"t1","title":"Design","progress_pct":100,"start":"2026-06-01T09:00:00Z","end":"2026-06-04T23:30:00+09:00"},
+      {"id":"t2","title":"Build","progress_pct":50,"start":"2026-06-04T00:00:00.000Z","end":"2026-06-08T00:00:00Z"}
+    ]"#;
+    let from_dates = koyori_arc_core::render_svg(TASKS, DEPS, Some("2026-06-03".to_string()), None);
+    let from_datetimes = koyori_arc_core::render_svg(
+        datetimes,
+        DEPS,
+        Some("2026-06-03T12:00:00+09:00".to_string()),
+        None,
+    );
+    assert_eq!(from_dates, from_datetimes);
+}
+
+#[wasm_bindgen_test]
+fn an_unreadable_today_is_reported_not_dropped() {
+    let bad = Some("garbage".to_string());
+    assert_eq!(
+        koyori_arc_core::render_svg(TASKS, DEPS, bad.clone(), None),
+        koyori_arc_core::empty_svg_markup()
+    );
+    let reported = koyori_arc_core::render_svg_error(TASKS, DEPS, bad.clone())
+        .expect("an unreadable today is reported");
+    let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
+    assert_eq!(v["code"].as_str(), Some("parse_error"));
+    let canvas = koyori_arc_core::render_canvas_commands(TASKS, DEPS, bad, None);
+    let c: serde_json::Value = serde_json::from_str(&canvas).expect("valid json");
+    assert_eq!(c["code"].as_str(), Some("parse_error"));
 }

@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
+use crate::date_input::parse_date_or_datetime;
 use crate::display_list::constants::{
     chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
@@ -176,12 +177,33 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Re
     None
 }
 
+/// `today_iso` as the Wasm entry points receive it. Absent or blank means "no
+/// today marker". A value that is present but unreadable is a refusal, not a
+/// silent `None`: dropping it would also switch the progress line from the
+/// today-anchored shape to the legacy one without telling anyone.
+fn parse_today(today_iso: Option<&str>) -> Result<Option<NaiveDate>, RenderError> {
+    match today_iso.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(s) => parse_date_or_datetime(s)
+            .map(Some)
+            .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: today: {e}"))),
+    }
+}
+
+/// What `prepare_svg_input` hands on once every refusal has been ruled out.
+struct PreparedSvgInput {
+    tasks: Vec<GanttTask>,
+    deps: Vec<GanttDep>,
+    today: Option<NaiveDate>,
+}
+
 /// Every Wasm SVG rejection runs through here — `render_svg` and
 /// `render_svg_error` share one implementation so they can never disagree.
 fn prepare_svg_input(
     tasks_json: &str,
     deps_json: &str,
-) -> Result<(Vec<GanttTask>, Vec<GanttDep>), RenderError> {
+    today_iso: Option<&str>,
+) -> Result<PreparedSvgInput, RenderError> {
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return Err(err);
     }
@@ -192,7 +214,8 @@ fn prepare_svg_input(
     if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
         return Err(err);
     }
-    Ok((tasks, deps))
+    let today = parse_today(today_iso)?;
+    Ok(PreparedSvgInput { tasks, deps, today })
 }
 
 /// Native entry point — accepts typed structs directly.
@@ -247,7 +270,9 @@ pub fn render_canvas(
 }
 
 /// Wasm entry point — accepts JSON strings matching the task project's API response shape.
-/// `today_iso` is an optional ISO 8601 date string (e.g. "2026-06-16") for the today marker.
+/// `today_iso` is an optional ISO 8601 date (e.g. "2026-06-16") or date-time (e.g.
+/// "2026-06-16T09:00:00+09:00") for the today marker; the calendar day as written is used.
+/// A value that cannot be read refuses the render (see `render_svg_error`).
 /// `viewport_json` is an optional `{"scroll_y":f64,"client_height":f64}` for row virtualization.
 #[wasm_bindgen]
 pub fn render_svg(
@@ -256,10 +281,11 @@ pub fn render_svg(
     today_iso: Option<String>,
     viewport_json: Option<String>,
 ) -> String {
-    let Ok((tasks, deps)) = prepare_svg_input(tasks_json, deps_json) else {
+    let Ok(PreparedSvgInput { tasks, deps, today }) =
+        prepare_svg_input(tasks_json, deps_json, today_iso.as_deref())
+    else {
         return empty_svg();
     };
-    let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     render(&tasks, &deps, today, scroll_viewport)
 }
@@ -272,9 +298,15 @@ pub fn render_svg(
 /// and "refused", which are not the same thing to a user. This is the channel
 /// that tells them apart; it shares `prepare_svg_input` with `render_svg`
 /// rather than re-deriving the rules.
+///
+/// Pass the same `today_iso` given to `render_svg`: an unreadable one is a refusal too.
 #[wasm_bindgen]
-pub fn render_svg_error(tasks_json: &str, deps_json: &str) -> Option<String> {
-    prepare_svg_input(tasks_json, deps_json)
+pub fn render_svg_error(
+    tasks_json: &str,
+    deps_json: &str,
+    today_iso: Option<String>,
+) -> Option<String> {
+    prepare_svg_input(tasks_json, deps_json, today_iso.as_deref())
         .err()
         .map(|e| e.to_json())
 }
@@ -310,7 +342,10 @@ pub fn render_canvas_commands(
     if let Some(err) = canvas_graph_limit_error(&tasks, &deps) {
         return err.to_json();
     }
-    let today = today_iso.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let today = match parse_today(today_iso.as_deref()) {
+        Ok(today) => today,
+        Err(err) => return err.to_json(),
+    };
     let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
     let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
     serde_json::to_string(&buffer).unwrap_or_else(|e| {
@@ -817,12 +852,12 @@ mod tests {
         );
 
         assert_eq!(
-            render_svg_error("[]", "[]"),
+            render_svg_error("[]", "[]", None),
             None,
             "nothing to draw is not an error"
         );
 
-        let reported = render_svg_error(&refused, "[]").expect("refusal is reported");
+        let reported = render_svg_error(&refused, "[]", None).expect("refusal is reported");
         let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
         assert!(

@@ -36,9 +36,26 @@ pub struct GanttDep {
 }
 ```
 
+### 日付と日時の字
+
+`start`・`end`・`today_iso` は、次のどれの字も受ける。
+
+- 日付: `2026-06-01`
+- 時差つきの日時（RFC 3339）: `2026-06-01T09:00:00Z`、`2026-06-08T09:00:00+09:00`、小数秒つき `2026-06-01T09:00:00.123Z`
+- 時差なしの日時: `2026-06-01T09:00:00`、`2026-06-01 09:00:00`
+
+task の `hard_deadline` と `soft_deadline` は timestamptz なので、JSON ではそのまま日時の字で届く。呼び手が日付へ直さなくても渡せる。
+
+**時差の扱い**: 字が持つ暦の日をそのまま取る。UTC への換算も、利用者の時差への換算もしない。
+たとえば `2026-06-09T00:30:00+09:00` は 6 月 9 日、`2026-06-08T23:30:00-05:00` は 6 月 8 日である（どちらも UTC に直すと日がずれる）。
+利用者の時差の日で描きたい呼び手は、渡す前にその時差の日付へ直す。task の timestamptz は UTC の字で届くことが多いので、日本の締切を日本の日付で描くなら、呼び手が `+09:00` の日付へ直してから渡す。
+
+読めない字は、黙って捨てずに明に断る。`start` と `end` は JSON 全体が `parse_error` になり、`today_iso` も同じく `parse_error` になる（メッセージに `today` と入る）。
+`today_iso` が `undefined`・`null`・空の字・空白だけの時は「今日の線なし」で、誤りではない。
+
 `GanttTask` メソッド:
 - `start_days(epoch)` — epoch からの経過日数
-- `end_days(epoch)` — epoch から終了日までの経過日数。`end` が `None` の場合は `start + 1日` にフォールバック
+- `end_days(epoch)` — epoch から終了日までの経過日数。`end` が `None` の場合は `start + 1日` にフォールバック。`end` が `start` より前なら `start` に切る
 - `progress()` — `progress_pct` (0-100) を 0.0-1.0 に正規化
 
 ## API
@@ -65,9 +82,9 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
-- `today_iso`: 今日マーカー用の ISO 8601 日付文字列（例: `"2026-06-16"`）。省略可
+- `today_iso`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。省略可。読めない字は断る（上の「日付と日時の字」）
 - `viewport_json`: 仮想スクロール用 `ScrollViewport` の JSON 文字列。省略可
-- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error` から理由を取得できる
+- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, today_iso)` から理由を取得できる。`today_iso` は `render_svg` に渡したものと同じ値を渡す（読めない `today_iso` も断りの一つで、この経路でしか分からない）
 - `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
 
 ### arc-vue
@@ -99,12 +116,13 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
   - 背景バー `class="bar-bg"`（未達部分、`#d1d5db`）
   - 進捗バー `class="bar-progress bar-tier-{low|mid|high|done}"`（達成部分、達成率帯で色分け）
   - 進捗% テキスト（任意表示だが現行実装ではバー上に表示）
-  - 左ラベル: 長タイトルは 16 文字で `…` 省略（全文は `<title>` で参照可）
+  - 左ラベル: 長タイトルはラベル欄の幅（112px）に収まるまで切り `…` を付ける（全文は `<title>` で参照可）。幅は字ごとの見積もりで、和文は 1 字 12px、英数字は 12px の 0.3〜0.85 倍。字数でもバイト数でもない
 - ゼロ期間タスク: `◇` ダイヤモンドマーカー（`<polygon class="bar-milestone bar-tier-...">`）
-- `end < start` ガード: 負の幅バーを生成しない（幅 0 扱い）
+- `end < start` ガード: `end` を `start` に切る（幅 0 扱い）。幅 0 のタスクは `◇` で描くので、`end < start` でもタスクは消えない。進捗の点も `start` より左へ出ない
 - 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）
 - 進捗ステータスライン: 全タスクの進捗ポイントを結ぶ赤破線ジグザグ（`class="progress-status-line"`）— **設計意図どおり温存**
   - **1 タスク = 1 代表点**: `(progress_x, y_mid)`。`progress_x = start + (end - start) × progress`、`y_mid = (y_top + y_bottom) / 2`
+  - **点の順は行の順**: 代表点は入力の順でなく、行（上から下）の順に結ぶ。依存で行が入れ替わっても、線は上から下へ単調に進む
   - **斜め直線結線**: 連続する代表点は斜め直線で結ぶ。バー縦貫（`y_top`→`y_bottom` の垂直線）や水平ジョグ（直角エルボー）は禁止
   - **today 指定かつチャート範囲内**: 端点を today 縦線上に固定。`(today_x, 最上段 y_top)` から開始 → 各タスクの代表点へ斜め接続 → `(today_x, 最下段 y_bottom)` で終端
   - **today 未指定、または today が範囲外**: レガシー。各タスクの代表点のみを斜め直線で順に結び、today 縦線へのアンカーは行わない
@@ -121,7 +139,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
 | 高 | 67–99 | `#0ea5e9` | `bar-tier-high` |
 | 完了 | 100 | `#22c55e` | `bar-tier-done` |
 
-未達部分は常に `#d1d5db`（`bar-bg`）。凡例は SVG 下部に `bar-tier-legend` として表示。
+未達部分は常に `#d1d5db`（`bar-bg`）。凡例は SVG 下部に `bar-tier-legend` として表示。字送りは字ごとの幅の見積もり（和文 1 字は文字の大きさと同じ）で数え、UTF-8 のバイト数では数えない。図の幅が凡例の幅に満たない時（日数の短い図）は、図の幅を凡例の右端まで広げる。
 
 ### 色定数
 
