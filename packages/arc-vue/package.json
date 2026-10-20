@@ -1,6 +1,6 @@
 {
   "name": "@koyori-app/arc-vue",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "type": "module",
   "license": "MPL-2.0 OR GPL-2.0-or-later",
   "repository": {
@@ -34,7 +34,7 @@
     "build-storybook": "storybook build"
   },
   "peerDependencies": {
-    "@koyori-app/arc": "^0.1.0",
+    "@koyori-app/arc": "^0.1.0-alpha.1",
     "vue": "^3.5.0"
   },
   "devDependencies": {
