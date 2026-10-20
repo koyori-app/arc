@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write # gh release create
+  actions: write # gh workflow run release.yml
 
 jobs:
   release:
@@ -24,7 +25,21 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        # 前置き付きのタグ（v0.1.0-alpha.1 など）は prerelease として作り、
+        # Latest の印を付けない。
         run: |
+          prerelease=()
+          case "${{ github.ref_name }}" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --notes-file CHANGELOG_RELEASE.md
+            --notes-file CHANGELOG_RELEASE.md \
+            "${prerelease[@]}"
+
+      # GITHUB_TOKEN で作った Release では release イベントの workflow が起きない。
+      # workflow_dispatch はその例外なので、release.yml をタグの ref で起こす。
+      - name: Dispatch publish workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref "${{ github.ref_name }}"
