@@ -39,7 +39,7 @@ const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 const props = defineProps<{
   tasks: GanttTask[];
   deps?: GanttDep[];
-  today?: string; // ISO 8601 date string, e.g. "2026-06-16"
+  today?: string; // ISO 8601 date ("2026-06-16") or date-time ("2026-06-16T09:00:00+09:00"); the calendar day as written is used
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -183,9 +183,12 @@ const svgFailure = computed<RenderFailure | null>(() => {
   // Only a blank chart can be hiding a refusal, and `render_svg` returns this
   // exact markup when it refuses — so the happy path never pays a second parse.
   if (svgHtml.value !== emptySvgMarkup.value) return null;
+  // `today` is passed too: an unreadable one refuses the render the same way an
+  // unreadable task does, and only this channel says so.
   const reported = render_svg_error(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
+    props.today ?? undefined,
   );
   return reported ? parseRenderError(reported) : null;
 });
