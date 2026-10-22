@@ -631,6 +631,7 @@ fn legend_layout() -> LegendLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::display_list::text_metrics::glyph_em;
     use crate::graph::{GanttDep, GanttGraph};
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -769,6 +770,81 @@ mod tests {
                 t.content,
                 t.x - w
             );
+        }
+    }
+
+    /// 切り詰めと同じ見積もり（`text_width_px`）で左端を検めると、見積もりが外れた時に
+    /// 切り詰めも検めも同じだけ外れ、試験が通ったまま実際の図がはみ出す。
+    /// そこで、曖昧幅の字を含む題は、見積もりを使わずに全角 1 字を `DEFAULT_FONT_SIZE_PX` と置いて検める。
+    /// これらの字は日本語の字体で全角に描かれるので、この置き方が実際の幅の上限になる。
+    /// 字体の実測は wasm の中では取れず、この検めも実測ではない。
+    #[test]
+    fn row_labels_with_ambiguous_width_glyphs_fit_without_the_estimate() {
+        let titles = [
+            "①②③④⑤⑥⑦⑧⑨⑩",
+            "※要確認",
+            "→ 次工程",
+            "■ 設計",
+            "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳",
+            "→→→→→→→→→→→→→→→→→→→→",
+            "※※※※※※※※※※※※※※※※※※※※",
+            "± × ÷ ° § ± × ÷ ° § ± × ÷ ° §",
+        ];
+        let g = graph_of(&titles, 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let labels = row_label_texts(&list);
+        assert_eq!(labels.len(), titles.len());
+        for t in labels {
+            // 字の数 × 全角。半角の空白だけは 0.3 とする（空白は全角にならぬ字体が無い）。
+            let w: f64 = t
+                .content
+                .chars()
+                .map(|c| if c == ' ' { 0.3 } else { 1.0 } * DEFAULT_FONT_SIZE_PX)
+                .sum();
+            assert!(
+                t.x - w >= ROW_LABEL_LEFT_MARGIN_PX - 1e-9,
+                "{:?}: left edge {}",
+                t.content,
+                t.x - w
+            );
+        }
+    }
+
+    /// 検め手の挙げた例が、切られる位置も含めて意図の通りに収まる。
+    /// 期待は `text_width_px` を通さず、文字列で直に書く。
+    #[test]
+    fn ambiguous_width_titles_are_cut_where_they_are_expected() {
+        let titles = [
+            "①②③④⑤⑥⑦⑧⑨⑩",
+            "※要確認",
+            "→ 次工程",
+            "■ 設計",
+            "①②③④⑤⑥⑦⑧⑨⑩⑪⑫",
+        ];
+        let g = graph_of(&titles, 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let labels: Vec<String> = row_label_texts(&list)
+            .iter()
+            .map(|t| t.content.clone())
+            .collect();
+        // 112px は全角 9 字分。10 字の ①..⑩ は 8 字と … に切られる。
+        assert_eq!(
+            labels,
+            vec!["①②③④⑤⑥⑦⑧…", "※要確認", "→ 次工程", "■ 設計", "①②③④⑤⑥⑦⑧…",]
+        );
+    }
+
+    /// 凡例の文言は固定の字面で、使う手が差し替えられない。
+    /// どの字も全角に数えられ、曖昧幅の字は含まれない。
+    /// 文言を書き換えて曖昧幅や比例幅の字を入れた時に、気づけるようにする。
+    #[test]
+    fn legend_captions_are_all_full_width_glyphs() {
+        let captions = std::iter::once(LEGEND_PROGRESS_LABEL)
+            .chain(LEGEND_TIER_ITEMS.iter().map(|(_, label)| *label));
+        for caption in captions {
+            for c in caption.chars() {
+                assert_eq!(glyph_em(c), 1.0, "{caption:?}: U+{:04X} {c}", c as u32);
+            }
         }
     }
 
