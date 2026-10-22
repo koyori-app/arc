@@ -21,15 +21,18 @@
 |------|---------|
 | 一、消した跡の 40px | 詰める。ただし消した時だけで、既定の寸法は動かさない（4） |
 | 二、使う側に出す物 | 段の色と名と範囲、進捗の線の色と太さと破線と名を、一つの定義から出す。Rust の関数、wasm の関数、arc-vue の読み込み関数の三つで取れる（5） |
-| 三、入口の形 | Rust は `_with` を付けた入口を足し、既存の入口は触らない。wasm は末尾に任意の `options_json` を一つ足す。Vue は任意の prop `legend` を足す（6） |
+| 三、入口の形 | 位置の引数を、設定の構造体へ置き換える。Rust は `ChartOptions` を取り、wasm は三つの関数とも `(tasks_json, deps_json, options_json)` になる。今ある `today`、`viewport`、`tz_offset_minutes` も設定に移す。`_with` の入口は作らない。Vue は任意の prop `legend` を足す（6） |
 
 既定は一字も変えない。
-指定が無い時に wasm へ渡る呼び出しそのものが、今と同じであることまで縛る（8）。
+指定が無い時の出力が今と一字も違わないことを、現状を縛る試験で縛る（8）。
+入口の形を変えても、同じ入力は同じ出力になる。
 
-`master` の時点で、GitHub の Release も tag も 0 件で、`@koyori-app/arc` と `@koyori-app/arc-vue` と `koyori-arc-core` は、どれも公開されていない（3）。
-この設計は、その事実を二か所で使う。
-一つは、wasm の三つの関数の Rust 側の署名を今のうちに変えること。
-もう一つは、設定の名前と、未知の鍵を断る厳しさを今のうちに決めることである。
+この設計は、0.1.0-alpha 系の間は公開の形の互換性を約束しない前提に立つ（3.2）。
+書き換える呼び手は 153 件で、すべて repo の中にある（3.3、6.2）。
+この前提のもとでは、入口を二重にする理由が無い。
+二重の入口と、旗のたびに増える位置の引数は、どちらも負債として残るので、置き換える形を選んだ（6.3）。
+
+`master` の時点で、GitHub の Release も tag も 0 件で、`@koyori-app/arc` と `@koyori-app/arc-vue` と `koyori-arc-core` は、どれも公開されていない（3.1）。
 
 ## 2. 今の master で確かめたこと
 
@@ -71,7 +74,7 @@
 | `render.rs` の 169 行 | canvas の面積の上限を `chart_height` で測る |
 | `packages/arc-vue/src/canvasFallback.ts` の 12 行 | wasm が答える前に確保する高さを、`RUST_LAYOUT.LEGEND_H` を含めて足す |
 
-## 3. 公開の事実とその使い方
+## 3. 公開の事実と互換性の前提
 
 ### 3.1 確かめた事実
 
@@ -89,41 +92,65 @@
 `.github/workflows/release.yml` が npm へ出すのは `@koyori-app/arc`（core）だけで、arc-vue を出す段は無い。
 arc-vue の publish は Issue #22 が追っており、Trusted Publisher の登録を待っている。
 
-### 3.2 窓がいつ閉じるか
+### 3.2 互換性の前提
 
-窓は、最初の tag を押して release.yml が走った時に閉じる。
-open の PR がそこへ向かっている。
+この設計は、0.1.0-alpha 系の間は、公開の形の互換性を約束しない前提に立つ。
+公開の形とは、Rust の署名、wasm の関数、arc-vue の props である。
 
-- PR #46 は版を `0.1.0-alpha.1` に上げ、arc-vue の `peerDependencies` を `^0.1.0-alpha.1` にする。
-- PR #48 は、`render_svg` と `render_canvas_commands` に `tz_offset_minutes` を足し、`render_svg_error` に `today_iso` と `tz_offset_minutes` を足す。
-  本文に「0.1.0-alpha.1 を出す前に入れるのは、出した後だと版違いで壊れる期間ができるためです」とある。
+この前提は持ち主の判断で、repo の中の文書には書かれていない。
+根拠を repo の外の物に置かないために、SPEC に書く案を 10.2 に載せた。
 
-この設計は、PR #48 と同じ考えに立つ。
-wasm の署名を動かす変更は、最初の publish の前に入れる。
+この文書の最初の版は、最初の publish の前に署名を変える窓が閉じかけていることを前提にして、入口を二重にする形を選んでいた。
+既存の呼び手を壊さないことだけが、その形の理由だった。
+前提が変わってその理由が消えたので、6 で選び直した。
+選び直した筋は 6.5 に書く。
+履歴は commit に残る。
 
-### 3.3 この事実で言えないこと
+### 3.3 壊れる呼び手はすべて repo の中にある
 
-「公開されていない」は、使っている者がいないという意味ではない。
-arc を git の参照や workspace で取り込んでいる利用側があるかどうかは、npm と crates.io と GitHub の公開情報からは見えない。
-確かめていない。
-だから、窓を使う判断は「外の使い手を壊さない」ではなく、「公開した後は、同じ変更が別の費用になる」に置く。
+6.2 の件数 153 は、署名の変わる呼び出しの数である。
+内訳は、Rust が Rust の入口を呼ぶ 73、Rust が wasm と同じ名の関数を呼ぶ 60、arc-vue が wasm を呼ぶ 4、scripts が wasm を呼ぶ 16 である。
 
-### 3.4 窓を何に使うか
+呼び出しのある file を grep で列挙して確かめた。
+12 file で、どれも `crates/koyori-arc-core/`、`packages/arc-vue/`、`scripts/` の下にある。
 
-- **Rust 側の署名を変える。**
-  wasm の三つの関数は `pub fn` でもある。
-  末尾に引数を足すと、Rust の呼び手は壊れる。
-  公開した後なら、下流の Rust の呼び手を壊す変更になる。
-  今なら呼び手は repo の中の試験と bench だけである（6.2）。
-- **名前を決める。**
-  `legend`、`LegendMode`、`options_json`、`legend_spec_json` は、公開した後に改めるほど高くつく。
-- **未知の鍵を断る厳しさを決める。**
-  後から断るようにするのは壊れる変更で、後から緩めるのは壊れない。
-  だから厳しい側から始める。
+- `crates/koyori-arc-core/benches/render_pipeline.rs`
+- `crates/koyori-arc-core/examples/preview.rs`
+- `crates/koyori-arc-core/examples/write_golden_fixtures.rs`
+- `crates/koyori-arc-core/src/render.rs`
+- `crates/koyori-arc-core/tests/display_list_tests.rs`
+- `crates/koyori-arc-core/tests/output_encoding.rs`
+- `crates/koyori-arc-core/tests/wasm.rs`
+- `packages/arc-vue/src/GanttChart.vue`
+- `scripts/bench-canvas-crossover.mjs`
+- `scripts/bench-dom.mjs`
+- `scripts/bench-wasm-boundary.mjs`
+- `scripts/generate-bench-report.mjs`
 
-窓を、これ以上の整理に使うことはしない。
-たとえば `today` と `viewport` と `tz_offset_minutes` を `options_json` へ移す案は、呼び手を全面的に壊す。
-この設計の `options_json` はそれを妨げないが、別に決める（11）。
+repo の外の使い手については、次のことが言える。
+
+- 公開された配布物が無いので、npm か crates.io 経由の使い手は居ない（3.1）。
+- `gh search code` で `koyori-arc-core`、`@koyori-app/arc`、`@koyori-app/arc-vue` を探したが、`koyori-app/arc` の外の結果は 0 件だった（2026-10-22）。
+  ただし code search は private な repo と未索引の code を見ないので、これは外の使い手が居ない証拠ではない。
+- git の参照や workspace で取り込む利用側が居るかどうかは、公開の情報からは見えない。
+  確かめていない。
+
+この設計は、外の使い手を確かめなくても成り立つように書く。
+外に使い手が居ても、alpha の間は壊れてよいという前提だからである。
+153 件がすべて repo の中にあることは、書き換えの大きさを測るために使う。
+
+### 3.4 互換性を気にしないことで決まること
+
+- **入口を二重にしない。**
+  既存の呼び手を残すための入口は要らない（6）。
+- **位置の引数を断つ。**
+  旗が増えるたびに位置が増える形を、`today`、`viewport`、`tz_offset_minutes` も含めて改める（6.3、6.4）。
+- **未知の鍵を断る。**
+  厳しさの理由は互換性ではなく、綴り違いが黙って何も起こさないことを防ぐためである（6.4）。
+
+互換性を気にしないのは、入口の形についてだけである。
+出力を黙って変えてよいという意味ではない。
+既定の出力は、8 の縛りで今のまま守る。
 
 ## 4. 問い一 消した跡の 40px
 
@@ -203,7 +230,7 @@ arc を git の参照や workspace で取り込んでいる利用側があるか
   凡例が無いので、幅を伸ばす理由が無い。
 - canvas の上限の判定（`canvas_graph_limit_error`）は、消していても凡例の分の高さを足したままにする。
   上限を測る式を一つに保てるし、判定が最大で 1 行分だけ早く断るだけで、緩むことが無い。
-  この選択は 6.3 で wasm の署名に響く。
+  この判定は設定の `legend` を見ない（6.4）。
 
 ## 5. 問い二 使う側に出す物
 
@@ -314,11 +341,15 @@ arc-vue に、`wasmContract.ts` のような書き写した定数を足すこと
 |----|------|
 | A | 既存の入口に位置の引数を足す（`hide_legend: bool` など） |
 | B | 位置の引数を、設定の構造体を取る入口に置き換える |
-| C | 設定の構造体を末尾の引数として足す |
+| C | 設定の構造体を末尾の引数として足す（位置の引数は残る） |
 | D | 設定を取る別の入口を足し、既存の入口は触らない |
-| E | Rust は D、wasm は末尾に任意の `options_json` を一つ足す |
+| E | Rust は D、wasm は末尾に任意の JSON の字を足す |
 
-### 6.2 壊れる呼び手の数え上げ
+この文書の最初の版は E を選んでいた。
+今は B を選ぶ。
+理由は 6.3 に書く。
+
+### 6.2 書き換える呼び手の数え上げ
 
 件数は 2026-10-22 に `master` の `3f2d7f4` を grep して数えた呼び出し式の数である。
 コメントと文字列の中の同名は区別していない。
@@ -334,66 +365,124 @@ PR #48 が入ると、同じ呼び出し式を触るので数が動く。
 | (J2) scripts が wasm を呼ぶ | `scripts/*.mjs` に 16（`render_svg` 10、`render_canvas_commands` 6） |
 | (V) arc-vue を使う側 | `GanttChart` の使い手。props を足すだけなら 0 |
 
-形ごとに、壊れる件数を並べる。
+どの呼び手も repo の中にある（3.3）。
+互換性を約束しないので、件数は「壊れる数」ではなく「一度書き換える量」として読む。
 
-| 形 | R1 | R2 | J1 | J2 | V | 以後の旗 |
-|----|---:|---:|---:|---:|--:|----------|
-| A 位置の引数を足す | 73 | 60 | 0 | 0 | 0 | 旗ごとに位置が一つ増える。`render_svg` はすでに 4 つ（PR #48 で 5 つ）で、使う側は途中を `undefined` で埋める |
-| B 構造体に置き換える | 73 | 60 | 4 | 16 | 0 | 旗は構造体に足せる。ただし全呼び手が壊れる |
-| C 構造体を末尾に足す | 73 | 60 | 0 | 0 | 0 | 旗は構造体に足せる。Rust は A と同じだけ壊れる |
-| D 別の入口を足す | 0 | 0 | 0 | 0 | 0 | 入口が二重になる。旗ごとに両方へ通す |
-| E Rust は D、wasm は末尾に任意の JSON | 0 | 60 | 0 | 0 | 0 | 旗は JSON の鍵に足せる。位置は増えない |
+形ごとの書き換える件数と、形の残す負債を並べる。
 
-JS の呼び手が壊れないのは、wasm-bindgen が末尾の `Option` を任意の引数として出すからである。
-確かめた。
-基準の commit で `wasm-pack build --target web --dev` を走らせて出た宣言は、次の通りだった。
-
-```
-export function render_svg(tasks_json: string, deps_json: string, today_iso?: string | null, viewport_json?: string | null): string;
-```
-
-`scripts/bench-canvas-crossover.mjs` は `render_svg(tasksJson, depsJson, fx.today)` と三つしか渡しておらず、末尾を省いた呼び出しが既に動いている。
-`render_svg_error` は今は必須の二つしか持たないが、末尾に任意の引数を足すのは同じく壊れない。
+| 形 | 書き換える件数 | 描画の入口の数（Rust と wasm の合計） | `render_svg` の位置の引数 | 旗が増えた時 |
+|----|---------------:|--------------------------------------:|--------------------------:|--------------|
+| A 位置の引数を足す | R1 73 + R2 60 = 133 | 6 | 5（PR #48 の後は 6） | 旗ごとに位置が一つ増える |
+| B 構造体に置き換える | R1 73 + R2 60 + J1 4 + J2 16 = 153 | 6 | 3 | 構造体の field が一つ増える |
+| C 構造体を末尾に足す | 133 | 6 | 6 | field は増えるが、位置の引数が残る |
+| D 別の入口を足す | 0 | 12 | 5（PR #48 の後は 6） | 旗を両方の入口に通す |
+| E Rust は D、wasm は末尾に JSON | R2 60 | 9 | 5（PR #48 の後は 6） | JSON の鍵が増える。Rust は両方の入口に通す |
 
 ### 6.3 選ぶ形と理由
 
-E を選ぶ。
+B を選ぶ。
+理由は、どれも互換性とは別のところにある。
 
-- **Rust の 73 件を壊さない。**
-  外部の backend を書く側が呼ぶのは `build_display_list` である（PR #34 で IR の型が公開された）。
-  この入口を位置のまま保つ。
-- **JS の呼び手を壊さない。**
-  20 件（J1 と J2）は触らない。
-- **R2 の 60 件は壊れるが、機械的である。**
-  どれも repo の中の試験と bench で、末尾に `None` を足せば直る。
-  コンパイラが全箇所を示す。
-  PR #48 が `tz_offset_minutes` で同じ件数を同じ方法で直している。
-- **D にしない理由。**
-  wasm にも `_with` を足すと、三つの入口が六つになり、旗ごとに両方を通す。
-  窓があるうちに、60 件の機械的な書き換えで済ませるほうが、二重の入口を永久に持つより安い。
-  公開した後なら、この 60 件が下流の Rust の呼び手を壊す変更になり、D を選ぶほかなくなる。
-- **JSON の字で渡す理由。**
-  `viewport_json` が既に同じ形で、JSON の字を取る。
-  旗が増えても位置は増えない。
+- **旗が増えても、入口も位置も増えない。**
+  A は旗のたびに位置が増える。
+  C は構造体に field を足せるが、位置の引数が残り続ける。
+  D と E は旗のたびに二つの入口へ通す。
+  B は構造体に field を足すだけである。
+- **入口が一組である。**
+  二重の入口は、旗を片方にだけ通し忘れると、その旗が片方でだけ効く。
+  値を二か所に持つと食い違うことは、`display_list/constants.rs` の冒頭のコメントが同じ形で述べている（「a restated number is a second definition that can drift while every test stays green」）。
+  入口の二重もこれと同じ形の負債である。
+- **wasm の三つの関数が同じ設定を共有する。**
+  `render_svg`、`render_svg_error`、`render_canvas_commands` は同じ `options_json` を同じ関数で読む。
+  `render_svg` と `render_svg_error` が食い違わないという今の約束が、検めの場所を一つに保つことで守られる。
+- **使う側が途中を埋めない。**
+  `render_svg` は今の位置の引数が 4 つで、PR #48 の後は 5 つになる。
+  `today` だけ渡したい呼び手は、途中を `undefined` で埋める。
+- **互いに依る値を離さない。**
+  `tz_offset_minutes` は、`start`、`end`、`today` の字をどの暦の日に読むかを決める。
+  別々の位置の引数に置くと、片方だけ渡す誤りが起きる。
+
+B の費用も挙げる。
+
+- **153 件を一度に書き換える。**
+  Rust は compiler が全箇所を示す。
+  arc-vue は typecheck が示す。
+- **`scripts/*.mjs` には型の検めが無い。**
+  古い呼び方 `render_svg(tasksJson, depsJson, today)` は、第三引数が日付の字になる。
+  これは JSON の object ではないので、`parse_error` で断られる。
+  ただし、第三引数が `undefined` で第四引数に viewport を渡す古い呼び方は、余分な引数を wasm-bindgen が捨てるので、黙って窓の無い図になる。
+  scripts の 16 件は書き換えの時に全件を見る（8.4）。
+- **既定の呼び出しが長くなる。**
+  Rust の呼び手は `&ChartOptions::default()` を渡す。
+
+B が悪い理由を、互換性以外の言葉で探した。
+定型の増加と、wasm の設定が文字列で型が弱いことの二つが見つかった。
+後者は、E の `options_json` も同じで、`viewport_json` が今もそうである。
+arc-vue が TypeScript の型 `ChartOptions` を出すことで補う（7.3）。
+どちらも B を退ける重さではない。
+
+### 6.4 設定の形
+
+Rust は構造体を取る。
+
+```rust
+pub struct ChartOptions {
+    pub today: Option<NaiveDate>,
+    pub scroll_viewport: Option<ScrollViewport>,
+    pub legend: LegendMode,
+}
+```
+
+wasm は一つの `options_json`（JSON の字）を取る。
+
+```json
+{
+  "today": "2026-06-16",
+  "scroll_viewport": { "scroll_y": 0, "client_height": 600 },
+  "tz_offset_minutes": 540,
+  "legend": "hidden"
+}
+```
+
+- 鍵は、`today`（今の `today_iso`）、`scroll_viewport`（今の `viewport_json`。
+  JSON の中に JSON の字を入れず object にする）、`tz_offset_minutes`（PR #48 が足す）、`legend`（新しい）の四つである。
+- `tz_offset_minutes` は wasm の設定にだけある。
+  日時の字を解くのは wasm の入口で、Rust の呼び手は日付を決めてから `today` に渡す（PR #48 の決めと同じ）。
+  wasm の入口は、`options_json` を読んで `ChartOptions` に直してから描く。
 
 `options_json` の決め:
 
 | 入力 | 扱い |
 |------|------|
-| 省略、`undefined`、`null` | 既定。呼び出しは今と同じ |
+| 省略、`undefined`、`null` | 既定。設定が無い時と同じ |
 | `"{}"` | 既定 |
+| JSON の object でない字（配列、日付の字など） | `parse_error` で断る |
 | 未知の鍵 | `parse_error` で断る。メッセージに鍵の名を入れる |
+| `today` が読めない | `parse_error` で断る（PR #48 と同じ） |
+| `tz_offset_minutes` が整数でない、または絶対値が 1439 を超える | `parse_error` で断る（PR #48 と同じ） |
+| `scroll_viewport` が `{scroll_y, client_height}` の形でない | `parse_error` で断る（8.5） |
 | `legend` が `"shown"` か `"hidden"` 以外 | `parse_error` で断る |
-| 長さが上限（1 KiB）を超える | `input_limit` で断る |
+| 長さが上限（4 KiB）を超える | `input_limit` で断る |
 
 未知の鍵を断るのは、綴り違い（`lengend`）が黙って何も起こさないことを防ぐためである。
-また arc と arc-vue の版が食い違った時に、新しい arc-vue が古い arc へ未知の鍵を送ると、黙って凡例が出続ける代わりに、図の上の警告で気づける。
+arc と arc-vue の版が食い違った時に、新しい arc-vue が古い arc へ未知の鍵を送っても、黙って凡例が出続ける代わりに、図の上の警告で気づける。
 `render_svg` は断る時に空の SVG を返し、理由は `render_svg_error` が返す。
-この二つは同じ検めを共有する（`prepare_svg_input`）ので、`render_svg_error` にも `options_json` を末尾に足す。
-PR #48 が `today_iso` で同じことをしている。
+この二つは同じ検めを共有する（`prepare_svg_input`）。
 
-canvas の上限は、`options_json` を見ずに判定する（4.6）。
+canvas の上限は、`options_json` の `legend` を見ずに判定する（4.6）。
 そのため、`canvas_graph_limit_error` の式は変えない。
+
+### 6.5 E を選ばなかった理由
+
+E の理由は、既存の呼び手を壊さないことだけだった。
+互換性を約束しない前提で、その理由は消えた。
+残るのは、入口が二重になる負債である。
+
+- Rust の描画の入口が 3 つから 6 つになり、旗ごとに両方へ通す。
+- wasm は `today`、`viewport`、`tz_offset_minutes` が位置の引数のまま残り、`options_json` と二系統になる。
+- 一つの意味の値を、位置の引数と JSON の鍵の二か所で受けるので、どちらが優先かを決める必要が出る。
+
+B はこの三つをすべて避ける。
 
 ## 7. 三層の変更
 
@@ -412,30 +501,27 @@ pub enum LegendMode {
     Hidden,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ChartOptions {
+    pub today: Option<NaiveDate>,
+    pub scroll_viewport: Option<ScrollViewport>,
     pub legend: LegendMode,
-}
-
-impl ChartOptions {
-    pub fn with_legend(mut self, legend: LegendMode) -> Self {
-        self.legend = legend;
-        self
-    }
 }
 ```
 
-`#[non_exhaustive]` は、旗が増えても外部の呼び手を壊さないために付ける。
-この属性が付くと、crate の外では構造体の式（`..Default::default()` を含む）で組めない。
-そのため、外の呼び手は `ChartOptions::default().with_legend(LegendMode::Hidden)` の形で組む。
-旗を足す時は、`with_` の関数を一つ足す。
+- 三つの入口の署名を置き換える。
+  `_with` は作らない。
 
-- `build_display_list_with(graph, epoch, today, scroll_viewport, &ChartOptions)` を足す。
-  `build_display_list` は `ChartOptions::default()` を渡して呼ぶだけにする。
-- `render_with` と `render_canvas_with` を足す。
-  `render` と `render_canvas` はそれを呼ぶだけにする。
+```rust
+pub fn build_display_list(graph: &GanttGraph, epoch: NaiveDate, options: &ChartOptions) -> DisplayList;
+pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) -> String;
+pub fn render_canvas(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) -> CommandBuffer;
+```
+
+- `ChartOptions` に `#[non_exhaustive]` は付けない。
+  互換性を約束しないので、外の呼び手は `ChartOptions { legend: LegendMode::Hidden, ..Default::default() }` で素直に組める。
+  field を足すと、全 field を列挙して組んでいた呼び手は壊れる。
+  alpha の間はそれを許す。
 - `build.rs` は、`Hidden` の時に `chart_h` を `chart_height_with` で求め、凡例の層を積まない。
   PR #48 の後は、図の幅の下支えも外す。
 - `legend_spec()` を足す。
@@ -444,38 +530,47 @@ impl ChartOptions {
 
 ### 7.2 wasm
 
-- `render_svg`、`render_svg_error`、`render_canvas_commands` の末尾に `options_json: Option<String>` を足す。
+- `render_svg`、`render_svg_error`、`render_canvas_commands` の署名を、`(tasks_json, deps_json, options_json)` に置き換える。
+  `options_json` は `Option<String>` で、省略できる。
+- 今の `today_iso`、`viewport_json` と、PR #48 が足す `tz_offset_minutes` は、位置の引数から `options_json` の鍵に移る（6.4）。
+- 入口は、非公開の型 `WireOptions`（`#[serde(deny_unknown_fields)]`）で `options_json` を読み、日時の字を解いて `ChartOptions` に直す。
+  三つの関数が同じ関数でこれを行う。
 - `legend_spec_json() -> String` を足す。
-- `render_canvas_commands` の `canvas_graph_limit_error` は変えない（4.6）。
+- `canvas_graph_limit_error` は変えない（4.6）。
 
 ### 7.3 Vue
 
 - props に `legend?: 'shown' | 'hidden'` を足す。
-- 指定が無い時は、`options_json` を渡さない（未指定のまま wasm を呼ぶ）。
-  指定がある時だけ `JSON.stringify({ legend })` を渡す。
-  boolean の prop にしない理由がここにある。
+- 設定を一つの関数 `buildOptionsJson` で組む。
+  `today`、`scroll_viewport`、`tz_offset_minutes`（PR #48 が足す prop `tzOffsetMinutes`）、`legend` のうち、値のある鍵だけを持つ object を `JSON.stringify` する。
+  wasm を呼ぶ四か所（`svgHtml`、`canvasCommandsJson`、`svgFailure`、`renderCanvasFallback`）のすべてがこれを通す。
+  `renderCanvasFallback` は `scroll_viewport` だけを上書きする（高さを 600 に切る今の動きのまま）。
+  四つ目を漏らすと、canvas が上限で SVG へ落ちた時に凡例が戻る。
+- `legend` は boolean の prop にしない。
   Vue は、省略された boolean の prop を `false` に変える。
   `showLegend` を既定なしで宣言すると、既存の使い手の凡例が黙って消える。
-  列挙の prop は、省略が `undefined` のまま残る。
-- wasm を呼ぶ四か所のすべてに `options_json` を通す: `svgHtml`、`canvasCommandsJson`、`svgFailure`（`render_svg_error`）、`renderCanvasFallback`。
-  四つ目を漏らすと、canvas が上限で SVG へ落ちた時に凡例が戻る。
+  列挙の prop は、省略が `undefined` のまま残り、`buildOptionsJson` が `legend` の鍵を出さない。
 - `chartHeightForTaskCount(taskCount, legend = 'shown')` の第二引数を足す。
   `legend` が `hidden` の時は `RUST_LAYOUT.LEGEND_H` を引く。
   `wasmContract.ts` の `RUST_LAYOUT` は変えない。
-  `wasmContract.test.ts` が Rust と照らす値はそのままで、足す関数が `LEGEND_H` を使う。
-- `index.ts` から `loadLegendSpec` と `LegendSpec` の型を出す。
+- `index.ts` から、型 `ChartOptions`（`options_json` の object の型）、`loadLegendSpec`、型 `LegendSpec` を出す。
 - `GanttChart.stories.ts` に `LegendHidden`（SVG と canvas）の story を足す。
   既存の story は変えない。
 
 ## 8. 既定が一字も変わらないことの縛り
 
+互換性を気にしないのは入口の形についてだけで、出力を黙って変えてよいという意味ではない。
+入口の形が変わっても、同じ入力が同じ出力になることを縛る。
+
 ### 8.1 縛る対象
 
-指定が無い時に、次の三つが一致する。
+指定が無い時に、次の三つが今と一致する。
 
-- Rust: `render`、`render_canvas`、`build_display_list` の戻り値。
-- wasm: `render_svg`、`render_canvas_commands` の戻り値。
-- Vue: 指定が無い時に wasm へ渡る呼び出しの引数。
+- Rust: `ChartOptions::default()` を渡した `render`、`render_canvas`、`build_display_list` の戻り値。
+- wasm: 設定が省略、`null`、`"{}"`、`{"legend":"shown"}` の時の `render_svg`、`render_canvas_commands` の戻り値。
+- Vue: `legend` を省略した時に wasm へ渡る設定の object に、`legend` の鍵が無いこと。
+
+今まで位置の引数で渡していた値(`today`、`viewport`、`tz_offset_minutes`)は、設定の鍵に移った後も、同じ値が同じ出力になる。
 
 ### 8.2 今の golden では足りない
 
@@ -487,33 +582,38 @@ SVG は `two_tasks.svg`、`two_tasks_today.svg`、`milestone.svg`、`empty.svg`�
 ### 8.3 縛り方
 
 1. **最初の commit で、現状を縛る試験だけを足す。**
-   実装に入る前の `master` で通る試験である。
+   実装に入る前の `master`(PR #48 の後のもの)で通る試験である。
    - 試料は次を含む: 既存の golden の試料、五つの段がすべて出る図、`end` が無い図、今日が範囲の内と外にある図、仮想化の窓が上と中と下にある図、100 タスクの疎、2000 タスクの密、日本語の長い題、XML の特殊文字を含む題。
    - 各試料で SVG、canvas の JSON、IR の JSON の三つを縛る。
      小さい試料は全文を fixture に置く。
      大きい試料は、長さと FNV-1a 64 の値で縛る。
      標準の `DefaultHasher` は版をまたいだ安定を約束しないので使わない。
      FNV-1a は依存を足さずに書ける。
+   - 試験は、描く呼び出しを一つの小さな関数(たとえば `render_pinned(tasks, deps, today, viewport)`)に包んで呼ぶ。
+     入口の署名が変わった時に書き換えるのは、この関数の中身だけにするためである。
 2. **以後の commit は、この fixture を一字も変えない。**
-   確かめる手順を実装の作業の説明に書く。
    `git diff --diff-filter=MD --name-only <縛りの commit>..HEAD -- crates/koyori-arc-core/tests/fixtures` が空であること。
    新しい fixture の追加は許す。
-3. **同じ試料で、指定の三通りが一致することを縛る。**
-   戻り値が、(1) 既存の入口、(2) `_with` に `ChartOptions::default()`、(3) `_with` に `legend: Shown` の三つで同一であること。
-   三つとも 1 で縛った値と比べる。
-   既存の入口どうしの比べだけでは、共通の部分を直した時に二つとも動いて気づけない。
-4. **wasm の入口でも縛る。**
-   `options_json` が省略、`null`、`"{}"`、`{"legend":"shown"}` の四通りで、`render_svg` と `render_canvas_commands` の戻り値が、現状の値と一致すること。
-5. **Vue で、呼び出しの引数を縛る。**
+   試験の側で書き換えてよいのは、1 の包む関数の中身だけである。
+3. **設定の移動を、縛った値で確かめる。**
+   署名の置き換え(B)は、凡例の機能を足す前に、それだけで一つの commit にする。
+   この commit の前後で、1 の試験が一字も動かないことが、設定の移動が出力を変えていない証拠になる。
+4. **既定の設定が縛った値と一致することを縛る。**
+   `ChartOptions::default()` と `legend: Shown` を明示した場合の戻り値が、1 で縛った値と一致すること。
+   wasm では、設定が省略、`null`、`"{}"`、`{"legend":"shown"}` の四通りで、`render_svg` と `render_canvas_commands` の戻り値が一致すること。
+5. **Vue で、設定の object を縛る。**
    `GanttChart.virtualization.test.ts` が既に wasm の関数を mock して引数を見ている。
-   同じ型で、`legend` を省略した時に `render_svg` と `render_canvas_commands` に渡る引数が、今の引数の列と同じ長さと値であること（末尾に `undefined` を足すことも断る）。
-   `chartHeightForTaskCount(n)` の既存の試験（408 で 16 400）はそのまま残す。
+   同じ型で、wasm に渡った `options_json` を parse し、次を確かめる。
+   - `legend` を省略した時に、`legend` の鍵が無いこと。
+   - `today`、`scroll_viewport`、`tz_offset_minutes` が、props の値と同じ値で入ること。
+   - 呼び出しが `(tasks_json, deps_json, options_json)` の三つの引数であること。
+   `chartHeightForTaskCount(n)` の既存の試験(408 で 16 400)はそのまま残す。
 6. **像で縛る。**
    Chromatic と VRT の既存の story が、差分 0 であること。
 
-### 8.4 消した時の試験
+### 8.4 消した時と設定の試験
 
-消した時の出力は、既定の出力から機械的に導ける（4.3）。
+消した時の出力は、既定の出力から機械的に導ける(4.3)。
 これを試験の答えにする。
 
 - `Hidden` の SVG は、`Shown` の SVG から、凡例の二つの `<g>` を取り除き、ルートの `height` と `viewBox` の第四の数と、週の縦線と今日の縦線の `y2` を 40 減らしたものに、byte で一致する。
@@ -521,11 +621,30 @@ SVG は `two_tasks.svg`、`two_tasks_today.svg`、`milestone.svg`、`empty.svg`�
 - `Hidden` で、凡例の層が無いこと、`primitive_count` が凡例の分だけ減ること。
 - `Hidden` の `viewport.height` は `chart_height(rows) - LEGEND_H`。
 - 上限の判定は、`Hidden` でも `Shown` と同じ入力で同じ結果になること。
-- 不正な `options_json` が、`render_svg_error` と `render_canvas_commands` で `parse_error` になること。
+- 不正な `options_json` が `parse_error` になること。
+  対象は、object でない字、未知の鍵、読めない `today`、範囲外の `tz_offset_minutes`、形の違う `scroll_viewport`、知らない `legend` の値である。
   `render_svg` が空の SVG を返し、`render_svg_error` が同じ理由を返すこと。
+- **古い呼び方が、日付の字を渡す形では断られること。**
+  `options_json` の位置に日付の字(`"2026-06-16"`)が来たら、`parse_error` で断ること。
+  型の検めが無い `scripts/*.mjs` の書き換え漏れを、実行時に見つけるための試験である。
+  第三引数が `undefined` で、第四引数に viewport の字が来る古い呼び方は、余分な引数を wasm-bindgen が捨てるので検出できない。
+  そのため、`scripts/*.mjs` の 16 件は、書き換えの時に全件を目で確かめる。
+  今日と viewport を両方渡す `bench-dom.mjs` の呼び出しは、特に確かめる。
 - `legend_spec()` が、`Shown` の図の凡例の層から読み取った字と色と一致すること。
   凡例が描く物と、使う側へ出す物が食い違わない。
 - `legend_spec()` の `min_pct` と `max_pct` が、0 から 100 のすべての値で `ProgressTier::from_pct` と一致すること。
+- PR #48 の `tz_offset.rs` と `alpha_gate_1.rs` が、呼び出しの形の書き換えだけで通ること。
+  期待値は動かさない。
+
+### 8.5 出力が変わる入力は一つだけ
+
+不正な `scroll_viewport` の扱いだけは、意図して変える。
+今の `render_svg` と `render_canvas_commands` は、読めない `viewport_json` を黙って無視して、窓の無い図を描く(`.and_then(|s| serde_json::from_str(&s).ok())`)。
+新しい設定は、読めない `scroll_viewport` を `parse_error` で断る。
+PR #48 が読めない `today_iso` を黙って捨てることをやめたのと同じ理由である。
+ただし、読める入力の出力は変わらない。
+縛りの試料(8.3 の 1)は、すべて読める入力である。
+この決めは 11 で、覆せる決めとして挙げる。
 
 ## 9. PR #48 との順序
 
@@ -533,18 +652,37 @@ PR #48 は、同じ場所を大きく動かす。
 
 - 凡例の字送りを字ごとの幅で数え、`LEGEND_TIER_ITEMS` などの定数に切り出す（Issue #28 の項目 1）。
 - 凡例の右端で図の幅を下支えする。
-- `render_svg`、`render_svg_error`、`render_canvas_commands` の署名を変える。
+- `render_svg`、`render_svg_error`、`render_canvas_commands` に `today_iso` と `tz_offset_minutes` を位置の引数として足す。
 - SVG と IR と canvas の golden を作り直す。
 
-この設計を実装する作業は、PR #48 が merge された後の `master` から切る。
-理由は三つある。
+### 9.1 最初の tag の前に入れる必要は無い
 
-- 8.3 の「現状」は、実装の土台の `master` の値で縛る。
-  PR #48 の前に縛ると、PR #48 が golden を作り直した時に、縛りが壊れる。
-- `legend_spec()` が読む並びは、PR #48 が切り出す `LEGEND_TIER_ITEMS` である。
+この文書の最初の版は、最初の publish の前に入れないと、下流の Rust の呼び手を壊すと書いていた。
+互換性を約束しない前提(3.2)で、その切迫は無くなった。
+この設計の実装は、`0.1.0-alpha.1` の tag の前でも後でもよい。
+PR #46 と PR #48 の merge や tag の押し方に、この設計の都合を合わせる必要は無い。
+
+### 9.2 PR #48 の後の master から切る理由は残る
+
+互換性とは別の理由が三つあり、どれも残ることを確かめた。
+
+- **同じ定数を二つの PR が作る。**
+  `legend_spec()` が読む並びは、PR #48 が切り出す `LEGEND_TIER_ITEMS` である。
   先に作ると、二つの PR が同じ定数を作る。
-- 署名を変える三つの関数に、PR #48 と同じ場所で末尾の引数を足す。
-  順序を逆にすると衝突する。
+- **同じ三つの関数の署名が衝突する。**
+  この設計は、PR #48 が位置の引数として足す `today_iso` と `tz_offset_minutes` を、`options_json` の鍵へ移す。
+  PR #48 の前に実装すると、PR #48 が移した先の引数を再び足して衝突する。
+  PR #48 の `tz_offset.rs` と `alpha_gate_1.rs` と `wasm.rs` の呼び出しも、この設計が書き換える対象になる。
+  PR #48 の後なら、書き換えるのは一度で済む。
+- **golden の作り直し。**
+  8.3 の縛りは、実装の土台の `master` の値で取る。
+  PR #48 の前に縛ると、PR #48 が golden を作り直した時に、縛りが壊れる。
+
+### 9.3 二重の手間を避ける別の道
+
+PR #48 が `today_iso` と `tz_offset_minutes` を、位置の引数でなく最初から `options_json` の鍵として足せば、この設計が移す手間は半分になる。
+これは PR #48 の持ち主が決めることで、この設計は前提にしない。
+PR #48 が今の形で merge されても、この設計は成り立つ。
 
 PR #48 が merge されないうちに実装を始める場合は、PR #48 の枝から切り、PR #48 が merge された後に土台を付け替える。
 
@@ -559,37 +697,86 @@ PR #48 も `SPEC.md` を書き換えるので、実装の時は見出しで探�
 
 | 場所 | 見出し | 変更 |
 |------|--------|------|
-| 124 行 | 「達成率の塗り分け（P1）」の表の下の一文 | 凡例を消せることと、消した時の高さを足す |
-| 57 から 71 行 | 「API」の「Wasm」 | 三つの関数の署名に `options_json` を足し、`legend_spec_json` を足す |
+| 7 行の表の下 | 「パッケージ構成」 | alpha の間は公開の形の互換性を約束しないことを足す(10.2) |
+| 46 から 55 行 | 「API」の「ネイティブ (Rust)」 | `render` の署名を `options: &ChartOptions` に置き換え、`render_canvas` と `build_display_list` も並べる |
+| 57 から 71 行 | 「API」の「Wasm」 | 三つの関数の署名を `(tasks_json, deps_json, options_json)` に置き換え、`today_iso`、`viewport_json` の項を `options_json` の鍵の説明に置き換え、`legend_spec_json` を足す |
 | 73 から 84 行 | 「arc-vue」 | prop `legend` と `loadLegendSpec` を足す |
 | 94 行から | 「SVG 出力仕様」の「チャート本体」 | 凡例の項を足し、既定で出ることを書く |
+| 124 行 | 「達成率の塗り分け(P1)」の表の下の一文 | 凡例を消せることと、消した時の高さを足す |
 | 142 行から | 「レイアウト定数」の表 | 表の下に、図の高さに凡例が 40px を占めることを足す |
+| PR #48 が足す「日付と日時の字」と「時差の指定(`tz_offset_minutes`)」の節 | PR #48 の後の SPEC | `tz_offset_minutes` を、引数でなく `options_json` の鍵として書き直す |
 
 ### 10.2 案
 
-124 行を次に置き換える。
+「パッケージ構成」の表の下に、次を足す。
 
 ```
-未達部分は常に `#d1d5db`（`bar-bg`）。
-凡例は既定で SVG 下部に `bar-tier-legend` として表示する。
-`options_json` の `legend` に `"hidden"` を渡すと、凡例を描かず、図の高さを `LEGEND_H`（40）だけ詰める。
-その時の図は、既定の図から凡例を除き、高さと縦線の終わりを 40 縮めたものと同じになる。
+## 互換性
+
+0.1.0-alpha 系の間は、公開の形の互換性を約束しない。
+公開の形とは、Rust の署名、wasm の関数、arc-vue の props である。
+破壊的な変更は、commit の題に `!` を付けて changelog に出す。
 ```
 
-「Wasm」の節に、次の項を足す。
+`cliff.toml` は `commit.breaking` を読んで `**BREAKING**` を付けるので、題に `!` を付ければ changelog に出る。
+
+「ネイティブ (Rust)」の節を、次に置き換える。
+
+```rust
+pub fn render(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    options: &ChartOptions,
+) -> String
+
+pub struct ChartOptions {
+    pub today: Option<NaiveDate>,
+    pub scroll_viewport: Option<ScrollViewport>,
+    pub legend: LegendMode,
+}
+```
+
+「Wasm」の節の署名と項を、次に置き換える。
+
+```rust
+#[wasm_bindgen]
+pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
+
+#[wasm_bindgen]
+pub fn render_svg_error(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> Option<String>
+
+#[wasm_bindgen]
+pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
+
+#[wasm_bindgen]
+pub fn legend_spec_json() -> String
+```
 
 ```
-- `options_json`: 描画の設定の JSON 文字列。省略可。`{"legend": "shown" | "hidden"}`
-  - 省略した時と `{}` は、設定が無かった時と同じ出力になる
-  - 知らない鍵と、知らない値は `parse_error` で断る
-- `legend_spec_json()`: 凡例の中身（段の key、名、色、範囲と、進捗の線の名、色、太さ、破線）の JSON を返す。凡例を消した使い手が、同じ凡例を描くために読む
+- `options_json`: 描画の設定の JSON 文字列。省略可
+  - `today`: 今日マーカー用の日付か日時の字(例: `"2026-06-16"`)
+  - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
+  - `tz_offset_minutes`: 日時の字を暦の日に直す時差(UTC から東へ何分か)
+  - `legend`: `"shown"`(既定)か `"hidden"`
+  - 省略した時と `{}` は、設定が無い時と同じ出力になる
+  - object でない字、知らない鍵、知らない値は `parse_error` で断る
+- `legend_spec_json()`: 凡例の中身(段の key、名、色、範囲と、進捗の線の名、色、太さ、破線)の JSON を返す。凡例を消した使い手が、同じ凡例を描くために読む
 ```
 
 「arc-vue」の節に、次を足す。
 
 ```
-- `legend`: `'shown'`（既定）か `'hidden'`。`'hidden'` で凡例を描かず、高さも詰める
+- `legend`: `'shown'`(既定)か `'hidden'`。`'hidden'` で凡例を描かず、高さも詰める
 - `loadLegendSpec()`: 凡例の中身を返す。wasm の初期化を済ませて読む
+```
+
+124 行を次に置き換える。
+
+```
+未達部分は常に `#d1d5db`(`bar-bg`)。
+凡例は既定で SVG 下部に `bar-tier-legend` として表示する。
+`options_json` の `legend` に `"hidden"` を渡すと、凡例を描かず、図の高さを `LEGEND_H`(40)だけ詰める。
+その時の図は、既定の図から凡例を除き、高さと縦線の終わりを 40 縮めたものと同じになる。
 ```
 
 ### 10.3 alpha の関門の約束に触れる所
@@ -597,23 +784,21 @@ PR #48 も `SPEC.md` を書き換えるので、実装の時は見出しで探�
 触れる所を名指しする。
 
 - **PR #48 の「契約が変わります」の節。**
-  wasm の公開の形を変える変更は、0.1.0-alpha.1 の前に入れるという約束である。
-  この設計の wasm の変更（三つの関数の末尾に `options_json`、新しい `legend_spec_json`）は、その約束に入る。
-  実装は alpha.1 の前に終える。
+  wasm の公開の形を変える変更は、0.1.0-alpha.1 の前に入れるという理由が書かれている。
+  この設計の前提(3.2)では、その理由は要らなくなる。
+  PR #48 の本文をどう直すかは、持ち主が決める。
 - **PR #46 の版の決め。**
   arc-vue の版を `0.1.0-alpha.1` にし、`peerDependencies` を `^0.1.0-alpha.1` にする。
-  arc-vue の新しい prop と `loadLegendSpec` は、その版から入る。
-  arc-vue の publish は Issue #22 が追っており、arc-vue の窓は core より長く開いている可能性があるが、core が先に出れば、wasm 側の約束は先に閉じる。
+  arc-vue の新しい prop と `loadLegendSpec` は、その版以降に入ればよい。
+  arc-vue の publish は Issue #22 が追っている。
 - **Issue #28 の項目 1。**
   凡例の字送りの誤りで、PR #48 が塞ぐ。
   この設計の `Hidden` は、PR #48 の後の図の幅の下支えを外す。
 
-## 11. 決めなかったこと
+## 11. 決めなかったことと、覆せる決め
 
-- **`today`、`viewport`、`tz_offset_minutes` を `options_json` へ移すか。**
-  一つの入口に集まって整うが、全呼び手が壊れる（6.2 の B）。
-  この設計は妨げない。
-  `options_json` の鍵に足すだけで始められる。
+### 11.1 決めなかったこと
+
 - **`GanttLegend` の部品。**
   5.4 で足さないと決めた。
   使い手の様子を見て決める。
@@ -621,29 +806,51 @@ PR #48 も `SPEC.md` を書き換えるので、実装の時は見出しで探�
   緩めるのは 1 行分で、得るものが小さい。
   入力ごとに判定の式が分かれる費用に見合わない。
 
+### 11.2 覆せる決め
+
+- **不正な `scroll_viewport` を断ること(8.5)。**
+  今は黙って無視している。
+  断るほうが一貫するが、無視を保つなら、`scroll_viewport` だけ読めない時に無視する例外を書く。
+- **`ChartOptions` に `#[non_exhaustive]` を付けないこと(7.1)。**
+  付けると、外の呼び手は構造体の式で組めなくなり、builder が要る。
+  alpha の間は素直に組めるほうを選んだ。
+- **`options_json` の上限 4 KiB(6.4)。**
+  四つの鍵に十分な値として置いた。
+  測った値ではない。
+
 ## 12. 実装の分け方
 
-実装は、次の順に二つへ分ける。
+実装は、次の順に分ける。
+1 と 2 を別の commit にするのは、2 が出力を変えないことを、1 の試験で確かめるためである。
 
-1. **core。**
-   8.3 の 1（現状を縛る試験だけの commit）を最初に置く。
-   次に `ChartOptions`、`LegendMode`、`legend_spec`、`_with`、wasm の `options_json` と `legend_spec_json`、8.4 の試験。
-   SPEC の Wasm の節。
-2. **arc-vue。**
+1. **現状を縛る試験。**
+   8.3 の 1。
+   実装に入る前の `master`(PR #48 の後のもの)で通る試験だけの commit。
+2. **設定の移動。**
+   署名を `options` に置き換え(B)、`today`、`viewport`、`tz_offset_minutes` を設定に移す。
+   凡例の機能は入れない。
+   この commit の前後で、1 の試験が一字も動かないこと。
+   書き換えるのは 6.2 の 153 件と、PR #48 の試験の呼び出しである。
+3. **凡例を消す機能と、凡例の中身。**
+   `LegendMode`、`legend_spec`、`legend_spec_json`、8.4 の試験、SPEC の Wasm と Rust の節。
+   ここまでが core である。
+4. **arc-vue。**
    core の wasm を取り込んだ後に、prop、高さ、`loadLegendSpec`、story、試験。
    SPEC の arc-vue の節。
 
-分ける理由は、arc-vue が wasm の宣言に依るからである。
-core が先に入らないと、arc-vue の typecheck が通らない。
+1 から 3 は core の一つの PR にまとめてよい。
+4 は、arc-vue が wasm の宣言に依るので、core が先に入ってから出す。
 
 ## 13. 確かめていないこと
 
 - 実装していないので、`Hidden` の出力が 4.3 の通りになることは、コードの読みからの予測である。
   8.4 の試験が、実装の時にこれを確かめる。
+- 設定の移動(B)が出力を変えないことは、8.3 の 1 の試験が実装の時に確かめる。
+  この設計では実装していない。
 - Chromatic と VRT の既存の story が差分 0 であることは、実装の時に確かめる。
   この設計では走らせていない。
-- wasm-bindgen の宣言は、末尾の `Option` が任意の引数になることを確かめた（6.2）。
-  `render_svg_error` に末尾の引数を足した時の宣言は、足していないので見ていない。
-  同じ規則で出るはずだが、実装の時に宣言を見る。
+- 外の使い手が居ないことは確かめていない(3.3)。
+  この設計は、それを確かめなくても成り立つ。
+- 余分な引数を wasm-bindgen が捨てることは、wasm-bindgen の動きとして知られているが、この設計では確かめていない。
+  `scripts/*.mjs` の書き換え漏れを実行時に見つけられない場合がある、という 8.4 の記述はこれに依る。
 - PR #46、#47、#48 は open で、この設計の後に内容が動き得る。
-- task など、arc を取り込む利用側の呼び方は見ていない（3.3）。
