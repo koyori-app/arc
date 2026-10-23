@@ -35,6 +35,7 @@ mod entry {
             &koyori_arc_core::ChartOptions {
                 today,
                 scroll_viewport: viewport,
+                ..Default::default()
             },
         )
     }
@@ -51,6 +52,7 @@ mod entry {
             &koyori_arc_core::ChartOptions {
                 today,
                 scroll_viewport: viewport,
+                ..Default::default()
             },
         );
         serde_json::to_string(&buffer).unwrap()
@@ -73,6 +75,7 @@ mod entry {
             &koyori_arc_core::ChartOptions {
                 today,
                 scroll_viewport: viewport,
+                ..Default::default()
             },
         );
         serde_json::to_string(&list).unwrap()

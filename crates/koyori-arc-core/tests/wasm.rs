@@ -261,3 +261,19 @@ fn tz_offset_minutes_crosses_the_wasm_boundary() {
     .expect("an unusable offset is reported");
     assert!(reported.contains("tz_offset_minutes"));
 }
+
+#[wasm_bindgen_test]
+fn legend_spec_json_crosses_the_wasm_boundary() {
+    let json = koyori_arc_core::legend_spec_json();
+    assert!(json.contains(r#""key":"done""#), "{json}");
+    assert!(json.contains(r#""dash":"6,3""#), "{json}");
+}
+
+#[wasm_bindgen_test]
+fn the_legend_can_be_hidden_through_options_json() {
+    let shown = koyori_arc_core::render_svg(TASKS, DEPS, None);
+    let hidden =
+        koyori_arc_core::render_svg(TASKS, DEPS, Some(r#"{"legend":"hidden"}"#.to_string()));
+    assert!(shown.contains("bar-tier-legend"));
+    assert!(!hidden.contains("bar-tier-legend"));
+}

@@ -99,6 +99,7 @@ fn every_key_reaches_the_native_options() {
                 scroll_y: 0.0,
                 client_height: 40.0,
             }),
+            ..Default::default()
         },
     );
     let wire = svg(s(
@@ -236,4 +237,117 @@ fn the_options_are_judged_before_the_tasks() {
     let reported = render_svg_error("not json", "[]", s("{}")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
     assert!(!v["error"].as_str().unwrap().contains("options"), "{v}");
+}
+
+// --- legend ---
+
+fn height_of(svg: &str) -> f64 {
+    let start = svg.find(" height=\"").unwrap() + " height=\"".len();
+    let rest = &svg[start..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+}
+
+#[test]
+fn shown_is_the_default_however_it_is_spelt() {
+    let plain = svg(None);
+    let canvas = render_canvas_commands(TASKS, "[]", None);
+    for options in [
+        r#"{"legend":"shown"}"#,
+        r#"{"legend":null}"#,
+        r#"{"legend":"shown","today":null}"#,
+    ] {
+        assert_eq!(svg(s(options)), plain, "{options}");
+        assert_eq!(
+            render_canvas_commands(TASKS, "[]", s(options)),
+            canvas,
+            "{options}"
+        );
+        assert_eq!(render_svg_error(TASKS, "[]", s(options)), None, "{options}");
+    }
+}
+
+#[test]
+fn hidden_leaves_the_legend_out_and_takes_its_height_back() {
+    let shown = svg(None);
+    let hidden = svg(s(r#"{"legend":"hidden"}"#));
+    assert!(shown.contains("bar-tier-legend"));
+    assert!(!hidden.contains("bar-tier-legend"));
+    assert!(!hidden.contains("progress-line-legend"));
+    assert_eq!(height_of(&shown) - height_of(&hidden), 40.0);
+
+    let shown_canvas: serde_json::Value =
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None)).unwrap();
+    let hidden_canvas: serde_json::Value = serde_json::from_str(&render_canvas_commands(
+        TASKS,
+        "[]",
+        s(r#"{"legend":"hidden"}"#),
+    ))
+    .unwrap();
+    assert_eq!(
+        shown_canvas["viewport_height"].as_f64().unwrap()
+            - hidden_canvas["viewport_height"].as_f64().unwrap(),
+        40.0
+    );
+}
+
+#[test]
+fn hidden_goes_with_the_other_keys() {
+    let all = r#"{"legend":"hidden","today":"2026-06-04","tz_offset_minutes":540,"scroll_viewport":{"scroll_y":0,"client_height":40}}"#;
+    let out = svg(s(all));
+    assert_ne!(out, empty_svg());
+    assert!(!out.contains("bar-tier-legend"));
+    assert_eq!(render_svg_error(TASKS, "[]", s(all)), None);
+}
+
+#[test]
+fn an_unknown_legend_value_is_refused_and_named() {
+    for value in [
+        r#""Hidden""#,
+        r#""none""#,
+        r#""""#,
+        "true",
+        "false",
+        "1",
+        "[]",
+        "{}",
+    ] {
+        assert_refused(
+            &format!(r#"{{"legend":{value}}}"#),
+            CODE_PARSE_ERROR,
+            "legend",
+        );
+    }
+}
+
+#[test]
+fn the_canvas_capacity_guard_ignores_the_legend() {
+    // 408 行は、凡例の分の高さを足すと上限を超え、足さなくても行数の上限を超える。
+    // 凡例を消しても、判定は変わらない。
+    let many = format!(
+        "[{}]",
+        (0..408)
+            .map(|i| format!(
+                r#"{{"id":"t{i}","title":"T","progress_pct":10,"start":"2026-06-01","end":"2026-06-03"}}"#
+            ))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let shown = render_canvas_commands(&many, "[]", None);
+    let hidden = render_canvas_commands(&many, "[]", s(r#"{"legend":"hidden"}"#));
+    let v: serde_json::Value = serde_json::from_str(&shown).unwrap();
+    assert_eq!(v["code"], koyori_arc_core::CODE_CANVAS_CAPACITY, "{shown}");
+    assert_eq!(hidden, shown);
+}
+
+#[test]
+fn legend_spec_json_is_the_spec() {
+    let from_json: serde_json::Value =
+        serde_json::from_str(&koyori_arc_core::legend_spec_json()).unwrap();
+    assert_eq!(
+        from_json,
+        serde_json::to_value(koyori_arc_core::legend_spec()).unwrap()
+    );
+    assert_eq!(from_json["tiers"].as_array().unwrap().len(), 5);
+    assert_eq!(from_json["tiers"][0]["key"], "none");
+    assert_eq!(from_json["progress_line"]["dash"], "6,3");
 }

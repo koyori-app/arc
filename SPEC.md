@@ -123,10 +123,13 @@ pub fn build_display_list(
 pub struct ChartOptions {
     pub today: Option<NaiveDate>,
     pub scroll_viewport: Option<ScrollViewport>,
+    pub legend: LegendMode, // Shown（既定）か Hidden
 }
+
+pub fn legend_spec() -> LegendSpec
 ```
 
-`ChartOptions::default()` は、今日の線も仮想スクロールも無い図を描く。
+`ChartOptions::default()` は、今日の線も仮想スクロールも無く、凡例を出す図を描く。
 `ChartOptions { today: Some(day), ..Default::default() }` のように組む。
 
 ### Wasm
@@ -147,11 +150,13 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `today`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。読めない字は断る（上の「日付と日時の字」）
   - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
   - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
+  - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
   - 4 KiB を超える字は `input_limit` で断る
 - `render_svg` は断る時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, options_json)` から理由を取得できる。`render_svg` に渡したものと同じ `options_json` を渡す（読めない設定も断りの一つで、この経路でしか分からない）
 - `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
+- `legend_spec_json()`: 凡例の中身（段の `key`、名、色、範囲と、進捗の線の名、色、太さ、破線）の JSON を返す。凡例を消した使い手が、同じ凡例を描くために読む。範囲は `ProgressTier::from_pct` を 0 から 100 まで走らせて導き、色は図が使うパレットから引く
 
 ### arc-vue
 
@@ -206,7 +211,14 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 | 高 | 67–99 | `#0ea5e9` | `bar-tier-high` |
 | 完了 | 100 | `#22c55e` | `bar-tier-done` |
 
-未達部分は常に `#d1d5db`（`bar-bg`）。凡例は SVG 下部に `bar-tier-legend` として表示。字送りは字ごとの幅の見積もり（和文 1 字は文字の大きさと同じ）で数え、UTF-8 のバイト数では数えない。図の幅が凡例の幅に満たない時（日数の短い図）は、図の幅を凡例の右端まで広げる。
+未達部分は常に `#d1d5db`（`bar-bg`）。凡例は既定で SVG 下部に `bar-tier-legend` として表示する。字送りは字ごとの幅の見積もり（和文 1 字は文字の大きさと同じ）で数え、UTF-8 のバイト数では数えない。図の幅が凡例の幅に満たない時（日数の短い図）は、図の幅を凡例の右端まで広げる。
+
+`options_json` の `legend` に `"hidden"` を渡すと、凡例を描かず、図の高さを `LEGEND_H`（40）だけ詰める。
+下の余白（`CHART_BOTTOM_PADDING_PX`、10）は残す。
+その時の図は、既定の図から凡例を除き、高さと縦線の終わりを 40 縮めたものと同じになる。
+日数で決まる幅が凡例の幅より狭い短い図（凡例のために幅を広げていた図）では、広げた幅も戻る。
+その時、広げた幅の内側にだけあった今日の線（最後のタスクの終わりより後の今日）は出なくなり、進捗の線は今日が無い時の形になる。
+Canvas の上限の判定は `legend` を見ず、凡例の分の高さを足したままにする。
 
 ### 色定数
 
@@ -233,6 +245,10 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 | `PX_PER_DAY` | 30.0 |
 | `LABEL_W` | 120.0 |
 | `HEADER_H` | 30.0 |
+| `LEGEND_H` | 40.0 |
+| `CHART_BOTTOM_PADDING_PX` | 10.0 |
+
+図の高さは `HEADER_H`、行の高さの合計、`CHART_BOTTOM_PADDING_PX` に、凡例を出す時だけ `LEGEND_H` を足した値である。
 
 `layout::assign_rows` の返却順は入力タスク順を保つが、各要素の `row` は依存関係を反映する。
 Tarjan 法で強連結成分を縮約し、成分間をトポロジカル順に並べる。循環依存は同じ成分として扱い、

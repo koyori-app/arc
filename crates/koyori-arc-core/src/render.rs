@@ -7,9 +7,10 @@ use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::constants::{
     chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
+use crate::display_list::legend::legend_spec;
 use crate::display_list::{
     build_display_list,
-    types::{ChartOptions, Palette},
+    types::{ChartOptions, LegendMode, Palette},
     ScrollViewport,
 };
 use crate::error::{
@@ -212,11 +213,12 @@ struct WireOptions {
     today: Option<String>,
     scroll_viewport: Option<ScrollViewport>,
     tz_offset_minutes: Option<f64>,
+    legend: LegendMode,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
 /// that a misspelt one cannot silently do nothing.
-const OPTION_KEYS: &[&str] = &["today", "scroll_viewport", "tz_offset_minutes"];
+const OPTION_KEYS: &[&str] = &["today", "scroll_viewport", "tz_offset_minutes", "legend"];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
     RenderError::new(CODE_PARSE_ERROR, format!("parse error: options: {message}"))
@@ -231,6 +233,7 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         today: None,
         scroll_viewport: None,
         tz_offset_minutes: None,
+        legend: LegendMode::Shown,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -277,6 +280,13 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
                 Some(minutes) => wire.tz_offset_minutes = Some(minutes),
                 None => return Err(options_error("tz_offset_minutes: expected a number")),
             },
+            "legend" => {
+                wire.legend = match value.as_str() {
+                    Some("shown") => LegendMode::Shown,
+                    Some("hidden") => LegendMode::Hidden,
+                    _ => return Err(options_error("legend: expected \"shown\" or \"hidden\"")),
+                }
+            }
             _ => unreachable!("OPTION_KEYS covers every arm"),
         }
     }
@@ -301,6 +311,7 @@ impl ResolvedOptions {
         Ok(ChartOptions {
             today: parse_today(self.wire.today.as_deref(), self.offset)?,
             scroll_viewport: self.wire.scroll_viewport,
+            legend: self.wire.legend,
         })
     }
 }
@@ -431,6 +442,16 @@ pub fn render_svg_error(
     prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
         .err()
         .map(|e| e.to_json())
+}
+
+/// Wasm entry point — what the legend says, as JSON: the five tiers (key, label,
+/// colour, the percentages they cover) and the progress-line sample. For a caller
+/// that hides the legend (`"legend":"hidden"`) and draws its own.
+#[wasm_bindgen]
+pub fn legend_spec_json() -> String {
+    serde_json::to_string(&legend_spec()).unwrap_or_else(|e| {
+        RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
+    })
 }
 
 /// Wasm entry point — the exact markup `render_svg` returns when there is

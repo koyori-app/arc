@@ -6,6 +6,7 @@ use crate::layout::assign_rows;
 use crate::progress::progress_line;
 
 use super::constants::*;
+use super::legend::{tier_fill_color, PROGRESS_LABEL, TIER_ITEMS};
 use super::text_metrics::{text_width_px, truncate_to_width};
 use super::types::*;
 
@@ -52,6 +53,7 @@ pub fn build_display_list(
     let ChartOptions {
         today,
         scroll_viewport,
+        legend: legend_mode,
     } = *options;
     let rows = assign_rows(&graph.tasks, &graph.deps);
 
@@ -64,10 +66,17 @@ pub fn build_display_list(
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
-    let legend = legend_layout();
-    let chart_w = chart_width(total_days as f64)
-        .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX);
-    let chart_h = chart_height(rows.len() as f64);
+    // A chart without a legend has nothing to hold up, so it takes the width
+    // its days give it (design/legend-opt-out.md, 4.7).
+    let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
+    let days_w = chart_width(total_days as f64);
+    let chart_w = match &legend {
+        Some(legend) => {
+            days_w.max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
+        }
+        None => days_w,
+    };
+    let chart_h = chart_height_with(rows.len() as f64, legend_mode);
 
     let viewport = Viewport {
         width: chart_w,
@@ -441,90 +450,9 @@ pub fn build_display_list(
         });
     }
 
-    // Legend layer
-    let legend_y1 = chart_h - LEGEND_H + 14.0;
-    let legend_x = LABEL_W + LEGEND_LEFT_PAD_PX;
-    let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
-    let sw = LEGEND_SWATCH_PX;
-
-    let mut legend_prims = vec![Primitive::Group(GroupPrim {
-        task_id: None,
-        tooltip: None,
-        bbox: BBox {
-            x: legend_x,
-            y: legend_y1 - 4.0,
-            width: legend.progress_width,
-            height: 20.0,
-        },
-        children: vec![
-            Primitive::Line(LinePrim {
-                x1: legend_x,
-                y1: legend_y1,
-                x2: legend_x + LEGEND_LINE_SAMPLE_W_PX,
-                y2: legend_y1,
-                stroke: ColorId::Progress,
-                stroke_width: PROGRESS_LINE_STROKE_W,
-                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
-                semantic: LineSemantic::LegendProgressLine,
-            }),
-            Primitive::Text(TextPrim {
-                x: legend_x + LEGEND_LINE_SAMPLE_W_PX + LEGEND_LINE_TEXT_GAP_PX,
-                y: legend_y1 + 4.0,
-                content: LEGEND_PROGRESS_LABEL.to_string(),
-                fill: Some(ColorId::GridLabel),
-                font_size: Some(LEGEND_PROGRESS_FONT_PX),
-                font_weight: None,
-                anchor: None,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::LegendProgress,
-            }),
-        ],
-    })];
-
-    let mut tier_children = Vec::new();
-    let mut lx = legend_x;
-    for (color_id, label) in LEGEND_TIER_ITEMS {
-        tier_children.push(Primitive::Rect(RectPrim {
-            x: lx,
-            y: legend_y2 - sw / 2.0,
-            width: sw,
-            height: sw,
-            fill: color_id,
-            rx: Some(2.0),
-            semantic: RectSemantic::LegendSwatch,
-        }));
-        lx += sw + LEGEND_SWATCH_GAP_PX;
-        tier_children.push(Primitive::Text(TextPrim {
-            x: lx,
-            y: legend_y2 + 3.0,
-            content: label.to_string(),
-            fill: Some(ColorId::GridLabel),
-            font_size: Some(LEGEND_TIER_FONT_PX),
-            font_weight: None,
-            anchor: None,
-            baseline: TextBaseline::Middle,
-            semantic: TextSemantic::LegendTier,
-        }));
-        // Advance by the label's estimated width, not by `label.len()`: that is
-        // the UTF-8 byte count, three per Japanese glyph, and it pushed the row
-        // far past the viewBox (issue #28).
-        lx += text_width_px(label, LEGEND_TIER_FONT_PX) + LEGEND_ITEM_GAP_PX;
+    if let Some(legend) = &legend {
+        layers.push(legend_layer(chart_h, legend));
     }
-    legend_prims.push(Primitive::Group(GroupPrim {
-        task_id: None,
-        tooltip: None,
-        bbox: BBox {
-            x: legend_x,
-            y: legend_y2 - sw,
-            width: legend.tier_width,
-            height: sw + 6.0,
-        },
-        children: tier_children,
-    }));
-    layers.push(Layer {
-        kind: LayerKind::Legend,
-        primitives: legend_prims,
-    });
 
     let primitive_count = layers
         .iter()
@@ -560,16 +488,6 @@ fn is_zero_duration(task: &GanttTask) -> bool {
     task.end.is_some_and(|end| end <= task.start)
 }
 
-fn tier_fill_color(tier: ProgressTier) -> ColorId {
-    match tier {
-        ProgressTier::None => ColorId::BarBg,
-        ProgressTier::Low => ColorId::TierLow,
-        ProgressTier::Mid => ColorId::TierMid,
-        ProgressTier::High => ColorId::TierHigh,
-        ProgressTier::Done => ColorId::TierDone,
-    }
-}
-
 fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextAnchor, ColorId) {
     let approx_text_w = label.len() as f64 * 6.5;
     if w >= approx_text_w + 8.0 {
@@ -589,15 +507,92 @@ fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextA
     }
 }
 
-const LEGEND_PROGRESS_LABEL: &str = "進捗ステータスライン（各タスクの完了位置を結ぶ）";
+/// The legend: the progress-line sample, then one swatch per tier.
+fn legend_layer(chart_h: f64, legend: &LegendLayout) -> Layer {
+    let legend_y1 = chart_h - LEGEND_H + 14.0;
+    let legend_x = LABEL_W + LEGEND_LEFT_PAD_PX;
+    let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
+    let sw = LEGEND_SWATCH_PX;
 
-const LEGEND_TIER_ITEMS: [(ColorId, &str); 5] = [
-    (ColorId::BarBg, "未達"),
-    (ColorId::TierLow, "低"),
-    (ColorId::TierMid, "中"),
-    (ColorId::TierHigh, "高"),
-    (ColorId::TierDone, "完了"),
-];
+    let mut legend_prims = vec![Primitive::Group(GroupPrim {
+        task_id: None,
+        tooltip: None,
+        bbox: BBox {
+            x: legend_x,
+            y: legend_y1 - 4.0,
+            width: legend.progress_width,
+            height: 20.0,
+        },
+        children: vec![
+            Primitive::Line(LinePrim {
+                x1: legend_x,
+                y1: legend_y1,
+                x2: legend_x + LEGEND_LINE_SAMPLE_W_PX,
+                y2: legend_y1,
+                stroke: ColorId::Progress,
+                stroke_width: PROGRESS_LINE_STROKE_W,
+                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
+                semantic: LineSemantic::LegendProgressLine,
+            }),
+            Primitive::Text(TextPrim {
+                x: legend_x + LEGEND_LINE_SAMPLE_W_PX + LEGEND_LINE_TEXT_GAP_PX,
+                y: legend_y1 + 4.0,
+                content: PROGRESS_LABEL.to_string(),
+                fill: Some(ColorId::GridLabel),
+                font_size: Some(LEGEND_PROGRESS_FONT_PX),
+                font_weight: None,
+                anchor: None,
+                baseline: TextBaseline::Middle,
+                semantic: TextSemantic::LegendProgress,
+            }),
+        ],
+    })];
+
+    let mut tier_children = Vec::new();
+    let mut lx = legend_x;
+    for (tier, label) in TIER_ITEMS {
+        tier_children.push(Primitive::Rect(RectPrim {
+            x: lx,
+            y: legend_y2 - sw / 2.0,
+            width: sw,
+            height: sw,
+            fill: tier_fill_color(tier),
+            rx: Some(2.0),
+            semantic: RectSemantic::LegendSwatch,
+        }));
+        lx += sw + LEGEND_SWATCH_GAP_PX;
+        tier_children.push(Primitive::Text(TextPrim {
+            x: lx,
+            y: legend_y2 + 3.0,
+            content: label.to_string(),
+            fill: Some(ColorId::GridLabel),
+            font_size: Some(LEGEND_TIER_FONT_PX),
+            font_weight: None,
+            anchor: None,
+            baseline: TextBaseline::Middle,
+            semantic: TextSemantic::LegendTier,
+        }));
+        // Advance by the label's estimated width, not by `label.len()`: that is
+        // the UTF-8 byte count, three per Japanese glyph, and it pushed the row
+        // far past the viewBox (issue #28).
+        lx += text_width_px(label, LEGEND_TIER_FONT_PX) + LEGEND_ITEM_GAP_PX;
+    }
+    legend_prims.push(Primitive::Group(GroupPrim {
+        task_id: None,
+        tooltip: None,
+        bbox: BBox {
+            x: legend_x,
+            y: legend_y2 - sw,
+            width: legend.tier_width,
+            height: sw + 6.0,
+        },
+        children: tier_children,
+    }));
+    Layer {
+        kind: LayerKind::Legend,
+        primitives: legend_prims,
+    }
+}
 
 /// How wide the legend's two rows are, measured from `legend_x`. They depend on
 /// the text only, never on the chart, so the chart width can be raised to hold
@@ -614,9 +609,9 @@ struct LegendLayout {
 fn legend_layout() -> LegendLayout {
     let progress_width = LEGEND_LINE_SAMPLE_W_PX
         + LEGEND_LINE_TEXT_GAP_PX
-        + text_width_px(LEGEND_PROGRESS_LABEL, LEGEND_PROGRESS_FONT_PX);
+        + text_width_px(PROGRESS_LABEL, LEGEND_PROGRESS_FONT_PX);
     let mut tier_width = 0.0;
-    for (_, label) in LEGEND_TIER_ITEMS {
+    for (_, label) in TIER_ITEMS {
         tier_width += LEGEND_SWATCH_PX
             + LEGEND_SWATCH_GAP_PX
             + text_width_px(label, LEGEND_TIER_FONT_PX)
@@ -842,8 +837,8 @@ mod tests {
     /// 文言を書き換えて曖昧幅や比例幅の字を入れた時に、気づけるようにする。
     #[test]
     fn legend_captions_are_all_full_width_glyphs() {
-        let captions = std::iter::once(LEGEND_PROGRESS_LABEL)
-            .chain(LEGEND_TIER_ITEMS.iter().map(|(_, label)| *label));
+        let captions =
+            std::iter::once(PROGRESS_LABEL).chain(TIER_ITEMS.iter().map(|(_, label)| *label));
         for caption in captions {
             for c in caption.chars() {
                 assert_eq!(glyph_em(c), 1.0, "{caption:?}: U+{:04X} {c}", c as u32);
