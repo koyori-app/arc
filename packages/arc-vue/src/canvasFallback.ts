@@ -1,3 +1,4 @@
+import type { LegendMode } from './options';
 import {
   CANVAS_CAPACITY_CODE,
   RUST_LAYOUT,
@@ -8,12 +9,18 @@ export type CanvasFailureResolution =
   | { mode: 'svg'; svg: string }
   | { mode: 'error'; message: string };
 
-/** Reserves exactly the height the display list builds, so scrolling matches the chart. */
-export function chartHeightForTaskCount(taskCount: number): number {
+/**
+ * Reserves exactly the height the display list builds, so scrolling matches the chart.
+ * A hidden legend takes no height, so the band it would occupy is left out.
+ */
+export function chartHeightForTaskCount(
+  taskCount: number,
+  legend: LegendMode = 'shown',
+): number {
   if (taskCount === 0) return 0;
   return taskCount * RUST_LAYOUT.ROW_H
     + RUST_LAYOUT.HEADER_H
-    + RUST_LAYOUT.LEGEND_H
+    + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
     + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
 }
 

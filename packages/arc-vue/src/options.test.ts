@@ -44,4 +44,22 @@ describe('buildOptionsJson', () => {
       tz_offset_minutes: 'Infinity',
     });
   });
+
+  it('writes `legend` only when it was given, and leaves the other keys as they were', () => {
+    expect(JSON.parse(buildOptionsJson({ legend: 'hidden' })!)).toEqual({ legend: 'hidden' });
+    expect(JSON.parse(buildOptionsJson({ legend: 'shown' })!)).toEqual({ legend: 'shown' });
+    expect(buildOptionsJson({ legend: null })).toBeUndefined();
+    expect(buildOptionsJson({ legend: undefined })).toBeUndefined();
+    expect(JSON.parse(buildOptionsJson({ today: '2026-06-16', legend: 'hidden' })!)).toEqual({
+      today: '2026-06-16',
+      legend: 'hidden',
+    });
+  });
+
+  it('is byte for byte what it was before `legend` existed, for the same inputs', () => {
+    expect(buildOptionsJson({ today: '2026-06-03', tzOffsetMinutes: 540 }))
+      .toBe('{"today":"2026-06-03","tz_offset_minutes":540}');
+    expect(buildOptionsJson({ scrollViewport: { scroll_y: 0, client_height: 600 } }))
+      .toBe('{"scroll_viewport":{"scroll_y":0,"client_height":600}}');
+  });
 });
