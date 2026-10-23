@@ -12,6 +12,7 @@ use serde_json::Value;
 use super::build::build_display_list;
 use super::constants::*;
 use super::legend::{PROGRESS_LABEL, TIER_ITEMS};
+use super::right_edge_tests::right_edges;
 use super::text_metrics::text_width_px;
 use super::types::*;
 use crate::backend::{BackendOutput, CanvasBackend, RenderBackend, SvgBackend};
@@ -64,6 +65,18 @@ fn canvas(days: i64, legend: LegendMode, today_day: Option<i64>) -> Value {
 
 fn ir(days: i64, legend: LegendMode, today_day: Option<i64>) -> Value {
     serde_json::to_value(list(days, legend, today_day)).unwrap()
+}
+
+/// 凡例の無い図の幅。日数で決まる幅か、右へ伸びる札の右端の遠いほう。
+/// 札の右端は `right_edge_tests` の走査で、描いた部品から求める。
+/// 一日の図やマイルストーンの図では、札が日数の幅を越える（design 4.7 の但し書き）。
+fn hidden_width(days: i64) -> f64 {
+    let l = list(days, LegendMode::Hidden, None);
+    let widest_part = right_edges(&l)
+        .into_iter()
+        .map(|(_, right)| right)
+        .fold(0.0, f64::max);
+    chart_width(days as f64).max(widest_part)
 }
 
 // --- 境を規則から導く ---
@@ -134,10 +147,11 @@ fn shown_is_held_up_by_the_floor_exactly_below_the_boundary() {
 }
 
 #[test]
-fn hidden_takes_the_width_its_days_give_it_whatever_the_length() {
+fn hidden_takes_the_width_its_days_give_it_unless_a_label_runs_further() {
     for days in 0..=first_unfloored_days() + 5 {
         let l = list(days, LegendMode::Hidden, None);
-        assert_eq!(l.viewport.width, chart_width(days as f64), "{days} days");
+        assert_eq!(l.viewport.width, hidden_width(days), "{days} days");
+        assert!(l.viewport.width >= chart_width(days as f64), "{days} days");
     }
 }
 
@@ -371,16 +385,13 @@ fn the_width_the_viewbox_and_the_header_band_follow_the_days_when_hidden() {
         let shown = list(days, LegendMode::Shown, None);
         let hidden = list(days, LegendMode::Hidden, None);
         assert!(hidden.viewport.width < shown.viewport.width, "{days} days");
-        assert_eq!(hidden.viewport.width, chart_width(days as f64));
+        assert_eq!(hidden.viewport.width, hidden_width(days));
         assert_eq!(header_band_width(&shown), shown.viewport.width - LABEL_W);
-        assert_eq!(
-            header_band_width(&hidden),
-            chart_width(days as f64) - LABEL_W
-        );
+        assert_eq!(header_band_width(&hidden), hidden_width(days) - LABEL_W);
 
         let shown_svg = svg(days, LegendMode::Shown, None);
         let hidden_svg = svg(days, LegendMode::Hidden, None);
-        let w = chart_width(days as f64);
+        let w = hidden_width(days);
         let h = hidden.viewport.height;
         assert!(hidden_svg.contains(&format!(
             r#"width="{w}" height="{h}" viewBox="0 0 {w} {h}""#
@@ -391,20 +402,25 @@ fn the_width_the_viewbox_and_the_header_band_follow_the_days_when_hidden() {
 
 #[test]
 fn a_today_after_the_last_day_but_inside_the_floor_is_drawn_only_when_shown() {
+    let mut dropped_when_hidden = 0;
     for days in floored_day_counts() {
         for today in (days + 1)..=latest_today_inside_floor() {
             let shown = list(days, LegendMode::Shown, Some(today));
             let hidden = list(days, LegendMode::Hidden, Some(today));
+            let x = LABEL_W + today as f64 * PX_PER_DAY;
             assert_eq!(
                 vertical_x_of_today(&shown),
-                Some(LABEL_W + today as f64 * PX_PER_DAY),
+                Some(x),
                 "{days} days, today {today}"
             );
+            // Hidden の幅は日数か札が決める。その幅の内側の今日だけ描かれる。
+            let expected = (x <= hidden_width(days)).then_some(x);
             assert_eq!(
                 vertical_x_of_today(&hidden),
-                None,
+                expected,
                 "{days} days, today {today}"
             );
+            dropped_when_hidden += usize::from(expected.is_none());
         }
         // 範囲の後ろの今日が、そもそも広げた幅の内側にあった、という筋が成り立つ。
         // 日付の目盛りは `days` 日までしか引かれない。
@@ -425,6 +441,8 @@ fn a_today_after_the_last_day_but_inside_the_floor_is_drawn_only_when_shown() {
             "the grid stops before that today"
         );
     }
+    // 消える今日が一つも無ければ、この試験は何も撃っていない。
+    assert!(dropped_when_hidden > 0);
 }
 
 #[test]
@@ -451,6 +469,7 @@ fn a_today_inside_the_days_is_at_the_same_place_shown_or_hidden() {
 
 #[test]
 fn the_progress_line_takes_its_old_shape_when_the_today_is_gone() {
+    let mut exercised = 0;
     for days in floored_day_counts() {
         let today = days + 1;
         if today > latest_today_inside_floor() {
@@ -458,6 +477,11 @@ fn the_progress_line_takes_its_old_shape_when_the_today_is_gone() {
         }
         let shown_with_today = list(days, LegendMode::Shown, Some(today));
         let hidden_with_today = list(days, LegendMode::Hidden, Some(today));
+        if vertical_x_of_today(&hidden_with_today).is_some() {
+            // 札が幅を伸ばし、今日が収まった図。消えていないので旧い形にならない。
+            continue;
+        }
+        exercised += 1;
         let legacy = list(days, LegendMode::Shown, None);
         // Shown は今日に繋ぐ形、Hidden は今日が無い時の旧い形。
         assert_ne!(
@@ -470,6 +494,7 @@ fn the_progress_line_takes_its_old_shape_when_the_today_is_gone() {
             "{days} days"
         );
     }
+    assert!(exercised > 0);
 }
 
 #[test]

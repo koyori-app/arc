@@ -7,7 +7,7 @@ use crate::progress::progress_line;
 
 use super::constants::*;
 use super::legend::{tier_fill_color, PROGRESS_LABEL, TIER_ITEMS};
-use super::text_metrics::{text_width_px, truncate_to_width};
+use super::text_metrics::{text_width_px, text_width_weighted_px, truncate_to_width};
 use super::types::*;
 
 /// Compute inclusive row index window `[first, last]` for virtualization.
@@ -70,11 +70,16 @@ pub fn build_display_list(
     // its days give it (design/legend-opt-out.md, 4.7).
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
     let days_w = chart_width(total_days as f64);
+    // The width covers the right edge of everything the chart puts to the right
+    // of the days: the labels that run on past a bar's end. Every task counts,
+    // not only the rows in the window, or the width would change as the chart
+    // scrolls.
+    let labels_w = labels_right_edge(graph, epoch, total_days);
     let chart_w = match &legend {
-        Some(legend) => {
-            days_w.max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
-        }
-        None => days_w,
+        Some(legend) => days_w
+            .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
+            .max(labels_w),
+        None => days_w.max(labels_w),
     };
     let chart_h = chart_height_with(rows.len() as f64, legend_mode);
 
@@ -110,18 +115,7 @@ pub fn build_display_list(
     // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
     // but the native entry points have no such guard, so every step here is
     // checked: an overflow stops the grid instead of panicking.
-    let first_monday = {
-        let mut d = epoch;
-        while d.weekday() != Weekday::Mon {
-            match d.checked_add_signed(Duration::days(1)) {
-                Some(next) => d = next,
-                None => break,
-            }
-        }
-        d
-    };
-    let mut grid_day = first_monday;
-    while (grid_day - epoch).num_days() <= total_days {
+    for grid_day in grid_days(epoch, total_days) {
         let x = LABEL_W + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
         grid_prims.push(Primitive::Line(LinePrim {
             x1: x,
@@ -133,22 +127,18 @@ pub fn build_display_list(
             stroke_dash: None,
             semantic: LineSemantic::Grid,
         }));
-        let label = format!("{}/{}", grid_day.month(), grid_day.day());
+        let label = grid_label(grid_day);
         grid_prims.push(Primitive::Text(TextPrim {
             x,
             y: HEADER_H / 2.0 + 4.0,
             content: label,
             fill: Some(ColorId::GridLabel),
-            font_size: Some(11.0),
+            font_size: Some(GRID_LABEL_FONT_PX),
             font_weight: None,
             anchor: None,
             baseline: TextBaseline::Auto,
             semantic: TextSemantic::GridLabel,
         }));
-        grid_day = match grid_day.checked_add_signed(Duration::weeks(1)) {
-            Some(next) => next,
-            None => break,
-        };
     }
     layers.push(Layer {
         kind: LayerKind::Grid,
@@ -202,14 +192,15 @@ pub fn build_display_list(
                 tier,
                 semantic: PolygonSemantic::Milestone,
             }));
+            let label = percent_label(task, epoch);
             children.push(Primitive::Text(TextPrim {
-                x: cx + half + 6.0,
+                x: label.x,
                 y: cy,
-                content: pct_label,
-                fill: Some(ColorId::ProgressTextOnBg),
+                content: label.content,
+                fill: Some(label.fill),
                 font_size: Some(PROGRESS_LABEL_FONT_PX),
                 font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: None,
+                anchor: label.anchor,
                 baseline: TextBaseline::Middle,
                 semantic: TextSemantic::ProgressPercent,
             }));
@@ -237,15 +228,15 @@ pub fn build_display_list(
                     }));
                 }
             }
-            let (tx, anchor, fill) = progress_label_style(x, w, prog_w, &pct_label);
+            let label = percent_label(task, epoch);
             children.push(Primitive::Text(TextPrim {
-                x: tx,
+                x: label.x,
                 y: y + BAR_H / 2.0,
-                content: pct_label,
-                fill: Some(fill),
+                content: label.content,
+                fill: Some(label.fill),
                 font_size: Some(PROGRESS_LABEL_FONT_PX),
                 font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: Some(anchor),
+                anchor: label.anchor,
                 baseline: TextBaseline::Middle,
                 semantic: TextSemantic::ProgressPercent,
             }));
@@ -486,6 +477,110 @@ fn task_bar_width_days(task: &GanttTask, epoch: NaiveDate) -> f64 {
 /// would have no bar at all and could not be seen or clicked.
 fn is_zero_duration(task: &GanttTask) -> bool {
     task.end.is_some_and(|end| end <= task.start)
+}
+
+const GRID_LABEL_FONT_PX: f64 = 11.0;
+
+/// The Mondays the grid draws, from the first one on or after `epoch` to the
+/// last one within `total_days`. Every step is checked: an overflow stops the
+/// grid instead of panicking.
+fn grid_days(epoch: NaiveDate, total_days: i64) -> Vec<NaiveDate> {
+    let mut d = epoch;
+    while d.weekday() != Weekday::Mon {
+        match d.checked_add_signed(Duration::days(1)) {
+            Some(next) => d = next,
+            None => break,
+        }
+    }
+    let mut days = Vec::new();
+    while (d - epoch).num_days() <= total_days {
+        days.push(d);
+        d = match d.checked_add_signed(Duration::weeks(1)) {
+            Some(next) => next,
+            None => break,
+        };
+    }
+    days
+}
+
+fn grid_label(day: NaiveDate) -> String {
+    format!("{}/{}", day.month(), day.day())
+}
+
+/// A task's percent label as it is drawn.
+struct PercentLabel {
+    x: f64,
+    anchor: Option<TextAnchor>,
+    fill: ColorId,
+    content: String,
+}
+
+/// Where a task's percent label sits. A milestone's runs on to the right of the
+/// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
+/// end when it does not. Drawing and `labels_right_edge` both read this, so the
+/// width cannot disagree with what is drawn.
+fn percent_label(task: &GanttTask, epoch: NaiveDate) -> PercentLabel {
+    let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
+    let content = format!("{}%", task.progress_pct.clamp(0, 100));
+    if is_zero_duration(task) {
+        return PercentLabel {
+            x: x + BAR_H / 2.0 + 6.0,
+            anchor: None,
+            fill: ColorId::ProgressTextOnBg,
+            content,
+        };
+    }
+    let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
+    let (x, anchor, fill) = progress_label_style(x, w, w * task.progress(), &content);
+    PercentLabel {
+        x,
+        anchor: Some(anchor),
+        fill,
+        content,
+    }
+}
+
+/// The right edge of the text estimate for a label drawn at `x` with `anchor`.
+fn text_right_edge(
+    x: f64,
+    anchor: Option<TextAnchor>,
+    content: &str,
+    font_px: f64,
+    weight: Option<u16>,
+) -> f64 {
+    let w = text_width_weighted_px(content, font_px, weight);
+    match anchor {
+        None | Some(TextAnchor::Start) => x + w,
+        Some(TextAnchor::Middle) => x + w / 2.0,
+        Some(TextAnchor::End) => x,
+    }
+}
+
+/// The furthest right any label reaches, over all tasks and the grid. A label
+/// that runs on past the end of the days, such as a percent label to the right of
+/// a bar that ends on the last day, needs the width to reach it. The bars and the
+/// lines stop at the last day and need nothing.
+fn labels_right_edge(graph: &GanttGraph, epoch: NaiveDate, total_days: i64) -> f64 {
+    let tasks = graph.tasks.iter().map(|task| {
+        let label = percent_label(task, epoch);
+        text_right_edge(
+            label.x,
+            label.anchor,
+            &label.content,
+            PROGRESS_LABEL_FONT_PX,
+            Some(PROGRESS_LABEL_FONT_WEIGHT),
+        )
+    });
+    let grid = grid_days(epoch, total_days).into_iter().map(|day| {
+        text_right_edge(
+            LABEL_W + (day - epoch).num_days() as f64 * PX_PER_DAY,
+            None,
+            &grid_label(day),
+            GRID_LABEL_FONT_PX,
+            None,
+        )
+    });
+    tasks.chain(grid).fold(0.0, f64::max)
 }
 
 fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextAnchor, ColorId) {
