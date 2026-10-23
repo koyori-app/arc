@@ -3,7 +3,7 @@
 use chrono::NaiveDate;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use koyori_arc_core::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
-use koyori_arc_core::render;
+use koyori_arc_core::{render, ChartOptions};
 
 fn parse_today(iso: &str) -> NaiveDate {
     NaiveDate::parse_from_str(iso, "%Y-%m-%d").unwrap()
@@ -24,8 +24,10 @@ fn bench_rust_render(c: &mut Criterion) {
                     black_box(render(
                         black_box(&fx.tasks),
                         black_box(&fx.deps),
-                        Some(today),
-                        None,
+                        &ChartOptions {
+                            today: Some(today),
+                            ..Default::default()
+                        },
                     ))
                 });
             });
@@ -56,9 +58,7 @@ fn bench_render_svg_native(c: &mut Criterion) {
                         black_box(koyori_arc_core::render_svg(
                             black_box(tj.as_str()),
                             black_box(dj.as_str()),
-                            Some(black_box(td.clone())),
-                            None,
-                            None,
+                            Some(format!(r#"{{"today":"{}"}}"#, black_box(&td))),
                         ))
                     });
                 },

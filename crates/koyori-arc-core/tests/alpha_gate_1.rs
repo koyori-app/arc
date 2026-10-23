@@ -4,10 +4,12 @@
 //! 凡例と題のはみ出しは、字の幅の見積もりに触れるので `display_list/build.rs` の
 //! 単体試験にある。
 
+mod common;
+
 use chrono::NaiveDate;
 use koyori_arc_core::{
-    build_display_list, render_canvas_commands, render_svg, render_svg_error, GanttDep, GanttGraph,
-    GanttTask, LayerKind, Primitive, CODE_PARSE_ERROR, HEADER_H, ROW_H,
+    build_display_list, render_canvas_commands, render_svg, render_svg_error, ChartOptions,
+    GanttDep, GanttGraph, GanttTask, LayerKind, Primitive, CODE_PARSE_ERROR, HEADER_H, ROW_H,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -36,7 +38,14 @@ fn epoch(graph: &GanttGraph) -> NaiveDate {
 }
 
 fn progress_points(graph: &GanttGraph, today: Option<NaiveDate>) -> Vec<(f64, f64)> {
-    let list = build_display_list(graph, epoch(graph), today, None);
+    let list = build_display_list(
+        graph,
+        epoch(graph),
+        &ChartOptions {
+            today,
+            ..Default::default()
+        },
+    );
     for layer in &list.layers {
         if layer.kind == LayerKind::ProgressLine {
             if let Some(Primitive::Polyline(p)) = layer.primitives.first() {
@@ -61,13 +70,15 @@ const DATETIME_TASKS: &str = r#"[
 
 #[test]
 fn datetime_strings_draw_the_same_chart_as_dates() {
-    let from_dates = render_svg(DATE_TASKS, "[]", Some("2026-06-03".to_string()), None, None);
+    let from_dates = render_svg(
+        DATE_TASKS,
+        "[]",
+        common::options_json(Some("2026-06-03".to_string()), None, None),
+    );
     let from_datetimes = render_svg(
         DATETIME_TASKS,
         "[]",
-        Some("2026-06-03T09:00:00+09:00".to_string()),
-        None,
-        None,
+        common::options_json(Some("2026-06-03T09:00:00+09:00".to_string()), None, None),
     );
     assert_eq!(from_dates, from_datetimes);
     assert_ne!(from_dates, koyori_arc_core::empty_svg());
@@ -75,8 +86,7 @@ fn datetime_strings_draw_the_same_chart_as_dates() {
         render_svg_error(
             DATETIME_TASKS,
             "[]",
-            Some("2026-06-03T09:00:00+09:00".to_string()),
-            None
+            common::options_json(Some("2026-06-03T09:00:00+09:00".to_string()), None, None)
         ),
         None
     );
@@ -87,9 +97,7 @@ fn canvas_entry_accepts_the_same_datetime_strings() {
     let json = render_canvas_commands(
         DATETIME_TASKS,
         "[]",
-        Some("2026-06-03T00:00:00.000Z".to_string()),
-        None,
-        None,
+        common::options_json(Some("2026-06-03T00:00:00.000Z".to_string()), None, None),
     );
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert!(v.get("error").is_none(), "{json}");
@@ -102,8 +110,8 @@ fn the_calendar_day_as_written_is_used_not_a_converted_one() {
     let by_date =
         r#"[{"id":"a","title":"A","progress_pct":0,"start":"2026-06-03","end":"2026-06-06"}]"#;
     assert_eq!(
-        render_svg(tasks, "[]", None, None, None),
-        render_svg(by_date, "[]", None, None, None)
+        render_svg(tasks, "[]", common::options_json(None, None, None)),
+        render_svg(by_date, "[]", common::options_json(None, None, None))
     );
 }
 
@@ -116,8 +124,12 @@ fn an_unreadable_today_is_refused_not_dropped() {
         "2026-06-08T",
         "06/08/2026",
     ] {
-        let reported = render_svg_error(DATE_TASKS, "[]", Some(bad.to_string()), None)
-            .unwrap_or_else(|| panic!("{bad:?} must be reported"));
+        let reported = render_svg_error(
+            DATE_TASKS,
+            "[]",
+            common::options_json(Some(bad.to_string()), None, None),
+        )
+        .unwrap_or_else(|| panic!("{bad:?} must be reported"));
         let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
         assert_eq!(v["code"], CODE_PARSE_ERROR, "{bad:?}");
         assert!(
@@ -125,11 +137,19 @@ fn an_unreadable_today_is_refused_not_dropped() {
             "the message names what was wrong: {reported}"
         );
         assert_eq!(
-            render_svg(DATE_TASKS, "[]", Some(bad.to_string()), None, None),
+            render_svg(
+                DATE_TASKS,
+                "[]",
+                common::options_json(Some(bad.to_string()), None, None)
+            ),
             koyori_arc_core::empty_svg(),
             "{bad:?}: a refused input draws the blank chart, the same as an unreadable task"
         );
-        let canvas = render_canvas_commands(DATE_TASKS, "[]", Some(bad.to_string()), None, None);
+        let canvas = render_canvas_commands(
+            DATE_TASKS,
+            "[]",
+            common::options_json(Some(bad.to_string()), None, None),
+        );
         let c: serde_json::Value = serde_json::from_str(&canvas).unwrap();
         assert_eq!(c["code"], CODE_PARSE_ERROR, "{bad:?}");
     }
@@ -137,17 +157,29 @@ fn an_unreadable_today_is_refused_not_dropped() {
 
 #[test]
 fn an_absent_or_blank_today_is_not_an_error() {
-    let plain = render_svg(DATE_TASKS, "[]", None, None, None);
+    let plain = render_svg(DATE_TASKS, "[]", common::options_json(None, None, None));
     assert_eq!(
-        render_svg(DATE_TASKS, "[]", Some(String::new()), None, None),
+        render_svg(
+            DATE_TASKS,
+            "[]",
+            common::options_json(Some(String::new()), None, None)
+        ),
         plain
     );
     assert_eq!(
-        render_svg(DATE_TASKS, "[]", Some("  ".to_string()), None, None),
+        render_svg(
+            DATE_TASKS,
+            "[]",
+            common::options_json(Some("  ".to_string()), None, None)
+        ),
         plain
     );
     assert_eq!(
-        render_svg_error(DATE_TASKS, "[]", Some(String::new()), None),
+        render_svg_error(
+            DATE_TASKS,
+            "[]",
+            common::options_json(Some(String::new()), None, None)
+        ),
         None
     );
 }
@@ -158,7 +190,8 @@ fn an_unreadable_task_date_is_refused_with_its_reason() {
         r#"[{"id":"a","title":"A","progress_pct":0,"start":"soon"}]"#,
         r#"[{"id":"a","title":"A","progress_pct":0,"start":"2026-06-01","end":"2026-6-99"}]"#,
     ] {
-        let reported = render_svg_error(bad, "[]", None, None).expect("refused");
+        let reported =
+            render_svg_error(bad, "[]", common::options_json(None, None, None)).expect("refused");
         let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
         assert_eq!(v["code"], CODE_PARSE_ERROR, "{bad}");
         assert!(
@@ -195,7 +228,7 @@ fn end_before_start_graph() -> GanttGraph {
 #[test]
 fn end_before_start_is_drawn_and_its_progress_point_does_not_pass_the_start() {
     let graph = end_before_start_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
 
     let early = list
         .metadata
@@ -235,8 +268,12 @@ fn end_before_start_does_not_widen_the_chart_or_the_bar_of_others() {
     let a = end_before_start_graph();
     let mut b = end_before_start_graph();
     b.tasks[0].end = Some(b.tasks[0].start);
-    let wa = build_display_list(&a, epoch(&a), None, None).viewport.width;
-    let wb = build_display_list(&b, epoch(&b), None, None).viewport.width;
+    let wa = build_display_list(&a, epoch(&a), &ChartOptions::default())
+        .viewport
+        .width;
+    let wb = build_display_list(&b, epoch(&b), &ChartOptions::default())
+        .viewport
+        .width;
     assert_eq!(wa, wb, "end < start behaves as end == start");
 }
 
@@ -310,7 +347,7 @@ fn a_repeated_id_resolves_to_its_first_occurrence_for_arrows() {
         ],
         deps: vec![dep("dup", "other")],
     };
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let first = &list.metadata.task_bboxes[0];
     assert_eq!(first.task_id, "dup");
 

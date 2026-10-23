@@ -80,6 +80,21 @@ pub fn text_width_px(s: &str, font_px: f64) -> f64 {
     s.chars().map(glyph_em).sum::<f64>() * font_px
 }
 
+/// 太字の幅を、細字の見積もりの何倍に数えるか。
+/// 表は細字の値で、太字は同じ字でも幅が広いので、太字の字は広めに数える。
+pub const BOLD_WIDTH_SCALE: f64 = 1.1;
+
+/// 太字（`font_weight` が 600 以上）なら `BOLD_WIDTH_SCALE` を掛けた幅の見積もり（px）。
+/// 描いた物の右端を求めるために使う。幅を下支えする見積もりが、描く幅を下回らないようにするため。
+pub fn text_width_weighted_px(s: &str, font_px: f64, weight: Option<u16>) -> f64 {
+    let w = text_width_px(s, font_px);
+    if weight.is_some_and(|wt| wt >= 600) {
+        w * BOLD_WIDTH_SCALE
+    } else {
+        w
+    }
+}
+
 /// 幅が `max_width_px` に収まるまで切り、切った時は末尾に `…` を付ける。
 /// `…` を含めた幅が上限を越えぬ。収まるなら `s` のまま返す。
 pub fn truncate_to_width(s: &str, font_px: f64, max_width_px: f64) -> String {
@@ -116,6 +131,32 @@ mod tests {
         // 「未達」は 6 バイトだが 2 字である。
         assert_eq!("未達".len(), 6);
         assert_eq!(text_width_px("未達", 10.0), 20.0);
+    }
+
+    #[test]
+    fn bold_text_is_counted_wider_and_regular_text_is_not() {
+        assert_eq!(
+            text_width_weighted_px("100%", 11.0, None),
+            text_width_px("100%", 11.0)
+        );
+        assert_eq!(
+            text_width_weighted_px("100%", 11.0, Some(400)),
+            text_width_px("100%", 11.0)
+        );
+        assert_eq!(
+            text_width_weighted_px("100%", 11.0, Some(600)),
+            text_width_px("100%", 11.0) * BOLD_WIDTH_SCALE
+        );
+        // 旧い札の見積もり（バイト数 × 6.5）を、最も長い札で下回らない。
+        assert!(text_width_weighted_px("100%", 11.0, Some(600)) >= "100%".len() as f64 * 6.5);
+    }
+
+    #[test]
+    fn the_weighted_width_is_by_glyph_not_by_utf8_byte() {
+        assert_eq!(
+            text_width_weighted_px("未達", 10.0, Some(600)),
+            20.0 * BOLD_WIDTH_SCALE
+        );
     }
 
     #[test]

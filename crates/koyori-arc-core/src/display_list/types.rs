@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 pub type Coord = f64;
@@ -99,6 +100,35 @@ pub struct Viewport {
 pub struct ScrollViewport {
     pub scroll_y: Coord,
     pub client_height: Coord,
+}
+
+/// Whether the chart draws its legend (the tier swatches and the progress-line
+/// sample under the rows). A caller that draws its own legend asks for `Hidden`
+/// and reads the contents from `legend_spec`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LegendMode {
+    #[default]
+    Shown,
+    Hidden,
+}
+
+/// What a caller chooses about one drawing. `Default` is the chart drawn with no
+/// today marker, no row window, and the legend shown.
+///
+/// There is deliberately no `#[non_exhaustive]`: nothing promises a stable shape
+/// during 0.1.0-alpha, and a caller builds one with
+/// `ChartOptions { today, ..Default::default() }`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ChartOptions {
+    /// The calendar day to mark. `None` draws no marker and the progress line
+    /// takes its legacy shape.
+    pub today: Option<NaiveDate>,
+    /// The scroll window for row virtualization. `None` draws every row.
+    pub scroll_viewport: Option<ScrollViewport>,
+    /// `Hidden` leaves the legend out and takes its height back; see
+    /// `docs/design/legend-opt-out.md` (4) for what else moves.
+    pub legend: LegendMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

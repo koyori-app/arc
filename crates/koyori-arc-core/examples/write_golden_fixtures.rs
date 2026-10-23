@@ -1,7 +1,7 @@
 //! One-shot utility to write SVG/IR golden fixtures for display-list tests.
 
 use chrono::NaiveDate;
-use koyori_arc_core::{build_display_list, render, GanttDep, GanttGraph, GanttTask};
+use koyori_arc_core::{build_display_list, render, ChartOptions, GanttDep, GanttGraph, GanttTask};
 use std::fs;
 use std::path::PathBuf;
 
@@ -43,12 +43,19 @@ fn main() {
     let graph = two_task_graph();
     fs::write(
         base.join("svg_golden/two_tasks.svg"),
-        render(&graph.tasks, &graph.deps, None, None),
+        render(&graph.tasks, &graph.deps, &ChartOptions::default()),
     )
     .unwrap();
     fs::write(
         base.join("svg_golden/two_tasks_today.svg"),
-        render(&graph.tasks, &graph.deps, Some(date(2026, 6, 3)), None),
+        render(
+            &graph.tasks,
+            &graph.deps,
+            &ChartOptions {
+                today: Some(date(2026, 6, 3)),
+                ..Default::default()
+            },
+        ),
     )
     .unwrap();
 
@@ -64,17 +71,17 @@ fn main() {
     };
     fs::write(
         base.join("svg_golden/milestone.svg"),
-        render(&ms.tasks, &ms.deps, None, None),
+        render(&ms.tasks, &ms.deps, &ChartOptions::default()),
     )
     .unwrap();
     fs::write(
         base.join("svg_golden/empty.svg"),
-        render(&[], &[], None, None),
+        render(&[], &[], &ChartOptions::default()),
     )
     .unwrap();
 
     let epoch = graph.tasks.iter().map(|t| t.start).min().unwrap();
-    let list = build_display_list(&graph, epoch, None, None);
+    let list = build_display_list(&graph, epoch, &ChartOptions::default());
     fs::write(
         base.join("ir_golden/two_tasks.json"),
         serde_json::to_string_pretty(&list).unwrap(),

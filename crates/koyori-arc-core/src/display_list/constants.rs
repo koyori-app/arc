@@ -3,6 +3,8 @@
 //! carries it — it must not restate the number, because a restated number is a
 //! second definition that can drift while every test stays green.
 
+use super::types::LegendMode;
+
 pub const ROW_H: f64 = 40.0;
 pub const BAR_H: f64 = 20.0;
 pub const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
@@ -38,6 +40,23 @@ pub const CHART_CHROME_W: f64 = LABEL_W + CHART_RIGHT_PADDING_PX;
 /// constants above, not to a call site.
 pub const fn chart_height(rows: f64) -> f64 {
     rows * ROW_H + CHART_CHROME_H
+}
+
+/// `CHART_CHROME_H` for a chart that shows the legend, less the legend's height
+/// for one that hides it. The bottom padding stays: it is the margin under the
+/// last row, not the legend's.
+pub const fn chart_chrome_h(legend: LegendMode) -> f64 {
+    match legend {
+        LegendMode::Shown => CHART_CHROME_H,
+        LegendMode::Hidden => CHART_CHROME_H - LEGEND_H,
+    }
+}
+
+/// `chart_height` for a given legend mode. The Canvas capacity guard keeps
+/// asking `chart_height`, which is the `Shown` answer, so a hidden legend never
+/// loosens it.
+pub const fn chart_height_with(rows: f64, legend: LegendMode) -> f64 {
+    rows * ROW_H + chart_chrome_h(legend)
 }
 
 pub const fn chart_width(days: f64) -> f64 {

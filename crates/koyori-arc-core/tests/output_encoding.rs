@@ -17,8 +17,12 @@
 //! `.replace('\'', "&#39;")` from `escape_xml` leaves the whole existing suite
 //! green (106 passed), and fails `single_quote_in_task_id_is_encoded` here.
 
+mod common;
+
 use koyori_arc_core::GanttTask;
-use koyori_arc_core::{empty_svg, render, render_canvas_commands, render_svg, render_svg_error};
+use koyori_arc_core::{
+    empty_svg, render, render_canvas_commands, render_svg, render_svg_error, ChartOptions,
+};
 
 /// `task.id` is a plain `String` with no validation at either entry point.
 /// Closing the attribute and appending an event handler is all an XSS needs.
@@ -160,7 +164,7 @@ fn positive_control_text_nodes_still_escape() {
     // still in force for text nodes.
     let mut task = hostile_task();
     task.title = "A & B < C > D".to_string();
-    let svg = render(&[task], &[], None, None);
+    let svg = render(&[task], &[], &ChartOptions::default());
     assert!(svg.contains("A &amp; B &lt; C &gt; D"), "got: {svg}");
 }
 
@@ -170,7 +174,7 @@ fn positive_control_text_nodes_still_escape() {
 /// the renderer never writes is present".
 #[test]
 fn native_entry_emits_no_attribute_the_renderer_never_writes() {
-    let svg = render(&[hostile_task()], &[], None, None);
+    let svg = render(&[hostile_task()], &[], &ChartOptions::default());
     assert_no_foreign_attributes(&svg, "native render()");
 }
 
@@ -178,7 +182,11 @@ fn native_entry_emits_no_attribute_the_renderer_never_writes() {
 fn wasm_entry_task_id_cannot_close_the_attribute() {
     // `render_svg` is the entry `arc-vue` uses; the native path does not cover
     // it, and the JSON hop is where an external id realistically arrives.
-    let svg = render_svg(&hostile_task_json(), "[]", None, None, None);
+    let svg = render_svg(
+        &hostile_task_json(),
+        "[]",
+        common::options_json(None, None, None),
+    );
     // Without this, a refusal (which returns the fixed empty chart) would sail
     // through every assertion below and report the entry point as safe.
     assert_ne!(
@@ -197,7 +205,7 @@ fn wasm_entry_task_id_cannot_close_the_attribute() {
 fn single_quote_in_task_id_is_encoded() {
     let mut task = hostile_task();
     task.id = "o'brien".to_string();
-    let svg = render(&[task], &[], None, None);
+    let svg = render(&[task], &[], &ChartOptions::default());
     assert!(
         svg.contains("data-task-id=\"o&#39;brien\""),
         "single quotes must be encoded so single-quoted hosts stay safe: {svg}"
@@ -213,7 +221,7 @@ fn rejected_input_never_reaches_the_markup() {
     // test states that contract in terms of the input, not of one payload
     // shape, so it also covers a future rejection that tries to explain itself.
     let hostile = r#"[{"id":"a","title":"t","progress_pct":"--><img src=x onerror=alert(1)>","start":"2026-06-01","end":"2026-06-02"}]"#;
-    let out = render_svg(hostile, "[]", None, None, None);
+    let out = render_svg(hostile, "[]", common::options_json(None, None, None));
     assert_eq!(
         out,
         empty_svg(),
@@ -234,7 +242,8 @@ fn rejection_reason_stays_json_data_even_when_it_quotes_the_input() {
     // message stays a JSON string the JS side can render as text — if the quote
     // handling ever breaks, the payload arrives as structure, not as data.
     let hostile = r#"[{"id":"a","title":"t","progress_pct":"\"}]<img src=x onerror=alert(1)>","start":"2026-06-01","end":"2026-06-02"}]"#;
-    let err = render_svg_error(hostile, "[]", None, None).expect("this input must be refused");
+    let err = render_svg_error(hostile, "[]", common::options_json(None, None, None))
+        .expect("this input must be refused");
     let parsed: serde_json::Value = serde_json::from_str(&err)
         .unwrap_or_else(|e| panic!("rejection reason is not valid JSON ({e}): {err}"));
     assert!(
@@ -256,7 +265,11 @@ fn canvas_command_parse_error_on_deps_is_valid_json() {
     let ok_tasks =
         r#"[{"id":"a","title":"t","progress_pct":10,"start":"2026-06-01","end":"2026-06-02"}]"#;
     let hostile_deps = r#"[{"blocker_task_id":{"x":"\"}]"},"blocked_task_id":"b"}]"#;
-    let out = render_canvas_commands(ok_tasks, hostile_deps, None, None, None);
+    let out = render_canvas_commands(
+        ok_tasks,
+        hostile_deps,
+        common::options_json(None, None, None),
+    );
     let parsed: serde_json::Value = serde_json::from_str(&out)
         .unwrap_or_else(|e| panic!("error payload is not valid JSON ({e}): {out}"));
     assert!(parsed.get("error").is_some(), "got: {out}");

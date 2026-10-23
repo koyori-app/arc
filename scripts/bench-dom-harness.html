@@ -24,8 +24,8 @@
 
     await init();
 
-    const viewportJson = virtualize
-      ? JSON.stringify({ scroll_y: scrollY, client_height: clientHeight })
+    const scrollViewport = virtualize
+      ? { scroll_y: scrollY, client_height: clientHeight }
       : undefined;
 
     window.__benchReady = true;
@@ -34,11 +34,12 @@
       const fx = await res.json();
       const tasksJson = JSON.stringify(fx.tasks);
       const depsJson = JSON.stringify(fx.deps);
+      const optionsJson = JSON.stringify({ today: fx.today, scroll_viewport: scrollViewport });
       const host = document.getElementById('host');
 
       if (backend === 'canvas') {
         const t0 = performance.now();
-        const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today, viewportJson);
+        const bufJson = render_canvas_commands(tasksJson, depsJson, optionsJson);
         const wasmMs = performance.now() - t0;
         let buffer;
         try {
@@ -79,7 +80,7 @@
       }
 
       const t0 = performance.now();
-      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
+      const svg = render_svg(tasksJson, depsJson, optionsJson);
       const wasmMs = performance.now() - t0;
 
       const byteLength = new TextEncoder().encode(svg).length;

@@ -23,10 +23,14 @@ const tasks: GanttTask[] = [
   { id: 'a', title: 'A', progress_pct: 50, start: '2026-06-01', end: '2026-06-08T15:30:00Z' },
 ];
 
-// render_svg(tasks, deps, today, viewport, tzOffsetMinutes)
-const TZ_ARG_OF_RENDER = 4;
-// render_svg_error(tasks, deps, today, tzOffsetMinutes)
-const TZ_ARG_OF_ERROR = 3;
+// render_svg(tasks, deps, options_json), render_svg_error(tasks, deps, options_json)
+const OPTIONS_ARG = 2;
+
+/** The `tz_offset_minutes` a call carried in its `options_json`. */
+function tzOf(call: unknown[]): unknown {
+  const optionsJson = call[OPTIONS_ARG] as string | undefined;
+  return optionsJson === undefined ? undefined : JSON.parse(optionsJson).tz_offset_minutes;
+}
 
 describe('tzOffsetMinutes', () => {
   beforeEach(() => {
@@ -43,7 +47,7 @@ describe('tzOffsetMinutes', () => {
 
     expect(renderSvgMock).toHaveBeenCalled();
     for (const call of renderSvgMock.mock.calls) {
-      expect(call[TZ_ARG_OF_RENDER]).toBe(540);
+      expect(tzOf(call)).toBe(540);
     }
   });
 
@@ -55,7 +59,7 @@ describe('tzOffsetMinutes', () => {
 
     expect(renderCanvasMock).toHaveBeenCalled();
     for (const call of renderCanvasMock.mock.calls) {
-      expect(call[TZ_ARG_OF_RENDER]).toBe(-300);
+      expect(tzOf(call)).toBe(-300);
     }
   });
 
@@ -66,7 +70,7 @@ describe('tzOffsetMinutes', () => {
 
     expect(renderSvgErrorMock).toHaveBeenCalled();
     for (const call of renderSvgErrorMock.mock.calls) {
-      expect(call[TZ_ARG_OF_ERROR]).toBe(540);
+      expect(tzOf(call)).toBe(540);
     }
   });
 
@@ -77,7 +81,7 @@ describe('tzOffsetMinutes', () => {
 
     expect(renderSvgMock).toHaveBeenCalled();
     for (const call of renderSvgMock.mock.calls) {
-      expect(call[TZ_ARG_OF_RENDER]).toBeUndefined();
+      expect(call[OPTIONS_ARG]).toBeUndefined();
     }
     expect(intl).not.toHaveBeenCalled();
     intl.mockRestore();
