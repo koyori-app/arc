@@ -12,16 +12,17 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import init, {
+  empty_svg_markup,
   legend_spec_json,
   render_canvas_commands,
   render_svg,
 } from '@koyori-app/arc';
-import { chartHeightForTaskCount } from './canvasFallback';
+import { chartHeightForTaskCount, resolveCanvasFailure } from './canvasFallback';
 import { loadLegendSpec } from './legend';
 import { buildOptionsJson } from './options';
 import { parseCommandBuffer } from './replayCommands';
 import type { GanttTask } from './types.ts';
-import { RUST_LAYOUT } from './wasmContract';
+import { RUST_ERROR_CODES, RUST_LAYOUT } from './wasmContract';
 
 const tasks: GanttTask[] = [
   { id: 'a', title: 'A', progress_pct: 100, start: '2026-06-01', end: '2026-06-20' },
@@ -111,5 +112,57 @@ describe('loadLegendSpec, against the real Wasm', () => {
     expect(line).toContain(`stroke="${spec.progress_line.color}"`);
     expect(line).toContain(`stroke-dasharray="${spec.progress_line.dash}"`);
     expect(line).toContain(`>${spec.progress_line.label}</text>`);
+  });
+});
+
+describe('a canvas the limit refuses, drawn as the SVG it falls back to', () => {
+  // A chart whose last day holds a milestone. Without a legend the milestone's
+  // label runs past the days, so the canvas limit refuses such a chart one day
+  // sooner than it refuses the same chart with a legend.
+  const dayMs = 24 * 60 * 60 * 1000;
+  const iso = (offsetDays: number) =>
+    new Date(Date.UTC(2026, 0, 1) + offsetDays * dayMs).toISOString().slice(0, 10);
+  const chartOf = (span: number): GanttTask[] => [
+    { id: 'long', title: 'Long', progress_pct: 10, start: iso(0), end: iso(span) },
+    { id: 'ms', title: 'Milestone', progress_pct: 100, start: iso(span), end: iso(span) },
+  ];
+  const canvasError = (span: number, options: string | undefined) =>
+    parseCommandBuffer(render_canvas_commands(JSON.stringify(chartOf(span)), '[]', options));
+  // The longest span the canvas accepts, found by asking, so no limit is copied here.
+  const longestAccepted = (options: string | undefined) => {
+    let span = 1;
+    while (!canvasError(span + 1, options).error) span += 1;
+    return span;
+  };
+
+  it('is refused sooner without a legend, and by the capacity code that has a fallback', () => {
+    const shown = longestAccepted(undefined);
+    const gone = longestAccepted(hidden);
+    expect(gone).toBeLessThan(shown);
+    const refused = canvasError(shown, hidden);
+    expect(refused.code).toBe(RUST_ERROR_CODES.CODE_CANVAS_CAPACITY);
+    expect(canvasError(shown, undefined).error).toBeUndefined();
+  });
+
+  it('falls back to an SVG without the legend, as tall as the room reserved for it', () => {
+    const span = longestAccepted(undefined);
+    const tasksOfChart = chartOf(span);
+    const failure = canvasError(span, hidden);
+    // What GanttChart.vue asks for when it falls back: the same legend, and a
+    // window of at most 600px.
+    const options = buildOptionsJson({
+      legend: 'hidden',
+      scrollViewport: { scroll_y: 0, client_height: 600 },
+    });
+    const svg = render_svg(JSON.stringify(tasksOfChart), '[]', options);
+    const resolution = resolveCanvasFailure(
+      { message: failure.error ?? '', code: failure.code },
+      svg,
+      empty_svg_markup(),
+    );
+    expect(resolution.mode).toBe('svg');
+    expect(svg).not.toContain('bar-tier-legend');
+    expect(svg).not.toContain('progress-line-legend');
+    expect(svgHeight(svg)).toBe(chartHeightForTaskCount(tasksOfChart.length, 'hidden'));
   });
 });
