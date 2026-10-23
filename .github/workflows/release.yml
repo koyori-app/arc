@@ -2,9 +2,20 @@ name: Release
 
 # 初版は手動 publish 後、npmjs.com でこのリポジトリ + workflow を
 # Trusted Publisher として登録すること。以降は GitHub Release 公開で自動 publish。
+#
+# tag-release.yml が作る Release は GITHUB_TOKEN 由来なので、release イベントで
+# この workflow は起きない。そのため tag-release.yml は Release を作った後に
+# workflow_dispatch でこの workflow をタグの ref で起こす。人が画面から
+# Release を公開した時は、release イベントで起きる。
 on:
   release:
     types: [published]
+  workflow_dispatch:
+
+# 同じタグで二度走っても、片方が終わるまでもう片方を待たせる。
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -42,26 +53,19 @@ jobs:
       # master の祖先であること、(3) trusted publishing (OIDC) が要求する
       # npm >= 11.5.1 を満たすこと——を検めてから publish に進む。
       # 速く落ちる順に並べる: 版の照合（網も履歴も要らぬ）→ 系譜 → npm。
+      # タグと版と系譜の照合は scripts/verify-release.sh にある。手元でも同じ
+      # script を撃って確かめられる。workflow_dispatch は枝の ref でも起こせる
+      # ため、ref がタグであることはここで確かめる。
       - name: Verify tag, lineage and npm before publishing
+        id: verify
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          ver="${tag#v}"
-          if [ "$tag" = "$ver" ]; then
-            echo "::error::タグ ${tag} が v で始まらない（vX.Y.Z の形が要る）"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::${GITHUB_REF} はタグではない。タグの ref で起こすこと"
             exit 1
           fi
-          crate_ver=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r '.packages[] | select(.name=="koyori-arc-core") | .version')
-          if [ "$ver" != "$crate_ver" ]; then
-            echo "::error::タグ ${tag} と koyori-arc-core の版 ${crate_ver} が食い違う。タグか Cargo.toml を直してから release を作り直すこと"
-            exit 1
-          fi
-          git fetch --no-tags origin master
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/master; then
-            echo "::error::${GITHUB_SHA} は master の祖先ではない。master に merge されていない ref からの release は publish しない"
-            exit 1
-          fi
+          dist_tag=$(bash scripts/verify-release.sh "${GITHUB_REF_NAME}" "${GITHUB_SHA}")
+          echo "dist_tag=${dist_tag}" >> "$GITHUB_OUTPUT"
           npm_ver=$(npm --version)
           if ! printf '11.5.1\n%s\n' "$npm_ver" | sort -V -C; then
             echo "::error::npm ${npm_ver} は trusted publishing の要件 (>= 11.5.1) を満たさない"
@@ -81,7 +85,8 @@ jobs:
       # No NODE_AUTH_TOKEN needed — OIDC id-token is exchanged automatically.
       - name: Publish to npm
         working-directory: crates/koyori-arc-core/pkg
-        run: npm publish --provenance --access public
+        # 前置き付きの版は latest を動かさず、前置きの dist-tag（alpha など）で出す。
+        run: npm publish --provenance --access public --tag "${{ steps.verify.outputs.dist_tag }}"
 
       # crates.io Trusted Publisher (OIDC) — no stored token needed.
       # Register this repo + workflow on crates.io before the first publish.

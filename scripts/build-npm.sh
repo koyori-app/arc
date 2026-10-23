@@ -18,6 +18,14 @@ node -e "
   const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
   pkg.name = '$NPM_NAME';
   pkg.publishConfig = { access: 'public' };
+  // wasm-pack は二つの免許本文を pkg へ写すが、files には載せない。
+  // npm が files に無くても入れるのは LICENSE だけなので、GPL を選んだ
+  // 受け取り手にも全文が届くよう、二本を files に足す。files が無ければ
+  // pkg の全てが入るので、足さずにおく（足すと逆に中身が絞られる）。
+  for (const f of ['LICENSE-MPL-2.0', 'LICENSE-GPL-2.0-or-later']) {
+    if (!fs.existsSync('$PKG_DIR/' + f)) throw new Error(f + ' が pkg に無い');
+    if (Array.isArray(pkg.files) && !pkg.files.includes(f)) pkg.files.push(f);
+  }
   fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
   console.log('  name:', pkg.name, '  version:', pkg.version);
 "
