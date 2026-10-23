@@ -47,9 +47,12 @@ fn dep_incident_to_window(from_row: usize, to_row: usize, window: Option<(usize,
 pub fn build_display_list(
     graph: &GanttGraph,
     epoch: NaiveDate,
-    today: Option<NaiveDate>,
-    scroll_viewport: Option<ScrollViewport>,
+    options: &ChartOptions,
 ) -> DisplayList {
+    let ChartOptions {
+        today,
+        scroll_viewport,
+    } = *options;
     let rows = assign_rows(&graph.tasks, &graph.deps);
 
     let total_days = graph
@@ -693,7 +696,7 @@ mod tests {
     fn legend_stays_inside_the_viewbox_for_short_spans() {
         for days in [0, 1, 2, 4, 7, 14, 60] {
             let g = graph_of(&["a"], days);
-            let list = build_display_list(&g, date(2026, 6, 1), None, None);
+            let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
             assert_legend_inside(&list);
         }
     }
@@ -701,14 +704,14 @@ mod tests {
     #[test]
     fn a_wide_chart_is_not_widened_by_the_legend() {
         let g = graph_of(&["a"], 60);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         assert_eq!(list.viewport.width, chart_width(60.0));
     }
 
     #[test]
     fn a_short_chart_is_widened_to_hold_the_legend() {
         let g = graph_of(&["a"], 2);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         assert!(list.viewport.width > chart_width(2.0));
         // 背景の見出し帯も同じ幅まで伸びる。
         let header_right = list
@@ -760,7 +763,7 @@ mod tests {
             "短い",
         ];
         let g = graph_of(&titles, 8);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         for t in row_label_texts(&list) {
             let w = text_width_px(&t.content, DEFAULT_FONT_SIZE_PX);
             // anchor は End。左端は x - w。0 を割ると頭の字が消える。
@@ -791,7 +794,7 @@ mod tests {
             "± × ÷ ° § ± × ÷ ° § ± × ÷ ° §",
         ];
         let g = graph_of(&titles, 8);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         let labels = row_label_texts(&list);
         assert_eq!(labels.len(), titles.len());
         for t in labels {
@@ -822,7 +825,7 @@ mod tests {
             "①②③④⑤⑥⑦⑧⑨⑩⑪⑫",
         ];
         let g = graph_of(&titles, 8);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         let labels: Vec<String> = row_label_texts(&list)
             .iter()
             .map(|t| t.content.clone())
@@ -851,7 +854,7 @@ mod tests {
     #[test]
     fn a_title_that_fits_is_not_touched() {
         let g = graph_of(&["短い", "Design"], 8);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         let labels: Vec<&str> = row_label_texts(&list)
             .iter()
             .map(|t| t.content.as_str())
@@ -862,7 +865,7 @@ mod tests {
     #[test]
     fn a_cut_title_ends_with_an_ellipsis_and_keeps_its_head() {
         let g = graph_of(&["とても長い題名のタスクでどこまで表示されるか"], 8);
-        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let list = build_display_list(&g, date(2026, 6, 1), &ChartOptions::default());
         let label = &row_label_texts(&list)[0].content;
         assert!(label.starts_with("とても長い"), "{label}");
         assert!(label.ends_with('…'));

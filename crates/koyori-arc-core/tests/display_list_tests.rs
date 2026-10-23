@@ -4,9 +4,9 @@ use bincode::config;
 use chrono::NaiveDate;
 use koyori_arc_core::bench_fixtures::{generate_fixture, DepDensity, TaskCount};
 use koyori_arc_core::{
-    build_display_list, compute_row_window, BackendOutput, CanvasBackend, CommandBuffer, DrawOp,
-    GanttDep, GanttGraph, GanttTask, NativeBackend, NativeDrawOp, RenderBackend, ScrollViewport,
-    SvgBackend, DOM_CAP, HEADER_H, ROW_H,
+    build_display_list, compute_row_window, BackendOutput, CanvasBackend, ChartOptions,
+    CommandBuffer, DrawOp, GanttDep, GanttGraph, GanttTask, NativeBackend, NativeDrawOp,
+    RenderBackend, ScrollViewport, SvgBackend, DOM_CAP, HEADER_H, ROW_H,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -43,7 +43,14 @@ fn epoch(graph: &GanttGraph) -> NaiveDate {
 }
 
 fn render_via_ir(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
-    let list = build_display_list(graph, epoch(graph), today, None);
+    let list = build_display_list(
+        graph,
+        epoch(graph),
+        &ChartOptions {
+            today,
+            ..Default::default()
+        },
+    );
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => panic!("expected svg"),
@@ -51,7 +58,14 @@ fn render_via_ir(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
 }
 
 fn render_direct(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
-    koyori_arc_core::render(&graph.tasks, &graph.deps, today, None)
+    koyori_arc_core::render(
+        &graph.tasks,
+        &graph.deps,
+        &ChartOptions {
+            today,
+            ..Default::default()
+        },
+    )
 }
 
 // --- P0: IR golden (deterministic snapshot) ---
@@ -59,7 +73,7 @@ fn render_direct(graph: &GanttGraph, today: Option<NaiveDate>) -> String {
 #[test]
 fn p0_ir_golden_two_tasks() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let json = serde_json::to_string_pretty(&list).expect("serialize");
     let golden = include_str!("fixtures/ir_golden/two_tasks.json");
     assert_eq!(
@@ -76,8 +90,8 @@ fn p0_ir_golden_100_sparse() {
         deps: fixture.deps,
     };
     let ep = epoch(&graph);
-    let list_a = build_display_list(&graph, ep, None, None);
-    let list_b = build_display_list(&graph, ep, None, None);
+    let list_a = build_display_list(&graph, ep, &ChartOptions::default());
+    let list_b = build_display_list(&graph, ep, &ChartOptions::default());
     let json_a = serde_json::to_string(&list_a).expect("serialize");
     let json_b = serde_json::to_string(&list_b).expect("serialize");
     assert_eq!(json_a, json_b, "100_sparse IR must be deterministic");
@@ -93,8 +107,8 @@ fn p0_ir_golden_2000_dense() {
         deps: fixture.deps,
     };
     let ep = epoch(&graph);
-    let list_a = build_display_list(&graph, ep, None, None);
-    let list_b = build_display_list(&graph, ep, None, None);
+    let list_a = build_display_list(&graph, ep, &ChartOptions::default());
+    let list_b = build_display_list(&graph, ep, &ChartOptions::default());
     let json_a = serde_json::to_string(&list_a).expect("serialize");
     let json_b = serde_json::to_string(&list_b).expect("serialize");
     assert_eq!(json_a, json_b, "2000_dense IR must be deterministic");
@@ -132,7 +146,7 @@ fn p1_svg_byte_compat_milestone() {
 #[test]
 fn p1_svg_byte_compat_empty() {
     let golden = include_str!("fixtures/svg_golden/empty.svg");
-    let svg = koyori_arc_core::render(&[], &[], None, None);
+    let svg = koyori_arc_core::render(&[], &[], &ChartOptions::default());
     assert_eq!(svg, golden);
 }
 
@@ -239,7 +253,7 @@ fn p1_svg_backend_restates_no_dimension() {
 #[test]
 fn p2_native_stub_primitive_counts_match() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let native = match NativeBackend.render(&list) {
         BackendOutput::NativeDrawList(n) => n,
         _ => panic!("expected native"),
@@ -253,7 +267,7 @@ fn p2_native_stub_primitive_counts_match() {
 #[test]
 fn p2_native_and_svg_same_task_bbox_count() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     assert_eq!(list.metadata.task_bboxes.len(), 2);
     let native = match NativeBackend.render(&list) {
         BackendOutput::NativeDrawList(n) => n,
@@ -272,7 +286,7 @@ fn p2_native_and_svg_same_task_bbox_count() {
 #[test]
 fn p3_bincode_roundtrip_preserves_svg() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let cfg = config::standard();
     let bytes = bincode::serde::encode_to_vec(&list, cfg).expect("encode");
     let (decoded, _): (koyori_arc_core::DisplayList, usize) =
@@ -304,7 +318,7 @@ fn p3_bincode_roundtrip_preserves_svg() {
 #[test]
 fn p4_ir_contains_no_dom_concepts() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let json = serde_json::to_string(&list).expect("serialize");
     let forbidden = [
         "innerHTML",
@@ -408,7 +422,7 @@ fn bar_row_from_bbox(bbox_y: f64) -> u32 {
 fn topological_rows_bar_matches_dependency_endpoints_when_input_reversed() {
     let graph = reversed_two_task_graph();
     let ep = epoch(&graph);
-    let list = build_display_list(&graph, ep, None, None);
+    let list = build_display_list(&graph, ep, &ChartOptions::default());
 
     let row_by_task: std::collections::HashMap<&str, u32> = list
         .metadata
@@ -440,7 +454,7 @@ fn topological_rows_bar_matches_dependency_endpoints_when_input_reversed() {
 fn topological_rows_cycle_downstream_blocker_above_blocked() {
     let graph = cycle_downstream_graph();
     let ep = epoch(&graph);
-    let list = build_display_list(&graph, ep, None, None);
+    let list = build_display_list(&graph, ep, &ChartOptions::default());
 
     let row_by_task: std::collections::HashMap<&str, u32> = list
         .metadata
@@ -466,7 +480,7 @@ fn topological_rows_cycle_downstream_blocker_above_blocked() {
 #[test]
 fn p2_canvas_command_buffer_golden_two_tasks() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let buffer = match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => panic!("expected canvas commands"),
@@ -482,7 +496,7 @@ fn p2_canvas_command_buffer_golden_two_tasks() {
 #[test]
 fn p2_canvas_matches_native_op_count_and_viewport() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let canvas = match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => panic!("expected canvas"),
@@ -499,7 +513,7 @@ fn p2_canvas_matches_native_op_count_and_viewport() {
 #[test]
 fn p2_canvas_bincode_roundtrip_preserves_ops() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let before = match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => panic!("expected canvas"),
@@ -519,7 +533,7 @@ fn p2_canvas_bincode_roundtrip_preserves_ops() {
 #[test]
 fn p2_canvas_serde_json_roundtrip_preserves_ops() {
     let graph = two_task_graph();
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     let before = match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => panic!("expected canvas"),
@@ -571,11 +585,11 @@ fn write_golden_fixtures() {
     .unwrap();
     fs::write(
         base.join("svg_golden/empty.svg"),
-        koyori_arc_core::render(&[], &[], None, None),
+        koyori_arc_core::render(&[], &[], &ChartOptions::default()),
     )
     .unwrap();
 
-    let list = build_display_list(&graph, epoch(&graph), None, None);
+    let list = build_display_list(&graph, epoch(&graph), &ChartOptions::default());
     fs::write(
         base.join("ir_golden/two_tasks.json"),
         serde_json::to_string_pretty(&list).unwrap(),
@@ -639,17 +653,19 @@ fn extract_task_groups(svg: &str) -> Vec<String> {
 fn p1_viewport_full_coverage_matches_full_render() {
     let graph = two_task_graph();
     let ep = epoch(&graph);
-    let full = build_display_list(&graph, ep, None, None);
+    let full = build_display_list(&graph, ep, &ChartOptions::default());
     // A viewport tall enough to cover every row: the virtualization
     // branch must degrade to exactly the non-virtualized output.
     let via_full_viewport = build_display_list(
         &graph,
         ep,
-        None,
-        Some(ScrollViewport {
-            scroll_y: 0.0,
-            client_height: 1_000_000.0,
-        }),
+        &ChartOptions {
+            scroll_viewport: Some(ScrollViewport {
+                scroll_y: 0.0,
+                client_height: 1_000_000.0,
+            }),
+            ..Default::default()
+        },
     );
     assert_eq!(
         serde_json::to_string(&full).unwrap(),
@@ -666,7 +682,14 @@ fn p1_viewport_row_fragments_match_full_svg() {
         scroll_y: 0.0,
         client_height: 200.0,
     };
-    let list = build_display_list(&graph, ep, None, Some(vp));
+    let list = build_display_list(
+        &graph,
+        ep,
+        &ChartOptions {
+            scroll_viewport: Some(vp),
+            ..Default::default()
+        },
+    );
     let vp_svg = match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => panic!(),
@@ -683,8 +706,15 @@ fn p1_dom_cap_invariant_independent_of_n() {
     for count in [TaskCount::N100, TaskCount::N2000, TaskCount::N5000] {
         let graph = graph_from_fixture(count, DepDensity::Dense);
         let ep = epoch(&graph);
-        let list = build_display_list(&graph, ep, None, Some(vp));
-        let full = build_display_list(&graph, ep, None, None);
+        let list = build_display_list(
+            &graph,
+            ep,
+            &ChartOptions {
+                scroll_viewport: Some(vp),
+                ..Default::default()
+            },
+        );
+        let full = build_display_list(&graph, ep, &ChartOptions::default());
         let svg = match SvgBackend.render(&list) {
             BackendOutput::Svg(s) => s,
             _ => panic!(),
@@ -724,8 +754,15 @@ fn p1_dom_cap_invariant_independent_of_n() {
 fn p1_virtualized_primitive_count_much_smaller_than_full() {
     let graph = graph_from_fixture(TaskCount::N5000, DepDensity::Dense);
     let ep = epoch(&graph);
-    let full = build_display_list(&graph, ep, None, None);
-    let virt = build_display_list(&graph, ep, None, Some(test_viewport()));
+    let full = build_display_list(&graph, ep, &ChartOptions::default());
+    let virt = build_display_list(
+        &graph,
+        ep,
+        &ChartOptions {
+            scroll_viewport: Some(test_viewport()),
+            ..Default::default()
+        },
+    );
     assert!(virt.metadata.primitive_count < full.metadata.primitive_count / 10);
 }
 

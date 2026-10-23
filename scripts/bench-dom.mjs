@@ -171,8 +171,8 @@ async function benchWithLinkedom(opts) {
   );
   initSync(wasmBytes);
 
-  const viewportJson = opts.virtualize
-    ? JSON.stringify({ scroll_y: 0, client_height: 600 })
+  const scrollViewport = opts.virtualize
+    ? { scroll_y: 0, client_height: 600 }
     : undefined;
 
   const results = [];
@@ -181,12 +181,13 @@ async function benchWithLinkedom(opts) {
     const fx = JSON.parse(readFileSync(path, 'utf8'));
     const tasksJson = JSON.stringify(fx.tasks);
     const depsJson = JSON.stringify(fx.deps);
+    const optionsJson = JSON.stringify({ today: fx.today, scroll_viewport: scrollViewport });
 
     const { document } = parseHTML('<!doctype html><html><body><div id="host"></div></body></html>');
     const host = document.getElementById('host');
 
     for (let i = 0; i < WARMUP; i++) {
-      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
+      const svg = render_svg(tasksJson, depsJson, optionsJson);
       host.innerHTML = svg;
     }
 
@@ -194,7 +195,7 @@ async function benchWithLinkedom(opts) {
     let meta = null;
     for (let i = 0; i < ITERS; i++) {
       const tWasm = performance.now();
-      const svg = render_svg(tasksJson, depsJson, fx.today, viewportJson);
+      const svg = render_svg(tasksJson, depsJson, optionsJson);
       const wasmMs = performance.now() - tWasm;
       const byteLength = Buffer.byteLength(svg, 'utf8');
       const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;

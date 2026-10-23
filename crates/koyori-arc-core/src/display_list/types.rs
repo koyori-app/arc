@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 pub type Coord = f64;
@@ -99,6 +100,21 @@ pub struct Viewport {
 pub struct ScrollViewport {
     pub scroll_y: Coord,
     pub client_height: Coord,
+}
+
+/// What a caller chooses about one drawing. `Default` is the chart drawn with no
+/// today marker, no row window, and nothing else changed.
+///
+/// There is deliberately no `#[non_exhaustive]`: nothing promises a stable shape
+/// during 0.1.0-alpha, and a caller builds one with
+/// `ChartOptions { today, ..Default::default() }`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ChartOptions {
+    /// The calendar day to mark. `None` draws no marker and the progress line
+    /// takes its legacy shape.
+    pub today: Option<NaiveDate>,
+    /// The scroll window for row virtualization. `None` draws every row.
+    pub scroll_viewport: Option<ScrollViewport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

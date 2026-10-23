@@ -37,16 +37,17 @@ async function main() {
     const fx = JSON.parse(readFileSync(path, 'utf8'));
     const tasksJson = JSON.stringify(fx.tasks);
     const depsJson = JSON.stringify(fx.deps);
+    const optionsJson = JSON.stringify({ today: fx.today });
 
     for (let i = 0; i < WARMUP; i++) {
-      render_svg(tasksJson, depsJson, fx.today);
+      render_svg(tasksJson, depsJson, optionsJson);
     }
 
     const samples = [];
     let lastSvg = '';
     for (let i = 0; i < ITERS; i++) {
       const t0 = performance.now();
-      lastSvg = render_svg(tasksJson, depsJson, fx.today);
+      lastSvg = render_svg(tasksJson, depsJson, optionsJson);
       samples.push(performance.now() - t0);
     }
 

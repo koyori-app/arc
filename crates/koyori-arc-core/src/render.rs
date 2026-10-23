@@ -7,7 +7,11 @@ use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::constants::{
     chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
-use crate::display_list::{build_display_list, types::Palette, ScrollViewport};
+use crate::display_list::{
+    build_display_list,
+    types::{ChartOptions, Palette},
+    ScrollViewport,
+};
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
@@ -23,6 +27,9 @@ pub const MAX_TASKS_JSON_BYTES: usize = 8 * 1024 * 1024;
 /// two realistic task IDs and JSON overhead without accepting unbounded input.
 pub const MAX_DEPS_JSON_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
+/// Upper bound on `options_json`. It holds a handful of scalar keys, so this is
+/// far more than a real value needs; a larger string is refused before it is parsed.
+pub const MAX_OPTIONS_JSON_BYTES: usize = 4 * 1024;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
@@ -177,9 +184,9 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Re
     None
 }
 
-/// `today_iso` as the Wasm entry points receive it. Absent or blank means "no
-/// today marker". A value that is present but unreadable is a refusal, not a
-/// silent `None`: dropping it would also switch the progress line from the
+/// `today` as `options_json` carries it. Absent or blank means "no today
+/// marker". A value that is present but unreadable is a refusal, not a silent
+/// `None`: dropping it would also switch the progress line from the
 /// today-anchored shape to the legacy one without telling anyone.
 fn parse_today(
     today_iso: Option<&str>,
@@ -193,18 +200,116 @@ fn parse_today(
     }
 }
 
-/// `tz_offset_minutes` as the Wasm entry points receive it. Absent means "use
-/// the day a string is written in"; an unusable number is a refusal.
+/// `tz_offset_minutes` as `options_json` carries it. Absent means "use the day a
+/// string is written in"; an unusable number is a refusal.
 fn read_tz_offset(tz_offset_minutes: Option<f64>) -> Result<Option<FixedOffset>, RenderError> {
     parse_tz_offset(tz_offset_minutes)
         .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))
+}
+
+/// `options_json` as it arrives, before the strings it holds are resolved.
+struct WireOptions {
+    today: Option<String>,
+    scroll_viewport: Option<ScrollViewport>,
+    tz_offset_minutes: Option<f64>,
+}
+
+/// Every key `options_json` may carry. A key outside this list is refused so
+/// that a misspelt one cannot silently do nothing.
+const OPTION_KEYS: &[&str] = &["today", "scroll_viewport", "tz_offset_minutes"];
+
+fn options_error(message: impl std::fmt::Display) -> RenderError {
+    RenderError::new(CODE_PARSE_ERROR, format!("parse error: options: {message}"))
+}
+
+/// Reads `options_json`. Absent, `undefined` and `null` on the JS side reach
+/// here as `None` and mean the defaults; so does `{}`. Anything that is not a
+/// JSON object is a refusal, and so is a key this build does not know or a
+/// value of the wrong shape. A key set to `null` is the same as absent.
+fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderError> {
+    let mut wire = WireOptions {
+        today: None,
+        scroll_viewport: None,
+        tz_offset_minutes: None,
+    };
+    let Some(json) = options_json else {
+        return Ok(wire);
+    };
+    if json.len() > MAX_OPTIONS_JSON_BYTES {
+        return Err(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("options JSON byte size exceeds limit ({MAX_OPTIONS_JSON_BYTES})"),
+        ));
+    }
+    let value: serde_json::Value = serde_json::from_str(json).map_err(options_error)?;
+    let serde_json::Value::Object(map) = value else {
+        return Err(options_error("expected a JSON object"));
+    };
+    for (key, value) in map {
+        if !OPTION_KEYS.contains(&key.as_str()) {
+            return Err(options_error(format!(
+                "unknown key `{key}` (expected one of {})",
+                OPTION_KEYS.join(", ")
+            )));
+        }
+        if value.is_null() {
+            continue;
+        }
+        match key.as_str() {
+            "today" => match value {
+                serde_json::Value::String(s) => wire.today = Some(s),
+                _ => return Err(options_error("today: expected a string")),
+            },
+            "scroll_viewport" => {
+                // `ScrollViewport` derives its reader, which also takes a bare
+                // array; the shape on offer is the object.
+                if !value.is_object() {
+                    return Err(options_error(
+                        "scroll_viewport: expected an object with scroll_y and client_height",
+                    ));
+                }
+                wire.scroll_viewport = Some(
+                    serde_json::from_value(value)
+                        .map_err(|e| options_error(format!("scroll_viewport: {e}")))?,
+                );
+            }
+            "tz_offset_minutes" => match value.as_f64() {
+                Some(minutes) => wire.tz_offset_minutes = Some(minutes),
+                None => return Err(options_error("tz_offset_minutes: expected a number")),
+            },
+            _ => unreachable!("OPTION_KEYS covers every arm"),
+        }
+    }
+    Ok(wire)
+}
+
+/// What a Wasm entry point has once every refusal about the inputs but the
+/// graph's own limits is ruled out: the time zone and the resolved options.
+struct ResolvedOptions {
+    offset: Option<FixedOffset>,
+    wire: WireOptions,
+}
+
+fn resolve_options(options_json: Option<&str>) -> Result<ResolvedOptions, RenderError> {
+    let wire = parse_wire_options(options_json)?;
+    let offset = read_tz_offset(wire.tz_offset_minutes)?;
+    Ok(ResolvedOptions { offset, wire })
+}
+
+impl ResolvedOptions {
+    fn chart_options(&self) -> Result<ChartOptions, RenderError> {
+        Ok(ChartOptions {
+            today: parse_today(self.wire.today.as_deref(), self.offset)?,
+            scroll_viewport: self.wire.scroll_viewport,
+        })
+    }
 }
 
 /// What `prepare_svg_input` hands on once every refusal has been ruled out.
 struct PreparedSvgInput {
     tasks: Vec<GanttTask>,
     deps: Vec<GanttDep>,
-    today: Option<NaiveDate>,
+    options: ChartOptions,
 }
 
 /// Every Wasm SVG rejection runs through here — `render_svg` and
@@ -212,31 +317,29 @@ struct PreparedSvgInput {
 fn prepare_svg_input(
     tasks_json: &str,
     deps_json: &str,
-    today_iso: Option<&str>,
-    tz_offset_minutes: Option<f64>,
+    options_json: Option<&str>,
 ) -> Result<PreparedSvgInput, RenderError> {
-    let offset = read_tz_offset(tz_offset_minutes)?;
+    let resolved = resolve_options(options_json)?;
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return Err(err);
     }
-    let tasks =
-        parse_tasks_json(tasks_json, offset).map_err(|e| RenderError::new(CODE_PARSE_ERROR, e))?;
+    let tasks = parse_tasks_json(tasks_json, resolved.offset)
+        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, e))?;
     let deps: Vec<GanttDep> = serde_json::from_str(deps_json)
         .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
     if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
         return Err(err);
     }
-    let today = parse_today(today_iso, offset)?;
-    Ok(PreparedSvgInput { tasks, deps, today })
+    let options = resolved.chart_options()?;
+    Ok(PreparedSvgInput {
+        tasks,
+        deps,
+        options,
+    })
 }
 
 /// Native entry point — accepts typed structs directly.
-pub fn render(
-    tasks: &[GanttTask],
-    deps: &[GanttDep],
-    today: Option<NaiveDate>,
-    scroll_viewport: Option<ScrollViewport>,
-) -> String {
+pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) -> String {
     if tasks.is_empty() {
         return crate::backend::svg::empty_svg();
     }
@@ -246,7 +349,7 @@ pub fn render(
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list(&graph, epoch, today, scroll_viewport);
+    let list = build_display_list(&graph, epoch, options);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => unreachable!(),
@@ -257,8 +360,7 @@ pub fn render(
 pub fn render_canvas(
     tasks: &[GanttTask],
     deps: &[GanttDep],
-    today: Option<NaiveDate>,
-    scroll_viewport: Option<ScrollViewport>,
+    options: &ChartOptions,
 ) -> CommandBuffer {
     if tasks.is_empty() {
         return CommandBuffer {
@@ -274,7 +376,7 @@ pub fn render_canvas(
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list(&graph, epoch, today, scroll_viewport);
+    let list = build_display_list(&graph, epoch, options);
     match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => unreachable!(),
@@ -282,32 +384,31 @@ pub fn render_canvas(
 }
 
 /// Wasm entry point — accepts JSON strings matching the task project's API response shape.
-/// `today_iso` is an optional ISO 8601 date (e.g. "2026-06-16") or date-time (e.g.
-/// "2026-06-16T09:00:00+09:00") for the today marker; the calendar day as written is used.
-/// A value that cannot be read refuses the render (see `render_svg_error`).
-/// `viewport_json` is an optional `{"scroll_y":f64,"client_height":f64}` for row virtualization.
-/// `tz_offset_minutes` is the caller's time zone as a signed integer of minutes east of UTC
-/// (JST is 540). Absent keeps the day a date-time string is written in; present converts
-/// date-time strings that carry an offset to that zone's calendar day. Date-only strings are
-/// never converted. An unusable value (not an integer, beyond ±1439) refuses the render.
+///
+/// `options_json` is an optional JSON object. Absent, `null` and `{}` draw the default chart.
+/// - `today`: an ISO 8601 date (e.g. "2026-06-16") or date-time (e.g.
+///   "2026-06-16T09:00:00+09:00") for the today marker; the calendar day as written is used.
+/// - `scroll_viewport`: `{"scroll_y":f64,"client_height":f64}` for row virtualization.
+/// - `tz_offset_minutes`: the caller's time zone as a signed integer of minutes east of UTC
+///   (JST is 540). Absent keeps the day a date-time string is written in; present converts
+///   date-time strings that carry an offset to that zone's calendar day. Date-only strings
+///   are never converted.
+///
+/// A key that is unknown, or a value that cannot be read (an unreadable `today`, an offset
+/// that is not an integer or is beyond ±1439, a `scroll_viewport` of the wrong shape), refuses
+/// the render (see `render_svg_error`). A string longer than `MAX_OPTIONS_JSON_BYTES` is
+/// refused with the `input_limit` code.
 #[wasm_bindgen]
-pub fn render_svg(
-    tasks_json: &str,
-    deps_json: &str,
-    today_iso: Option<String>,
-    viewport_json: Option<String>,
-    tz_offset_minutes: Option<f64>,
-) -> String {
-    let Ok(PreparedSvgInput { tasks, deps, today }) = prepare_svg_input(
-        tasks_json,
-        deps_json,
-        today_iso.as_deref(),
-        tz_offset_minutes,
-    ) else {
+pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String {
+    let Ok(PreparedSvgInput {
+        tasks,
+        deps,
+        options,
+    }) = prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
+    else {
         return empty_svg();
     };
-    let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
-    render(&tasks, &deps, today, scroll_viewport)
+    render(&tasks, &deps, &options)
 }
 
 /// Wasm entry point — why `render_svg` would refuse this input, as the same
@@ -319,23 +420,17 @@ pub fn render_svg(
 /// that tells them apart; it shares `prepare_svg_input` with `render_svg`
 /// rather than re-deriving the rules.
 ///
-/// Pass the same `today_iso` and `tz_offset_minutes` given to `render_svg`: an
-/// unreadable `today_iso` or an unusable offset is a refusal too.
+/// Pass the same `options_json` given to `render_svg`: an options string that
+/// cannot be read is a refusal too.
 #[wasm_bindgen]
 pub fn render_svg_error(
     tasks_json: &str,
     deps_json: &str,
-    today_iso: Option<String>,
-    tz_offset_minutes: Option<f64>,
+    options_json: Option<String>,
 ) -> Option<String> {
-    prepare_svg_input(
-        tasks_json,
-        deps_json,
-        today_iso.as_deref(),
-        tz_offset_minutes,
-    )
-    .err()
-    .map(|e| e.to_json())
+    prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
+        .err()
+        .map(|e| e.to_json())
 }
 
 /// Wasm entry point — the exact markup `render_svg` returns when there is
@@ -352,18 +447,16 @@ pub fn empty_svg_markup() -> String {
 pub fn render_canvas_commands(
     tasks_json: &str,
     deps_json: &str,
-    today_iso: Option<String>,
-    viewport_json: Option<String>,
-    tz_offset_minutes: Option<f64>,
+    options_json: Option<String>,
 ) -> String {
-    let offset = match read_tz_offset(tz_offset_minutes) {
-        Ok(offset) => offset,
+    let resolved = match resolve_options(options_json.as_deref()) {
+        Ok(resolved) => resolved,
         Err(err) => return err.to_json(),
     };
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return err.to_json();
     }
-    let tasks = match parse_tasks_json(tasks_json, offset) {
+    let tasks = match parse_tasks_json(tasks_json, resolved.offset) {
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, e).to_json(),
     };
@@ -374,16 +467,19 @@ pub fn render_canvas_commands(
     if let Some(err) = canvas_graph_limit_error(&tasks, &deps) {
         return err.to_json();
     }
-    let today = match parse_today(today_iso.as_deref(), offset) {
-        Ok(today) => today,
+    let options = match resolved.chart_options() {
+        Ok(options) => options,
         Err(err) => return err.to_json(),
     };
-    let scroll_viewport = viewport_json.and_then(|s| serde_json::from_str(&s).ok());
-    let buffer = render_canvas(&tasks, &deps, today, scroll_viewport);
+    let buffer = render_canvas(&tasks, &deps, &options);
     serde_json::to_string(&buffer).unwrap_or_else(|e| {
         RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
     })
 }
+
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod test_common;
 
 #[cfg(test)]
 mod tests {
@@ -391,6 +487,7 @@ mod tests {
     #[cfg(test)]
     use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD};
     use crate::display_list::types::{ColorId, Palette};
+    use crate::render::test_common;
     use chrono::NaiveDate;
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -428,7 +525,7 @@ mod tests {
     #[test]
     fn output_is_valid_svg_root() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(
             svg.starts_with("<svg "),
             "expected <svg ...>, got: {svg:.80}"
@@ -439,7 +536,7 @@ mod tests {
     #[test]
     fn contains_task_titles() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("Design"));
         assert!(svg.contains("Build"));
     }
@@ -447,14 +544,14 @@ mod tests {
     #[test]
     fn contains_progress_polyline() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("stroke-dasharray"));
     }
 
     #[test]
     fn dependency_arrow_ends_with_open_chevron() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("<path d=\"M "));
         assert!(svg.contains(&format!("m -{ARROW_HEAD} -{ARROW_HEAD}")));
         assert!(!svg.contains("<marker"));
@@ -482,7 +579,7 @@ mod tests {
             blocker_task_id: "t1".to_string(),
             blocked_task_id: "t2".to_string(),
         }];
-        let svg = render(&tasks, &deps, None, None);
+        let svg = render(&tasks, &deps, &ChartOptions::default());
         let path = svg
             .split("<path d=\"")
             .nth(1)
@@ -497,7 +594,7 @@ mod tests {
     #[test]
     fn task_bars_have_data_task_id() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains(r#"data-task-id="task-1""#));
         assert!(svg.contains(r#"data-task-id="task-2""#));
     }
@@ -506,14 +603,21 @@ mod tests {
     fn today_marker_rendered_when_in_range() {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
-        let svg = render(&t, &d, Some(today), None);
+        let svg = render(
+            &t,
+            &d,
+            &ChartOptions {
+                today: Some(today),
+                ..Default::default()
+            },
+        );
         assert!(svg.contains(&palette_hex(ColorId::Today)));
     }
 
     #[test]
     fn today_marker_absent_when_none() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(!svg.contains(&format!(
             r#"stroke="{}" stroke-width="2" stroke-dasharray="4,3""#,
             palette_hex(ColorId::Today)
@@ -523,13 +627,17 @@ mod tests {
     #[test]
     fn date_header_present() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains(&palette_hex(ColorId::HeaderBg)));
     }
 
     #[test]
     fn parse_error_returns_safe_empty_svg() {
-        let svg = render_svg("not json", "[]", None, None, None);
+        let svg = render_svg(
+            "not json",
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("parse error"));
         assert!(!svg.contains("<!--"));
@@ -538,7 +646,7 @@ mod tests {
     #[test]
     fn parse_error_comment_injection_does_not_break_markup() {
         let payload = r#"not json --><img onerror=alert(1)><!--"#;
-        let svg = render_svg(payload, "[]", None, None, None);
+        let svg = render_svg(payload, "[]", test_common::options_json(None, None, None));
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("<img"));
     }
@@ -554,7 +662,7 @@ mod tests {
             start: date(2026, 6, 1),
             end: Some(date(2026, 6, 2)),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains(r#"data-task-id="x&quot; onmouseover=&quot;alert(1)&quot;""#));
         assert!(!svg.contains(r#"onmouseover="alert"#));
     }
@@ -565,7 +673,11 @@ mod tests {
     #[test]
     fn wasm_entry_id_xss_payload_escaped_in_output() {
         let tasks_json = r#"[{"id":"x\" onmouseover=\"alert(1)\"","title":"Safe","progress_pct":0,"start":"2026-06-01","end":"2026-06-02"}]"#;
-        let svg = render_svg(tasks_json, "[]", None, None, None);
+        let svg = render_svg(
+            tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_ne!(
             svg,
             crate::backend::svg::empty_svg(),
@@ -585,7 +697,11 @@ mod tests {
 
     #[test]
     fn canvas_parse_error_json_is_valid() {
-        let json = render_canvas_commands("not json", "[]", None, None, None);
+        let json = render_canvas_commands(
+            "not json",
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
     }
@@ -594,10 +710,18 @@ mod tests {
     fn raw_byte_limits_reject_tasks_before_deserialization() {
         // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
         let oversized_tasks = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
-        let svg = render_svg(&oversized_tasks, "[]", None, None, None);
+        let svg = render_svg(
+            &oversized_tasks,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
-        let json = render_canvas_commands(&oversized_tasks, "[]", None, None, None);
+        let json = render_canvas_commands(
+            &oversized_tasks,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -610,10 +734,18 @@ mod tests {
     fn raw_byte_limits_reject_dependencies_before_deserialization() {
         // Deliberately invalid JSON: the byte-limit error proves parsing was not attempted.
         let oversized_deps = "x".repeat(MAX_DEPS_JSON_BYTES + 1);
-        let svg = render_svg("[]", &oversized_deps, None, None, None);
+        let svg = render_svg(
+            "[]",
+            &oversized_deps,
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
-        let json = render_canvas_commands("[]", &oversized_deps, None, None, None);
+        let json = render_canvas_commands(
+            "[]",
+            &oversized_deps,
+            test_common::options_json(None, None, None),
+        );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -635,9 +767,10 @@ mod tests {
         .to_string();
         assert!(tasks.len() > MAX_TASKS_JSON_BYTES);
 
-        let svg = render_svg(&tasks, "[]", None, None, None);
+        let svg = render_svg(&tasks, "[]", test_common::options_json(None, None, None));
         assert_eq!(svg, crate::backend::svg::empty_svg());
-        let json = render_canvas_commands(&tasks, "[]", None, None, None);
+        let json =
+            render_canvas_commands(&tasks, "[]", test_common::options_json(None, None, None));
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -659,9 +792,7 @@ mod tests {
         let svg = render_svg(
             &serde_json::to_string(&tasks).unwrap(),
             "[]",
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
@@ -684,9 +815,7 @@ mod tests {
         let json = render_canvas_commands(
             &serde_json::to_string(&tasks).unwrap(),
             &serde_json::to_string(&deps).unwrap(),
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
@@ -715,9 +844,7 @@ mod tests {
         let accepted_json = render_canvas_commands(
             &serde_json::to_string(&accepted).unwrap(),
             "[]",
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
@@ -727,9 +854,7 @@ mod tests {
         let rejected_json = render_canvas_commands(
             &serde_json::to_string(&rejected).unwrap(),
             "[]",
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
@@ -747,21 +872,33 @@ mod tests {
 
         let accepted = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS);
         let accepted_tasks_json = serde_json::to_string(&accepted).unwrap();
-        let accepted_json = render_canvas_commands(&accepted_tasks_json, "[]", None, None, None);
+        let accepted_json = render_canvas_commands(
+            &accepted_tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
         assert!(accepted_value["viewport_width"].as_f64().unwrap() <= MAX_CANVAS_SIDE_PX as f64);
 
         let rejected = canvas_tasks(1, MAX_CANVAS_DATE_SPAN_DAYS + 1);
         let rejected_tasks_json = serde_json::to_string(&rejected).unwrap();
-        let rejected_json = render_canvas_commands(&rejected_tasks_json, "[]", None, None, None);
+        let rejected_json = render_canvas_commands(
+            &rejected_tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
             .as_str()
             .unwrap()
             .contains("canvas date range"));
 
-        let svg = render_svg(&rejected_tasks_json, "[]", None, None, None);
+        let svg = render_svg(
+            &rejected_tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_ne!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -777,9 +914,7 @@ mod tests {
         let json = render_canvas_commands(
             &serde_json::to_string(&tasks).unwrap(),
             "[]",
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"].as_str().unwrap().contains("canvas area"));
@@ -807,14 +942,22 @@ mod tests {
         // `end: None` makes the guard itself compute `start + 1 day`, which
         // overflows `NaiveDate::MAX`. Before the fix this panics inside the guard.
         let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
-        let svg = render_svg(&tasks_json, "[]", None, None, None);
+        let svg = render_svg(
+            &tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
     #[test]
     fn canvas_entry_rejects_maximum_start_date_with_null_end() {
         let tasks_json = max_date_tasks_json(NaiveDate::MAX, None);
-        let json = render_canvas_commands(&tasks_json, "[]", None, None, None);
+        let json = render_canvas_commands(
+            &tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
             value["error"].as_str().unwrap().contains("date"),
@@ -827,14 +970,22 @@ mod tests {
         // Span is only 10 days, so the span limit accepts it; the panic before
         // the fix comes from the weekly grid stepping past `NaiveDate::MAX`.
         let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
-        let svg = render_svg(&tasks_json, "[]", None, None, None);
+        let svg = render_svg(
+            &tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
     #[test]
     fn canvas_entry_rejects_explicit_maximum_end_date() {
         let tasks_json = max_date_tasks_json(near_max_start(), Some(NaiveDate::MAX));
-        let json = render_canvas_commands(&tasks_json, "[]", None, None, None);
+        let json = render_canvas_commands(
+            &tasks_json,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
             value["error"].as_str().unwrap().contains("date"),
@@ -846,12 +997,16 @@ mod tests {
     fn svg_date_span_boundary_accepts_limit_and_rejects_one_more() {
         let start = date(2026, 1, 1);
         let at_limit = max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS)));
-        let svg = render_svg(&at_limit, "[]", None, None, None);
+        let svg = render_svg(&at_limit, "[]", test_common::options_json(None, None, None));
         assert_ne!(svg, crate::backend::svg::empty_svg());
 
         let over_limit =
             max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS + 1)));
-        let svg = render_svg(&over_limit, "[]", None, None, None);
+        let svg = render_svg(
+            &over_limit,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
 
@@ -862,7 +1017,11 @@ mod tests {
             start,
             Some(start + Duration::days(MAX_CANVAS_DATE_SPAN_DAYS + 1)),
         );
-        let json = render_canvas_commands(&over_limit, "[]", None, None, None);
+        let json = render_canvas_commands(
+            &over_limit,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(value["error"]
             .as_str()
@@ -875,12 +1034,20 @@ mod tests {
         // JS matches on `code`; the message beside it is display-only. These
         // assertions pin the wire values, so renaming a code constant fails here
         // as well as in the Vue contract test that reads `error.rs`.
-        let parse = render_canvas_commands("not json", "[]", None, None, None);
+        let parse = render_canvas_commands(
+            "not json",
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let v: serde_json::Value = serde_json::from_str(&parse).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("parse_error"), "got: {parse:.200}");
 
         let oversized = "x".repeat(MAX_TASKS_JSON_BYTES + 1);
-        let raw_limit = render_canvas_commands(&oversized, "[]", None, None, None);
+        let raw_limit = render_canvas_commands(
+            &oversized,
+            "[]",
+            test_common::options_json(None, None, None),
+        );
         let v: serde_json::Value = serde_json::from_str(&raw_limit).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
 
@@ -888,9 +1055,7 @@ mod tests {
         let capacity = render_canvas_commands(
             &serde_json::to_string(&too_many).unwrap(),
             "[]",
-            None,
-            None,
-            None,
+            test_common::options_json(None, None, None),
         );
         let v: serde_json::Value = serde_json::from_str(&capacity).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("canvas_capacity"));
@@ -902,21 +1067,23 @@ mod tests {
         // on its own channel instead of being inferred from the markup.
         let refused = max_date_tasks_json(NaiveDate::MAX, None);
         assert_eq!(
-            render_svg(&refused, "[]", None, None, None),
+            render_svg(&refused, "[]", test_common::options_json(None, None, None)),
             crate::backend::svg::empty_svg()
         );
         assert_eq!(
-            render_svg("[]", "[]", None, None, None),
+            render_svg("[]", "[]", test_common::options_json(None, None, None)),
             crate::backend::svg::empty_svg()
         );
 
         assert_eq!(
-            render_svg_error("[]", "[]", None, None),
+            render_svg_error("[]", "[]", test_common::options_json(None, None, None)),
             None,
             "nothing to draw is not an error"
         );
 
-        let reported = render_svg_error(&refused, "[]", None, None).expect("refusal is reported");
+        let reported =
+            render_svg_error(&refused, "[]", test_common::options_json(None, None, None))
+                .expect("refusal is reported");
         let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
         assert!(
@@ -937,7 +1104,11 @@ mod tests {
             .expect("7 days below NaiveDate::MAX");
         let tasks_json = max_date_tasks_json(start, None);
         assert_eq!(
-            render_svg(&tasks_json, "[]", None, None, None),
+            render_svg(
+                &tasks_json,
+                "[]",
+                test_common::options_json(None, None, None)
+            ),
             crate::backend::svg::empty_svg()
         );
     }
@@ -953,7 +1124,7 @@ mod tests {
             start: near_max_start(),
             end: Some(NaiveDate::MAX),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.starts_with("<svg "));
 
         let no_end = vec![GanttTask {
@@ -963,9 +1134,9 @@ mod tests {
             start: NaiveDate::MAX,
             end: None,
         }];
-        let svg = render(&no_end, &[], None, None);
+        let svg = render(&no_end, &[], &ChartOptions::default());
         assert!(svg.starts_with("<svg "));
-        let buffer = render_canvas(&no_end, &[], None, None);
+        let buffer = render_canvas(&no_end, &[], &ChartOptions::default());
         assert!(buffer.viewport_width.is_finite());
     }
 
@@ -978,14 +1149,14 @@ mod tests {
             start: date(2026, 6, 1),
             end: Some(date(2026, 6, 2)),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains("A &amp; B &lt; C"));
         assert!(!svg.contains("A & B"));
     }
 
     #[test]
     fn empty_tasks_returns_empty_svg() {
-        let svg = render(&[], &[], None, None);
+        let svg = render(&[], &[], &ChartOptions::default());
         assert!(svg.contains("width=\"0\""));
         assert!(svg.contains("viewBox=\"0 0 0 0\""));
         assert!(svg.contains(r#"role="img""#));
@@ -994,7 +1165,7 @@ mod tests {
     #[test]
     fn svg_has_viewbox_and_a11y() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("viewBox="));
         assert!(svg.contains(r#"role="img""#));
         assert!(svg.contains(r#"aria-label="Gantt chart""#));
@@ -1005,7 +1176,7 @@ mod tests {
     #[test]
     fn each_bar_shows_progress_percent() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("100%"));
         assert!(svg.contains("50%"));
     }
@@ -1028,7 +1199,7 @@ mod tests {
                 end: Some(date(2026, 6, 5)),
             },
         ];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains("0%"));
         assert!(svg.contains("100%"));
     }
@@ -1036,7 +1207,7 @@ mod tests {
     #[test]
     fn task_group_has_hover_title_tooltip() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("<title>Design: 2026-06-01 – 2026-06-04 (100%)</title>"));
         assert!(svg.contains("<title>Build: 2026-06-04 – 2026-06-08 (50%)</title>"));
     }
@@ -1050,7 +1221,7 @@ mod tests {
             start: date(2026, 6, 1),
             end: Some(date(2026, 6, 5)),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains("Very Long Task …"));
         assert!(svg.contains(
             "<title>Very Long Task Title That Should Be Truncated: 2026-06-01 – 2026-06-05 (25%)</title>"
@@ -1068,7 +1239,7 @@ mod tests {
             start: date(2026, 6, 5),
             end: Some(date(2026, 6, 1)),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(!svg.contains("width=\"-"));
         assert!(svg.contains("50%"));
     }
@@ -1082,7 +1253,7 @@ mod tests {
             start: date(2026, 6, 3),
             end: Some(date(2026, 6, 3)),
         }];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains("<polygon"));
         assert!(svg.contains("0%"));
         assert!(!svg.contains(r#"width="0.0""#));
@@ -1091,7 +1262,7 @@ mod tests {
     #[test]
     fn progress_line_legend_present() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         assert!(svg.contains("progress-line-legend"));
         assert!(svg.contains("進捗ステータスライン"));
         assert!(svg.contains("bar-tier-legend"));
@@ -1100,7 +1271,7 @@ mod tests {
     #[test]
     fn progress_line_legacy_when_today_absent() {
         let (t, d) = two_tasks();
-        let svg = render(&t, &d, None, None);
+        let svg = render(&t, &d, &ChartOptions::default());
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -1116,7 +1287,14 @@ mod tests {
     fn progress_line_today_anchored_when_today_in_range() {
         let (t, d) = two_tasks();
         let today = date(2026, 6, 3);
-        let svg = render(&t, &d, Some(today), None);
+        let svg = render(
+            &t,
+            &d,
+            &ChartOptions {
+                today: Some(today),
+                ..Default::default()
+            },
+        );
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -1139,7 +1317,14 @@ mod tests {
     fn progress_line_legacy_when_today_out_of_range() {
         let (t, d) = two_tasks();
         let today = date(2020, 1, 1);
-        let svg = render(&t, &d, Some(today), None);
+        let svg = render(
+            &t,
+            &d,
+            &ChartOptions {
+                today: Some(today),
+                ..Default::default()
+            },
+        );
         let poly = svg
             .split(r#"class="progress-status-line" points=""#)
             .nth(1)
@@ -1187,7 +1372,7 @@ mod tests {
                 end: Some(date(2026, 6, 9)),
             },
         ];
-        let svg = render(&tasks, &[], None, None);
+        let svg = render(&tasks, &[], &ChartOptions::default());
         assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierLow))));
         assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierMid))));
         assert!(svg.contains(&format!(r#"fill="{}""#, palette_hex(ColorId::TierHigh))));

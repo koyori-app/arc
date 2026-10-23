@@ -13,6 +13,12 @@ Rust → Wasm + SVG の Gantt チャートレンダラー。
 | `@koyori-app/arc-vue` (npm) | Vue 3 ラッパーコンポーネント | 実装済み |
 | `@koyori-app/arc-react` (npm) | React ラッパー | **凍結**。コントリビュート/メンテナ見込みができた場合、または需要が大きくなった場合のみ着手 |
 
+## 互換性
+
+0.1.0-alpha 系の間は、公開の形の互換性を約束しない。
+公開の形とは、Rust の署名、wasm の関数、arc-vue の props である。
+破壊的な変更は、commit の題に `!` を付けて changelog に出す。
+
 ## ライセンス
 
 MPL-2.0 OR GPL-2.0-or-later（デュアルライセンス）。ライセンス全文は `LICENSE-MPL-2.0` / `LICENSE-GPL-2.0-or-later`（`/usr/share/common-licenses/` から取得）。
@@ -38,7 +44,7 @@ pub struct GanttDep {
 
 ### 日付と日時の字
 
-`start`・`end`・`today_iso` は、次のどれの字も受ける。
+`start`・`end`・`today` は、次のどれの字も受ける。
 
 - 日付: `2026-06-01`
 - 時差つきの日時（RFC 3339）: `2026-06-01T09:00:00Z`、`2026-06-08T09:00:00+09:00`、小数秒つき `2026-06-01T09:00:00.123Z`
@@ -62,7 +68,7 @@ task の `hard_deadline` と `soft_deadline` は timestamptz なので、JSON �
 - **時差なしの日時の字も換算しない。** どの時差の時刻か分からず、直す元が無い。書かれた日を取る。
 - **時差つきの日時の字は、指定があればその時差の暦の日へ直す。** 指定がなければ、字が書いている暦の日をそのまま取る（`+09:00` の字なら、その `+09:00` の日）。
 - **指定なしと `0` は同じではない。** `+09:00` の字を、指定なしなら書かれた日で、`0` なら UTC の日で読む。指定なしは、この口ができる前の振る舞いと 1 字も違わない。
-- `start`・`end`・`today_iso` の三つとも、同じ筋で読む。
+- `start`・`end`・`today` の三つとも、同じ筋で読む。
 - 整数でない値、NaN、無限大、絶対値が 1439 を超える値は、黙って 0 にせず `parse_error` で断る（メッセージに `tz_offset_minutes` と入る）。現実の時差は `-720` から `840` の間である。
 
 **task に結ぶ時に渡す値**: `hard_deadline` と `soft_deadline` は timestamptz で、UTC の字（`...Z`）で届くことが多い。
@@ -82,8 +88,8 @@ IANA の名前（`Asia/Tokyo`）を受ける案は採らなかった。wasm の�
 **束の大きさ（IANA の名前を受ける案との比較）**: `chrono-tz`（既定の機能、全地域）を足した試作の wasm は、`wasm-pack build --release` で 284,936 バイト（gzip 115,502）から 1,162,180 バイト（gzip 264,401）になった。
 約 877 KB（gzip で約 149 KB）の増加である。alpha の段階では、分の整数で足りるうえに軽い。
 
-読めない字は、黙って捨てずに明に断る。`start` と `end` は JSON 全体が `parse_error` になり（メッセージに `tasks[3].end` のように、何番目のタスクのどの欄かが入る）、`today_iso` も同じく `parse_error` になる（メッセージに `today` と入る）。
-`today_iso` が `undefined`・`null`・空の字・空白だけの時は「今日の線なし」で、誤りではない。
+読めない字は、黙って捨てずに明に断る。`start` と `end` は JSON 全体が `parse_error` になり（メッセージに `tasks[3].end` のように、何番目のタスクのどの欄かが入る）、`options_json` の `today` も同じく `parse_error` になる（メッセージに `today` と入る）。
+`today` が無い時、`null` の時、空の字・空白だけの時は「今日の線なし」で、誤りではない。
 
 `GanttTask` メソッド:
 - `start_days(epoch)` — epoch からの経過日数
@@ -98,26 +104,53 @@ IANA の名前（`Asia/Tokyo`）を受ける案は採らなかった。wasm の�
 pub fn render(
     tasks: &[GanttTask],
     deps: &[GanttDep],
-    today: Option<NaiveDate>,
-    scroll_viewport: Option<ScrollViewport>,
+    options: &ChartOptions,
 ) -> String
+
+pub fn render_canvas(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    options: &ChartOptions,
+) -> CommandBuffer
+
+pub fn build_display_list(
+    graph: &GanttGraph,
+    epoch: NaiveDate,
+    options: &ChartOptions,
+) -> DisplayList
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ChartOptions {
+    pub today: Option<NaiveDate>,
+    pub scroll_viewport: Option<ScrollViewport>,
+}
 ```
+
+`ChartOptions::default()` は、今日の線も仮想スクロールも無い図を描く。
+`ChartOptions { today: Some(day), ..Default::default() }` のように組む。
 
 ### Wasm
 
 ```rust
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>, tz_offset_minutes: Option<f64>) -> String
+pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
 
 #[wasm_bindgen]
-pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>, tz_offset_minutes: Option<f64>) -> String
+pub fn render_svg_error(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> Option<String>
+
+#[wasm_bindgen]
+pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
-- `today_iso`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。省略可。読めない字は断る（上の「日付と日時の字」）
-- `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略可。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
-- `viewport_json`: 仮想スクロール用 `ScrollViewport` の JSON 文字列。省略可
-- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, today_iso, tz_offset_minutes)` から理由を取得できる。`today_iso` と `tz_offset_minutes` は `render_svg` に渡したものと同じ値を渡す（読めない `today_iso` と使えない時差も断りの一つで、この経路でしか分からない）
+- `options_json`: 描画の設定の JSON object の字。省略可
+  - `today`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。読めない字は断る（上の「日付と日時の字」）
+  - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
+  - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
+  - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
+  - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
+  - 4 KiB を超える字は `input_limit` で断る
+- `render_svg` は断る時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, options_json)` から理由を取得できる。`render_svg` に渡したものと同じ `options_json` を渡す（読めない設定も断りの一つで、この経路でしか分からない）
 - `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
 
 ### arc-vue

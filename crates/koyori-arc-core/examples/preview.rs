@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use koyori_arc_core::{render, GanttDep, GanttTask};
+use koyori_arc_core::{render, ChartOptions, GanttDep, GanttTask};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -70,7 +70,14 @@ fn main() {
     ];
 
     let today = date(2026, 6, 6);
-    let svg = render(&tasks, &deps, Some(today), None);
+    let svg = render(
+        &tasks,
+        &deps,
+        &ChartOptions {
+            today: Some(today),
+            ..Default::default()
+        },
+    );
 
     // go up two levels (crates/koyori-arc-core → workspace root) to share target/
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

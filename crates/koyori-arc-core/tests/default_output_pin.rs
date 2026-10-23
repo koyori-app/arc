@@ -11,6 +11,8 @@
 //! fixture を作り直す時は `ARC_PIN_WRITE=1 cargo test --test default_output_pin` を使う。
 //! 作り直しは、出力が意図して変わった時に限る。
 
+mod common;
+
 use chrono::{Duration, NaiveDate};
 use koyori_arc_core::bench_fixtures::{generate_deps, generate_tasks, DepDensity};
 use koyori_arc_core::{GanttDep, GanttTask, ScrollViewport};
@@ -27,7 +29,14 @@ mod entry {
         today: Option<NaiveDate>,
         viewport: Option<ScrollViewport>,
     ) -> String {
-        koyori_arc_core::render(tasks, deps, today, viewport)
+        koyori_arc_core::render(
+            tasks,
+            deps,
+            &koyori_arc_core::ChartOptions {
+                today,
+                scroll_viewport: viewport,
+            },
+        )
     }
 
     pub fn canvas_json(
@@ -36,7 +45,14 @@ mod entry {
         today: Option<NaiveDate>,
         viewport: Option<ScrollViewport>,
     ) -> String {
-        let buffer = koyori_arc_core::render_canvas(tasks, deps, today, viewport);
+        let buffer = koyori_arc_core::render_canvas(
+            tasks,
+            deps,
+            &koyori_arc_core::ChartOptions {
+                today,
+                scroll_viewport: viewport,
+            },
+        );
         serde_json::to_string(&buffer).unwrap()
     }
 
@@ -51,7 +67,14 @@ mod entry {
             deps: deps.to_vec(),
         };
         let epoch = tasks.iter().map(|t| t.start).min().unwrap();
-        let list = koyori_arc_core::build_display_list(&graph, epoch, today, viewport);
+        let list = koyori_arc_core::build_display_list(
+            &graph,
+            epoch,
+            &koyori_arc_core::ChartOptions {
+                today,
+                scroll_viewport: viewport,
+            },
+        );
         serde_json::to_string(&list).unwrap()
     }
 
@@ -65,26 +88,14 @@ mod entry {
     }
 
     pub fn wire(w: &Wire) -> (String, Option<String>, String) {
-        let svg = koyori_arc_core::render_svg(
-            w.tasks_json,
-            w.deps_json,
+        let options = crate::common::options_json(
             w.today_iso.map(str::to_string),
             w.viewport_json.map(str::to_string),
             w.tz_offset_minutes,
         );
-        let err = koyori_arc_core::render_svg_error(
-            w.tasks_json,
-            w.deps_json,
-            w.today_iso.map(str::to_string),
-            w.tz_offset_minutes,
-        );
-        let canvas = koyori_arc_core::render_canvas_commands(
-            w.tasks_json,
-            w.deps_json,
-            w.today_iso.map(str::to_string),
-            w.viewport_json.map(str::to_string),
-            w.tz_offset_minutes,
-        );
+        let svg = koyori_arc_core::render_svg(w.tasks_json, w.deps_json, options.clone());
+        let err = koyori_arc_core::render_svg_error(w.tasks_json, w.deps_json, options.clone());
+        let canvas = koyori_arc_core::render_canvas_commands(w.tasks_json, w.deps_json, options);
         (svg, err, canvas)
     }
 }
@@ -142,12 +153,7 @@ fn small(
 
 /// 日数 `days` の図。タスクは一つで、終わりが `days` 日目。
 fn span(name: &'static str, days: i64, today: Option<NaiveDate>) -> Sample {
-    small(
-        name,
-        vec![task("a", "A", 40, 0, Some(days))],
-        vec![],
-        today,
-    )
+    small(name, vec![task("a", "A", 40, 0, Some(days))], vec![], today)
 }
 
 fn samples() -> Vec<Sample> {
@@ -196,7 +202,10 @@ fn samples() -> Vec<Sample> {
     ));
     out.push(small(
         "no_end",
-        vec![task("a", "open", 20, 0, None), task("b", "open2", 60, 2, None)],
+        vec![
+            task("a", "open", 20, 0, None),
+            task("b", "open2", 60, 2, None),
+        ],
         vec![],
         Some(day(1)),
     ));
@@ -210,7 +219,13 @@ fn samples() -> Vec<Sample> {
                 0,
                 Some(5),
             ),
-            task("j2", "DBスキーマ変更とマイグレーション手順の整備", 80, 1, Some(8)),
+            task(
+                "j2",
+                "DBスキーマ変更とマイグレーション手順の整備",
+                80,
+                1,
+                Some(8),
+            ),
             task("j3", "短い", 100, 2, Some(6)),
         ],
         vec![dep("j1", "j2")],
@@ -340,7 +355,13 @@ fn wire_cases() -> Vec<WireCase> {
             None,
             None,
         ),
-        case("wire_datetime_tasks_jst", UTC_DATES, None, None, Some(540.0)),
+        case(
+            "wire_datetime_tasks_jst",
+            UTC_DATES,
+            None,
+            None,
+            Some(540.0),
+        ),
         case("wire_datetime_tasks_utc", UTC_DATES, None, None, Some(0.0)),
         case("wire_datetime_tasks_no_tz", UTC_DATES, None, None, None),
         case(
@@ -464,8 +485,7 @@ fn finish_digests(file: &str, digests: &str) {
         std::fs::write(&path, digests).unwrap();
         return;
     }
-    let want =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let want = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     if digests != want {
         let mut diff = String::new();
         let want_lines: Vec<&str> = want.lines().collect();

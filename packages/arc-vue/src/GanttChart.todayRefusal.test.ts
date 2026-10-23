@@ -28,12 +28,16 @@ const tasks: GanttTask[] = [
 ];
 
 /** The Wasm side refuses an unreadable `today` and draws the blank chart. */
+function todayOf(optionsJson?: string): string | undefined {
+  return optionsJson === undefined ? undefined : JSON.parse(optionsJson).today;
+}
+
 function wasmBehavesLikeTheCrate() {
-  renderSvgMock.mockImplementation((_t: string, _d: string, today?: string) =>
-    today === 'garbage' ? EMPTY_SVG_MARKUP : '<svg>chart</svg>',
+  renderSvgMock.mockImplementation((_t: string, _d: string, options?: string) =>
+    todayOf(options) === 'garbage' ? EMPTY_SVG_MARKUP : '<svg>chart</svg>',
   );
-  renderSvgErrorMock.mockImplementation((_t: string, _d: string, today?: string) =>
-    today === 'garbage' ? TODAY_ERROR : undefined,
+  renderSvgErrorMock.mockImplementation((_t: string, _d: string, options?: string) =>
+    todayOf(options) === 'garbage' ? TODAY_ERROR : undefined,
   );
 }
 
@@ -61,8 +65,8 @@ describe('an unreadable `today`', () => {
     await flushPromises();
 
     expect(renderSvgErrorMock).toHaveBeenCalled();
-    const thirdArgs = renderSvgErrorMock.mock.calls.map((c) => c[2]);
-    expect(thirdArgs).toContain('garbage');
+    const todays = renderSvgErrorMock.mock.calls.map((c) => todayOf(c[2] as string | undefined));
+    expect(todays).toContain('garbage');
   });
 
   it('a readable date-time draws the chart and shows no alert', async () => {

@@ -148,6 +148,7 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
   const iters = opts.iters ?? L2_ITERS;
   const tasksJson = JSON.stringify(fx.tasks);
   const depsJson = JSON.stringify(fx.deps);
+  const optionsJson = JSON.stringify({ today: fx.today });
 
   // Probe once: capacity-exceeded fixtures return {code, error} instead
   // of a CommandBuffer. Timing that error return as "canvas" made the
@@ -160,7 +161,7 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
   try {
     canvasError = probeCanvasError(
       parseCommandBuffer,
-      render_canvas_commands(tasksJson, depsJson, fx.today),
+      render_canvas_commands(tasksJson, depsJson, optionsJson),
     );
   } catch (err) {
     // The run stops here before any row or log line names the fixture. L2
@@ -170,8 +171,8 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
   }
 
   for (let i = 0; i < warmup; i++) {
-    render_svg(tasksJson, depsJson, fx.today);
-    if (!canvasError) render_canvas_commands(tasksJson, depsJson, fx.today);
+    render_svg(tasksJson, depsJson, optionsJson);
+    if (!canvasError) render_canvas_commands(tasksJson, depsJson, optionsJson);
   }
 
   const svgSamples = [];
@@ -182,13 +183,13 @@ export function benchL2Fixture(name, fx, deps, opts = {}) {
 
   for (let i = 0; i < iters; i++) {
     const t0 = performance.now();
-    const svg = render_svg(tasksJson, depsJson, fx.today);
+    const svg = render_svg(tasksJson, depsJson, optionsJson);
     svgSamples.push(performance.now() - t0);
     lastSvgBytes = Buffer.byteLength(svg, 'utf8');
 
     if (!canvasError) {
       const t1 = performance.now();
-      const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
+      const bufJson = render_canvas_commands(tasksJson, depsJson, optionsJson);
       canvasSamples.push(performance.now() - t1);
       lastCanvasBytes = Buffer.byteLength(bufJson, 'utf8');
       lastCanvasOps = parseCommandBuffer(bufJson).ops?.length ?? 0;
@@ -316,12 +317,13 @@ async function benchL3NodeFallback() {
       const fx = JSON.parse(readFileSync(path, 'utf8'));
       const tasksJson = JSON.stringify(fx.tasks);
       const depsJson = JSON.stringify(fx.deps);
+      const optionsJson = JSON.stringify({ today: fx.today });
 
       // Probe once: capacity-exceeded fixtures return an error payload, not
       // a CommandBuffer. Skip them instead of crashing mid-bench.
       if (backend === 'canvas') {
         try {
-          parseCommandBuffer(render_canvas_commands(tasksJson, depsJson, fx.today));
+          parseCommandBuffer(render_canvas_commands(tasksJson, depsJson, optionsJson));
         } catch (err) {
           // Skip only capacity refusals: those are expected for oversized
           // fixtures. Any other render error (input_limit / parse_error /
@@ -340,9 +342,9 @@ async function benchL3NodeFallback() {
 
       for (let i = 0; i < L3_WARMUP; i++) {
         if (backend === 'svg') {
-          render_svg(tasksJson, depsJson, fx.today);
+          render_svg(tasksJson, depsJson, optionsJson);
         } else {
-          render_canvas_commands(tasksJson, depsJson, fx.today);
+          render_canvas_commands(tasksJson, depsJson, optionsJson);
         }
       }
 
@@ -351,7 +353,7 @@ async function benchL3NodeFallback() {
       for (let i = 0; i < L3_ITERS; i++) {
         if (backend === 'svg') {
           const tWasm = performance.now();
-          const svg = render_svg(tasksJson, depsJson, fx.today);
+          const svg = render_svg(tasksJson, depsJson, optionsJson);
           const wasmMs = performance.now() - tWasm;
           const byteLength = Buffer.byteLength(svg, 'utf8');
           const elementCount = (svg.match(/<[^/!][^>]*>/g) ?? []).length;
@@ -365,7 +367,7 @@ async function benchL3NodeFallback() {
           meta = { wasmMs, byteLength, elementCount, canvasOps: null, taskCount: fx.tasks.length, depCount: fx.deps.length };
         } else {
           const tWasm = performance.now();
-          const bufJson = render_canvas_commands(tasksJson, depsJson, fx.today);
+          const bufJson = render_canvas_commands(tasksJson, depsJson, optionsJson);
           const wasmMs = performance.now() - tWasm;
           const buffer = parseCommandBuffer(bufJson);
           const byteLength = Buffer.byteLength(bufJson, 'utf8');

@@ -31,9 +31,11 @@ function makeTasks(count: number): GanttTask[] {
 
 type Viewport = { scroll_y: number; client_height: number };
 
-function viewportFromArg(arg: string | undefined): Viewport | null {
-  if (!arg) return null;
-  return JSON.parse(arg) as Viewport;
+/** The scroll window a call carried in its `options_json` (third argument). */
+function viewportFromArg(optionsJson: string | undefined): Viewport | null {
+  if (!optionsJson) return null;
+  const options = JSON.parse(optionsJson) as { scroll_viewport?: Viewport };
+  return options.scroll_viewport ?? null;
 }
 
 /**
@@ -62,7 +64,7 @@ function assertNoViewportClientHeight(
   let scanned = 0;
   callWindow.forEach((call, offset) => {
     const idx = sinceCallIndex + offset + 1;
-    const viewport = viewportFromArg(call[3] as string | undefined);
+    const viewport = viewportFromArg(call[2] as string | undefined);
     if (!viewport) return;
     scanned += 1;
     expect(
@@ -93,7 +95,7 @@ function assertViewportClientHeightIs(
   let scanned = 0;
   callWindow.forEach((call, offset) => {
     const idx = sinceCallIndex + offset + 1;
-    const viewport = viewportFromArg(call[3] as string | undefined);
+    const viewport = viewportFromArg(call[2] as string | undefined);
     if (!viewport) return;
     scanned += 1;
     expect(
@@ -116,7 +118,10 @@ function assertAllRecentCallsOmitViewport(
   assertScanned(callWindow.length, `${label} (omit-viewport window from #${sinceCallIndex + 1})`);
   callWindow.forEach((call, offset) => {
     const idx = sinceCallIndex + offset + 1;
-    expect(call[3], `${label}: call #${idx} must omit viewport_json`).toBeUndefined();
+    expect(
+      viewportFromArg(call[2] as string | undefined),
+      `${label}: call #${idx} must omit the scroll viewport`,
+    ).toBeNull();
   });
 }
 
@@ -129,7 +134,10 @@ function assertAllCallsCarryViewport(
   assertScanned(callWindow.length, `${label} (carry-viewport window from #${sinceCallIndex + 1})`);
   callWindow.forEach((call, offset) => {
     const idx = sinceCallIndex + offset + 1;
-    expect(call[3], `${label}: call #${idx} ran without viewport_json`).toBeDefined();
+    expect(
+      viewportFromArg(call[2] as string | undefined),
+      `${label}: call #${idx} ran without the scroll viewport`,
+    ).not.toBeNull();
   });
 }
 
@@ -210,6 +218,9 @@ function scrollEl(wrapper: ReturnType<typeof mount>) {
 describe('scan-assertion gates', () => {
   const VP = JSON.stringify({ scroll_y: 0, client_height: 600 });
   const mockWith = (calls: unknown[][]) => ({ mock: { calls } });
+  /** An `options_json` that carries the given scroll window (a JSON string) as `scroll_viewport`. */
+  const optionsWith = (viewportJson: string) =>
+    JSON.stringify({ scroll_viewport: JSON.parse(viewportJson) });
 
   it('assertAllRecentCallsOmitViewport fails when the scan window is empty', () => {
     expect(() =>
@@ -223,49 +234,49 @@ describe('scan-assertion gates', () => {
     ).toThrow(/scanned 0 calls/);
   });
 
-  it('assertNoViewportClientHeight fails when no scanned call carried viewport_json', () => {
+  it('assertNoViewportClientHeight fails when no scanned call carried a scroll viewport', () => {
     expect(() =>
-      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, undefined]]), 0, 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', undefined]]), 0, 880, 'gate'),
     ).toThrow(/scanned 0 calls/);
   });
 
-  it('assertViewportClientHeightIs fails when no scanned call carried viewport_json', () => {
+  it('assertViewportClientHeightIs fails when no scanned call carried a scroll viewport', () => {
     expect(() =>
-      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, undefined]]), 0, 600, 'gate'),
+      assertViewportClientHeightIs(mockWith([['t', 'd', undefined]]), 0, 600, 'gate'),
     ).toThrow(/scanned 0 calls/);
   });
 
   it('assertViewportClientHeightIs passes on the measured value and fails on any other', () => {
     expect(() =>
-      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, VP]]), 0, 600, 'gate'),
+      assertViewportClientHeightIs(mockWith([['t', 'd', optionsWith(VP)]]), 0, 600, 'gate'),
     ).not.toThrow();
     const wrong = JSON.stringify({ scroll_y: 0, client_height: 599 });
     expect(() =>
-      assertViewportClientHeightIs(mockWith([['t', 'd', undefined, wrong]]), 0, 600, 'gate'),
+      assertViewportClientHeightIs(mockWith([['t', 'd', optionsWith(wrong)]]), 0, 600, 'gate'),
     ).toThrow(/carried client_height 599/);
   });
 
   it('gates pass on a legitimate non-empty scan (and still catch real violations)', () => {
     expect(() =>
-      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, VP]]), 0, 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', optionsWith(VP)]]), 0, 880, 'gate'),
     ).not.toThrow();
     expect(() =>
-      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, undefined]]), 0, 'gate'),
+      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined]]), 0, 'gate'),
     ).not.toThrow();
     expect(() =>
-      assertAllCallsCarryViewport(mockWith([['t', 'd', undefined, VP]]), 0, 'gate'),
+      assertAllCallsCarryViewport(mockWith([['t', 'd', optionsWith(VP)]]), 0, 'gate'),
     ).not.toThrow();
 
     const stale = JSON.stringify({ scroll_y: 0, client_height: 880 });
     expect(() =>
-      assertNoViewportClientHeight(mockWith([['t', 'd', undefined, stale]]), 0, 880, 'gate'),
+      assertNoViewportClientHeight(mockWith([['t', 'd', optionsWith(stale)]]), 0, 880, 'gate'),
     ).toThrow(/stale client_height 880/);
     expect(() =>
-      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', undefined, VP]]), 0, 'gate'),
-    ).toThrow(/must omit viewport_json/);
+      assertAllRecentCallsOmitViewport(mockWith([['t', 'd', optionsWith(VP)]]), 0, 'gate'),
+    ).toThrow(/must omit the scroll viewport/);
     expect(() =>
-      assertAllCallsCarryViewport(mockWith([['t', 'd', undefined, undefined]]), 0, 'gate'),
-    ).toThrow(/ran without viewport_json/);
+      assertAllCallsCarryViewport(mockWith([['t', 'd', undefined]]), 0, 'gate'),
+    ).toThrow(/ran without the scroll viewport/);
   });
 });
 

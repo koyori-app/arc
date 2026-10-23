@@ -14,6 +14,7 @@ import {
   type TaskHitRegion,
 } from './replayCommands';
 import { resetCanvasElement } from './canvasLifecycle';
+import { buildOptionsJson } from './options';
 import {
   chartHeightForTaskCount,
   isCanvasCapacityError,
@@ -137,13 +138,21 @@ const chartHeight = computed(() => {
   return chartHeightForTaskCount(props.tasks.length);
 });
 
-const viewportJson = computed(() => {
+const scrollViewport = computed(() => {
   if (!requestedVirtualization.value || !viewportReady.value) return undefined;
-  return JSON.stringify({
+  return {
     scroll_y: scrollY.value,
     client_height: clientHeight.value,
-  });
+  };
 });
+
+const optionsJson = computed(() =>
+  buildOptionsJson({
+    today: props.today,
+    scrollViewport: scrollViewport.value,
+    tzOffsetMinutes: props.tzOffsetMinutes,
+  }),
+);
 
 /**
  * Single chokepoint for both WASM entry points: while virtualization is
@@ -161,9 +170,7 @@ const svgHtml = computed<string | null>(() => {
   return render_svg(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
-    props.today ?? undefined,
-    viewportJson.value,
-    props.tzOffsetMinutes ?? undefined,
+    optionsJson.value,
   );
 });
 
@@ -173,9 +180,7 @@ const canvasCommandsJson = computed(() => {
   return render_canvas_commands(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
-    props.today ?? undefined,
-    viewportJson.value,
-    props.tzOffsetMinutes ?? undefined,
+    optionsJson.value,
   );
 });
 
@@ -193,13 +198,12 @@ const svgFailure = computed<RenderFailure | null>(() => {
   // Only a blank chart can be hiding a refusal, and `render_svg` returns this
   // exact markup when it refuses — so the happy path never pays a second parse.
   if (svgHtml.value !== emptySvgMarkup.value) return null;
-  // `today` is passed too: an unreadable one refuses the render the same way an
-  // unreadable task does, and only this channel says so.
+  // The same options are passed too: an unreadable `today` or offset refuses
+  // the render the same way an unreadable task does, and only this channel says so.
   const reported = render_svg_error(
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
-    props.today ?? undefined,
-    props.tzOffsetMinutes ?? undefined,
+    optionsJson.value,
   );
   return reported ? parseRenderError(reported) : null;
 });
@@ -225,12 +229,14 @@ function renderCanvasFallback(failure: RenderFailure) {
       fallbackSvg = render_svg(
         JSON.stringify(props.tasks),
         JSON.stringify(props.deps ?? []),
-        props.today ?? undefined,
-        JSON.stringify({
-          scroll_y: scrollY.value,
-          client_height: Math.min(clientHeight.value, 600),
+        buildOptionsJson({
+          today: props.today,
+          scrollViewport: {
+            scroll_y: scrollY.value,
+            client_height: Math.min(clientHeight.value, 600),
+          },
+          tzOffsetMinutes: props.tzOffsetMinutes,
         }),
-        props.tzOffsetMinutes ?? undefined,
       );
     } catch {
       // resolveCanvasFailure turns a failed fallback into a visible error.
