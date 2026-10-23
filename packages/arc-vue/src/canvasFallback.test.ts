@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chartHeightForTaskCount, resolveCanvasFailure } from './canvasFallback';
-import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES } from './wasmContract';
+import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES, RUST_LAYOUT } from './wasmContract';
 
 const capacityFailure = (message: string) => ({
   message,
@@ -21,6 +21,13 @@ describe('resolveCanvasFailure', () => {
       expect(svg).toContain(`height="${height}"`);
     },
   );
+
+  it('takes the legend band off the reserved height when the legend is hidden', () => {
+    expect(chartHeightForTaskCount(4, 'hidden'))
+      .toBe(chartHeightForTaskCount(4) - RUST_LAYOUT.LEGEND_H);
+    expect(chartHeightForTaskCount(4, 'shown')).toBe(chartHeightForTaskCount(4));
+    expect(chartHeightForTaskCount(0, 'hidden')).toBe(0);
+  });
 
   it('resets the scroll domain for empty content', () => {
     expect(chartHeightForTaskCount(0)).toBe(0);

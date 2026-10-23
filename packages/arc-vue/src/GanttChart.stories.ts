@@ -107,3 +107,41 @@ export const CanvasBackend: Story = {
     template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
   }),
 };
+
+// A caller that hides the legend draws its own (see `loadLegendSpec`). The
+// chart loses the band the legend took, so these two pin the shorter figure on
+// each backend. The stories above are not changed.
+export const LegendHidden: Story = {
+  args: {
+    ...vrtArgs,
+    tasks,
+    deps,
+    today: '2026-06-06',
+    legend: 'hidden',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};
+
+export const LegendHiddenCanvas: Story = {
+  args: {
+    ...vrtArgs,
+    tasks,
+    deps,
+    today: '2026-06-06',
+    legend: 'hidden',
+    backend: 'canvas',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};

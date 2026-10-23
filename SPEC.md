@@ -171,6 +171,14 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 ```
 
 - `data-task-id` 属性によるクリックデリゲーションで `taskClick` イベントを emit
+- `legend`: `'shown'`(既定)か `'hidden'`。`'hidden'` で凡例を描かず、図の高さも凡例の分(`LEGEND_H`、40px)だけ詰める。SVG にも canvas にも、canvas が SVG に落ちた時の図にも効く
+  - 真偽値の prop にしないのは、Vue が省略された真偽値の prop を `false` に変えるため。省略は今まで通り凡例を出す
+  - 省略した時、wasm へ渡す `options_json` は `legend` の鍵を持たない
+- `loadLegendSpec()`: 凡例の中身(段の key、名、色、範囲と、進捗の線の名、色、太さ、破線)を返す。`legend="hidden"` にして自分で凡例を描く使い手が読む
+  - wasm の初期化を済ませてから `legend_spec_json()` を呼ぶので、図を一つも置く前に呼んでよい
+  - 値は arc-vue に書き写さず、読み込んだ `@koyori-app/arc` に問う。arc と arc-vue は別の版で入り得るため
+  - 型 `LegendSpec`、`LegendTier`、`LegendProgressLine` は `index.ts` から出す。形は core の `LegendSpec` を JSON にした物と同じ
+- `chartHeightForTaskCount` は内部の関数で、`legend` の指定に応じて入れ物の高さを求める。`wasmContract.ts` の `RUST_LAYOUT` は変えない
 
 ## SVG 出力仕様
 

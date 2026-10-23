@@ -50,6 +50,14 @@ const props = defineProps<{
    * the same data draws the same days for every viewer (see SPEC.md).
    */
   tzOffsetMinutes?: number;
+  /**
+   * `'hidden'` leaves the colour legend out and takes its height off the
+   * chart, for a caller that draws its own (see `loadLegendSpec`). Left out,
+   * the legend is drawn as before. It is a string and not a boolean on purpose:
+   * Vue turns an omitted boolean prop into `false`, which here would hide the
+   * legend of every existing caller.
+   */
+  legend?: 'shown' | 'hidden';
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -138,7 +146,7 @@ watch(requestedVirtualization, async (virtual) => {
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
-  return chartHeightForTaskCount(props.tasks.length);
+  return chartHeightForTaskCount(props.tasks.length, props.legend);
 });
 
 const scrollViewport = computed(() => {
@@ -154,6 +162,7 @@ const optionsJson = computed(() =>
     today: props.today,
     scrollViewport: scrollViewport.value,
     tzOffsetMinutes: props.tzOffsetMinutes,
+    legend: props.legend,
   }),
 );
 
@@ -239,6 +248,9 @@ function renderCanvasFallback(failure: RenderFailure) {
             client_height: Math.min(clientHeight.value, 600),
           },
           tzOffsetMinutes: props.tzOffsetMinutes,
+          // Left out here, the SVG the canvas falls back to would bring the
+          // legend back and be taller than the height reserved for it.
+          legend: props.legend,
         }),
       );
     } catch {

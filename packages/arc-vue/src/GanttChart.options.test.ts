@@ -5,7 +5,8 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GanttChart from './GanttChart.vue';
 import type { GanttTask } from './types.ts';
-import { EMPTY_SVG_MARKUP } from './wasmContract';
+import { chartHeightForTaskCount } from './canvasFallback';
+import { EMPTY_SVG_MARKUP, RUST_LAYOUT } from './wasmContract';
 
 const renderSvgMock = vi.fn((..._args: unknown[]) => '<svg>chart</svg>');
 const renderCanvasMock = vi.fn((..._args: unknown[]) => '');
@@ -61,5 +62,50 @@ describe('what reaches the Wasm entry points', () => {
         tz_offset_minutes: 540,
       });
     }
+  });
+
+  it('writes the same options string it wrote before `legend` existed, when `legend` is left out', async () => {
+    mount(GanttChart, {
+      props: { tasks, today: '2026-06-03', tzOffsetMinutes: 540, deviceTier: 'high' },
+    });
+    await flushPromises();
+
+    for (const call of renderSvgMock.mock.calls) {
+      expect(call[2]).toBe('{"today":"2026-06-03","tz_offset_minutes":540}');
+    }
+  });
+
+  it('adds `legend` to the options of the SVG path when it is hidden', async () => {
+    mount(GanttChart, { props: { tasks, legend: 'hidden', deviceTier: 'high' } });
+    await flushPromises();
+
+    expect(renderSvgMock).toHaveBeenCalled();
+    for (const call of renderSvgMock.mock.calls) {
+      expect(JSON.parse(call[2] as string)).toEqual({ legend: 'hidden' });
+    }
+  });
+
+  it('adds `legend` to the options of the Canvas path when it is hidden', async () => {
+    mount(GanttChart, {
+      props: { tasks, backend: 'canvas', legend: 'hidden', deviceTier: 'high' },
+    });
+    await flushPromises();
+
+    expect(renderCanvasMock).toHaveBeenCalled();
+    for (const call of renderCanvasMock.mock.calls) {
+      expect(JSON.parse(call[2] as string)).toEqual({ legend: 'hidden' });
+    }
+  });
+
+  it('reserves the shorter height for a hidden legend, and the old one otherwise', async () => {
+    const hidden = mount(GanttChart, { props: { tasks, legend: 'hidden', deviceTier: 'high' } });
+    const shown = mount(GanttChart, { props: { tasks, deviceTier: 'high' } });
+    await flushPromises();
+
+    const heightOf = (w: typeof hidden) =>
+      Number.parseInt((w.get('.koyori-gantt-inner').element as HTMLElement).style.height, 10);
+    expect(heightOf(shown)).toBe(chartHeightForTaskCount(tasks.length));
+    expect(heightOf(hidden)).toBe(chartHeightForTaskCount(tasks.length, 'hidden'));
+    expect(heightOf(shown) - heightOf(hidden)).toBe(RUST_LAYOUT.LEGEND_H);
   });
 });
