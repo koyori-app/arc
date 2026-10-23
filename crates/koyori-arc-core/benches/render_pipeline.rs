@@ -58,6 +58,7 @@ fn bench_render_svg_native(c: &mut Criterion) {
                             black_box(dj.as_str()),
                             Some(black_box(td.clone())),
                             None,
+                            None,
                         ))
                     });
                 },

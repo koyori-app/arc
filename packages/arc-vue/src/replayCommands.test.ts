@@ -83,7 +83,7 @@ describe('replayCommands', () => {
 
   it('parses golden CommandBuffer JSON', () => {
     const buffer = parseCommandBuffer(goldenJson);
-    expect(buffer.viewport_width).toBe(350);
+    expect(buffer.viewport_width).toBe(422);
     expect(buffer.ops.length).toBeGreaterThan(10);
     expect(buffer.palette.colors.length).toBeGreaterThan(0);
   });

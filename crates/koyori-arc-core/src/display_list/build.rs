@@ -6,6 +6,7 @@ use crate::layout::assign_rows;
 use crate::progress::progress_line;
 
 use super::constants::*;
+use super::text_metrics::{text_width_px, truncate_to_width};
 use super::types::*;
 
 /// Compute inclusive row index window `[first, last]` for virtualization.
@@ -58,7 +59,11 @@ pub fn build_display_list(
         .fold(0.0_f64, f64::max)
         .ceil() as i64;
 
-    let chart_w = chart_width(total_days as f64);
+    // The legend's width does not depend on how many days there are, so a short
+    // span would otherwise leave it running past the right edge of the viewBox.
+    let legend = legend_layout();
+    let chart_w = chart_width(total_days as f64)
+        .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX);
     let chart_h = chart_height(rows.len() as f64);
 
     let viewport = Viewport {
@@ -234,7 +239,8 @@ pub fn build_display_list(
             }));
         }
 
-        let display_title = truncate_title(&task.title, TITLE_MAX_CHARS);
+        let display_title =
+            truncate_to_width(&task.title, DEFAULT_FONT_SIZE_PX, ROW_LABEL_MAX_W_PX);
         let label_x = LABEL_W - LABEL_GAP_PX;
         let hit_left = label_x - LABEL_HIT_W;
         children.push(Primitive::Text(TextPrim {
@@ -281,10 +287,18 @@ pub fn build_display_list(
     });
 
     // Dependencies layer
-    let row_map: HashMap<&str, &crate::layout::RowLayout> =
-        rows.iter().map(|r| (r.task_id.as_str(), r)).collect();
-    let task_map: HashMap<&str, &GanttTask> =
-        graph.tasks.iter().map(|t| (t.id.as_str(), t)).collect();
+    // First occurrence wins for a repeated id, the same rule `layout::assign_rows`
+    // uses to place the dependency edges. `collect()` into a map keeps the last
+    // one, which would draw an arrow from a different bar than the row it was
+    // laid out for.
+    let mut row_map: HashMap<&str, &crate::layout::RowLayout> = HashMap::new();
+    for r in &rows {
+        row_map.entry(r.task_id.as_str()).or_insert(r);
+    }
+    let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
+    for t in &graph.tasks {
+        task_map.entry(t.id.as_str()).or_insert(t);
+    }
 
     let mut dep_prims = Vec::new();
     for dep in &graph.deps {
@@ -387,13 +401,18 @@ pub fn build_display_list(
         });
     }
 
-    // Progress line layer — delegates geometry to progress_line()
-    let prog_input: Vec<(f64, f64, f64, f64, f64)> = graph
-        .tasks
+    // Progress line layer — delegates geometry to progress_line().
+    // `rows` is in input order but the line runs top to bottom, so the points are
+    // ordered by row. Otherwise a dependency that reorders rows makes the line
+    // run backwards, and the today anchors grow from a row in the middle.
+    let mut by_row: Vec<(usize, usize)> =
+        rows.iter().enumerate().map(|(i, r)| (r.row, i)).collect();
+    by_row.sort_unstable();
+    let prog_input: Vec<(f64, f64, f64, f64, f64)> = by_row
         .iter()
-        .zip(rows.iter())
-        .map(|(t, r)| {
-            let y_top = HEADER_H + r.row as f64 * ROW_H;
+        .map(|&(row, i)| {
+            let t = &graph.tasks[i];
+            let y_top = HEADER_H + row as f64 * ROW_H;
             let y_bot = y_top + ROW_H;
             (
                 LABEL_W + t.start_days(epoch) * PX_PER_DAY,
@@ -421,10 +440,9 @@ pub fn build_display_list(
 
     // Legend layer
     let legend_y1 = chart_h - LEGEND_H + 14.0;
-    let legend_x = LABEL_W + 8.0;
+    let legend_x = LABEL_W + LEGEND_LEFT_PAD_PX;
     let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
-    let sw = 10.0;
-    let gap = 4.0;
+    let sw = LEGEND_SWATCH_PX;
 
     let mut legend_prims = vec![Primitive::Group(GroupPrim {
         task_id: None,
@@ -432,14 +450,14 @@ pub fn build_display_list(
         bbox: BBox {
             x: legend_x,
             y: legend_y1 - 4.0,
-            width: 400.0,
+            width: legend.progress_width,
             height: 20.0,
         },
         children: vec![
             Primitive::Line(LinePrim {
                 x1: legend_x,
                 y1: legend_y1,
-                x2: legend_x + 28.0,
+                x2: legend_x + LEGEND_LINE_SAMPLE_W_PX,
                 y2: legend_y1,
                 stroke: ColorId::Progress,
                 stroke_width: PROGRESS_LINE_STROKE_W,
@@ -447,11 +465,11 @@ pub fn build_display_list(
                 semantic: LineSemantic::LegendProgressLine,
             }),
             Primitive::Text(TextPrim {
-                x: legend_x + 34.0,
+                x: legend_x + LEGEND_LINE_SAMPLE_W_PX + LEGEND_LINE_TEXT_GAP_PX,
                 y: legend_y1 + 4.0,
-                content: "進捗ステータスライン（各タスクの完了位置を結ぶ）".to_string(),
+                content: LEGEND_PROGRESS_LABEL.to_string(),
                 fill: Some(ColorId::GridLabel),
-                font_size: Some(10.0),
+                font_size: Some(LEGEND_PROGRESS_FONT_PX),
                 font_weight: None,
                 anchor: None,
                 baseline: TextBaseline::Middle,
@@ -460,16 +478,9 @@ pub fn build_display_list(
         ],
     })];
 
-    let tier_items: [(ColorId, &str); 5] = [
-        (ColorId::BarBg, "未達"),
-        (ColorId::TierLow, "低"),
-        (ColorId::TierMid, "中"),
-        (ColorId::TierHigh, "高"),
-        (ColorId::TierDone, "完了"),
-    ];
     let mut tier_children = Vec::new();
     let mut lx = legend_x;
-    for (color_id, label) in tier_items {
+    for (color_id, label) in LEGEND_TIER_ITEMS {
         tier_children.push(Primitive::Rect(RectPrim {
             x: lx,
             y: legend_y2 - sw / 2.0,
@@ -479,30 +490,22 @@ pub fn build_display_list(
             rx: Some(2.0),
             semantic: RectSemantic::LegendSwatch,
         }));
-        lx += sw + 2.0;
+        lx += sw + LEGEND_SWATCH_GAP_PX;
         tier_children.push(Primitive::Text(TextPrim {
             x: lx,
             y: legend_y2 + 3.0,
             content: label.to_string(),
             fill: Some(ColorId::GridLabel),
-            font_size: Some(9.0),
+            font_size: Some(LEGEND_TIER_FONT_PX),
             font_weight: None,
             anchor: None,
             baseline: TextBaseline::Middle,
             semantic: TextSemantic::LegendTier,
         }));
-        // Advance per *byte* of a UTF-8 label, not per glyph — it happens to equal
-        // the 9.0 font size above and is not derived from it. Left as its own
-        // literal so tightening one never silently moves the other.
-        //
-        // Known limit, deliberately not fixed here: `len()` counts UTF-8 bytes,
-        // so every label above is a Japanese string costing three bytes per
-        // glyph and advancing about three times the width it means to. With
-        // enough legend entries the row runs past the viewBox and the tail is
-        // clipped. Correcting it moves the legend geometry, which every SVG
-        // golden pins byte for byte, so it is tracked separately as issue #28
-        // rather than folded into this change.
-        lx += label.len() as f64 * 9.0 + gap + sw;
+        // Advance by the label's estimated width, not by `label.len()`: that is
+        // the UTF-8 byte count, three per Japanese glyph, and it pushed the row
+        // far past the viewBox (issue #28).
+        lx += text_width_px(label, LEGEND_TIER_FONT_PX) + LEGEND_ITEM_GAP_PX;
     }
     legend_prims.push(Primitive::Group(GroupPrim {
         task_id: None,
@@ -510,7 +513,7 @@ pub fn build_display_list(
         bbox: BBox {
             x: legend_x,
             y: legend_y2 - sw,
-            width: lx - legend_x,
+            width: legend.tier_width,
             height: sw + 6.0,
         },
         children: tier_children,
@@ -543,22 +546,15 @@ fn format_date(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-fn truncate_title(s: &str, max_chars: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
-        format!("{truncated}…")
-    }
-}
-
 fn task_bar_width_days(task: &GanttTask, epoch: NaiveDate) -> f64 {
     (task.end_days(epoch) - task.start_days(epoch)).max(0.0)
 }
 
+/// A task with no width is drawn as a diamond. That covers `end == start`, and
+/// also `end < start`: `end_days` cuts the latter to `start`, so without this it
+/// would have no bar at all and could not be seen or clicked.
 fn is_zero_duration(task: &GanttTask) -> bool {
-    task.end.is_some_and(|end| end == task.start)
+    task.end.is_some_and(|end| end <= task.start)
 }
 
 fn tier_fill_color(tier: ProgressTier) -> ColorId {
@@ -587,5 +583,288 @@ fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextA
             TextAnchor::Start,
             ColorId::ProgressTextOnBg,
         )
+    }
+}
+
+const LEGEND_PROGRESS_LABEL: &str = "進捗ステータスライン（各タスクの完了位置を結ぶ）";
+
+const LEGEND_TIER_ITEMS: [(ColorId, &str); 5] = [
+    (ColorId::BarBg, "未達"),
+    (ColorId::TierLow, "低"),
+    (ColorId::TierMid, "中"),
+    (ColorId::TierHigh, "高"),
+    (ColorId::TierDone, "完了"),
+];
+
+/// How wide the legend's two rows are, measured from `legend_x`. They depend on
+/// the text only, never on the chart, so the chart width can be raised to hold
+/// them before anything is laid out.
+struct LegendLayout {
+    /// The dashed sample, the gap, and the progress-line caption.
+    progress_width: f64,
+    /// The five tier swatches with their captions, up to the last caption's end.
+    tier_width: f64,
+    /// The wider of the two rows.
+    width: f64,
+}
+
+fn legend_layout() -> LegendLayout {
+    let progress_width = LEGEND_LINE_SAMPLE_W_PX
+        + LEGEND_LINE_TEXT_GAP_PX
+        + text_width_px(LEGEND_PROGRESS_LABEL, LEGEND_PROGRESS_FONT_PX);
+    let mut tier_width = 0.0;
+    for (_, label) in LEGEND_TIER_ITEMS {
+        tier_width += LEGEND_SWATCH_PX
+            + LEGEND_SWATCH_GAP_PX
+            + text_width_px(label, LEGEND_TIER_FONT_PX)
+            + LEGEND_ITEM_GAP_PX;
+    }
+    // The advance after the last caption is a gap to nothing.
+    tier_width -= LEGEND_ITEM_GAP_PX;
+    LegendLayout {
+        progress_width,
+        tier_width,
+        width: progress_width.max(tier_width),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::display_list::text_metrics::glyph_em;
+    use crate::graph::{GanttDep, GanttGraph};
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn graph_of(titles: &[&str], days: i64) -> GanttGraph {
+        let start = date(2026, 6, 1);
+        GanttGraph {
+            tasks: titles
+                .iter()
+                .enumerate()
+                .map(|(i, t)| GanttTask {
+                    id: format!("t{i}"),
+                    title: (*t).to_string(),
+                    progress_pct: 50,
+                    start,
+                    end: Some(start + Duration::days(days)),
+                })
+                .collect(),
+            deps: Vec::<GanttDep>::new(),
+        }
+    }
+
+    fn legend_prims(list: &DisplayList) -> Vec<&Primitive> {
+        fn walk<'a>(p: &'a Primitive, out: &mut Vec<&'a Primitive>) {
+            match p {
+                Primitive::Group(g) => g.children.iter().for_each(|c| walk(c, out)),
+                other => out.push(other),
+            }
+        }
+        let mut out = Vec::new();
+        for layer in list.layers.iter().filter(|l| l.kind == LayerKind::Legend) {
+            layer.primitives.iter().for_each(|p| walk(p, &mut out));
+        }
+        out
+    }
+
+    /// 凡例のどの部品の右端も viewBox の中に収まる。
+    fn assert_legend_inside(list: &DisplayList) {
+        let width = list.viewport.width;
+        for p in legend_prims(list) {
+            let right = match p {
+                Primitive::Rect(r) => r.x + r.width,
+                Primitive::Line(l) => l.x1.max(l.x2),
+                Primitive::Text(t) => {
+                    t.x + text_width_px(&t.content, t.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX))
+                }
+                _ => continue,
+            };
+            assert!(
+                right <= width,
+                "legend part ends at {right}, viewBox is {width}"
+            );
+        }
+    }
+
+    #[test]
+    fn legend_stays_inside_the_viewbox_for_short_spans() {
+        for days in [0, 1, 2, 4, 7, 14, 60] {
+            let g = graph_of(&["a"], days);
+            let list = build_display_list(&g, date(2026, 6, 1), None, None);
+            assert_legend_inside(&list);
+        }
+    }
+
+    #[test]
+    fn a_wide_chart_is_not_widened_by_the_legend() {
+        let g = graph_of(&["a"], 60);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        assert_eq!(list.viewport.width, chart_width(60.0));
+    }
+
+    #[test]
+    fn a_short_chart_is_widened_to_hold_the_legend() {
+        let g = graph_of(&["a"], 2);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        assert!(list.viewport.width > chart_width(2.0));
+        // 背景の見出し帯も同じ幅まで伸びる。
+        let header_right = list
+            .layers
+            .iter()
+            .filter(|l| l.kind == LayerKind::Background)
+            .flat_map(|l| l.primitives.iter())
+            .find_map(|p| match p {
+                Primitive::Rect(r) => Some(r.x + r.width),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(header_right, list.viewport.width);
+    }
+
+    #[test]
+    fn legend_advance_is_not_the_utf8_byte_count() {
+        let w = legend_layout().tier_width;
+        // 旧実装は五つの見出しで約 319px 進めた。字数で数えれば 171px になる。
+        assert!(w < 200.0, "tier row is {w}px wide");
+    }
+
+    fn row_label_texts(list: &DisplayList) -> Vec<&TextPrim> {
+        let mut out = Vec::new();
+        for layer in list.layers.iter().filter(|l| l.kind == LayerKind::Bars) {
+            for p in &layer.primitives {
+                if let Primitive::Group(g) = p {
+                    for c in &g.children {
+                        if let Primitive::Text(t) = c {
+                            if t.semantic == TextSemantic::RowLabel {
+                                out.push(t);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn row_labels_fit_the_label_column() {
+        let titles = [
+            "とても長い題名のタスクでどこまで表示されるかを確かめるための題",
+            "DBスキーマ変更とマイグレーション手順の整備",
+            "APIのレート制限を設計する",
+            "Refactor the authentication middleware to support multiple providers",
+            "WWWWWWWWWWWWWWWWWWWW",
+            "短い",
+        ];
+        let g = graph_of(&titles, 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        for t in row_label_texts(&list) {
+            let w = text_width_px(&t.content, DEFAULT_FONT_SIZE_PX);
+            // anchor は End。左端は x - w。0 を割ると頭の字が消える。
+            assert!(
+                t.x - w >= ROW_LABEL_LEFT_MARGIN_PX - 1e-9,
+                "{:?}: left edge {}",
+                t.content,
+                t.x - w
+            );
+        }
+    }
+
+    /// 切り詰めと同じ見積もり（`text_width_px`）で左端を検めると、見積もりが外れた時に
+    /// 切り詰めも検めも同じだけ外れ、試験が通ったまま実際の図がはみ出す。
+    /// そこで、曖昧幅の字を含む題は、見積もりを使わずに全角 1 字を `DEFAULT_FONT_SIZE_PX` と置いて検める。
+    /// これらの字は日本語の字体で全角に描かれるので、この置き方が実際の幅の上限になる。
+    /// 字体の実測は wasm の中では取れず、この検めも実測ではない。
+    #[test]
+    fn row_labels_with_ambiguous_width_glyphs_fit_without_the_estimate() {
+        let titles = [
+            "①②③④⑤⑥⑦⑧⑨⑩",
+            "※要確認",
+            "→ 次工程",
+            "■ 設計",
+            "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳",
+            "→→→→→→→→→→→→→→→→→→→→",
+            "※※※※※※※※※※※※※※※※※※※※",
+            "± × ÷ ° § ± × ÷ ° § ± × ÷ ° §",
+        ];
+        let g = graph_of(&titles, 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let labels = row_label_texts(&list);
+        assert_eq!(labels.len(), titles.len());
+        for t in labels {
+            // 字の数 × 全角。半角の空白だけは 0.3 とする（空白は全角にならぬ字体が無い）。
+            let w: f64 = t
+                .content
+                .chars()
+                .map(|c| if c == ' ' { 0.3 } else { 1.0 } * DEFAULT_FONT_SIZE_PX)
+                .sum();
+            assert!(
+                t.x - w >= ROW_LABEL_LEFT_MARGIN_PX - 1e-9,
+                "{:?}: left edge {}",
+                t.content,
+                t.x - w
+            );
+        }
+    }
+
+    /// 検め手の挙げた例が、切られる位置も含めて意図の通りに収まる。
+    /// 期待は `text_width_px` を通さず、文字列で直に書く。
+    #[test]
+    fn ambiguous_width_titles_are_cut_where_they_are_expected() {
+        let titles = [
+            "①②③④⑤⑥⑦⑧⑨⑩",
+            "※要確認",
+            "→ 次工程",
+            "■ 設計",
+            "①②③④⑤⑥⑦⑧⑨⑩⑪⑫",
+        ];
+        let g = graph_of(&titles, 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let labels: Vec<String> = row_label_texts(&list)
+            .iter()
+            .map(|t| t.content.clone())
+            .collect();
+        // 112px は全角 9 字分。10 字の ①..⑩ は 8 字と … に切られる。
+        assert_eq!(
+            labels,
+            vec!["①②③④⑤⑥⑦⑧…", "※要確認", "→ 次工程", "■ 設計", "①②③④⑤⑥⑦⑧…",]
+        );
+    }
+
+    /// 凡例の文言は固定の字面で、使う手が差し替えられない。
+    /// どの字も全角に数えられ、曖昧幅の字は含まれない。
+    /// 文言を書き換えて曖昧幅や比例幅の字を入れた時に、気づけるようにする。
+    #[test]
+    fn legend_captions_are_all_full_width_glyphs() {
+        let captions = std::iter::once(LEGEND_PROGRESS_LABEL)
+            .chain(LEGEND_TIER_ITEMS.iter().map(|(_, label)| *label));
+        for caption in captions {
+            for c in caption.chars() {
+                assert_eq!(glyph_em(c), 1.0, "{caption:?}: U+{:04X} {c}", c as u32);
+            }
+        }
+    }
+
+    #[test]
+    fn a_title_that_fits_is_not_touched() {
+        let g = graph_of(&["短い", "Design"], 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let labels: Vec<&str> = row_label_texts(&list)
+            .iter()
+            .map(|t| t.content.as_str())
+            .collect();
+        assert_eq!(labels, vec!["短い", "Design"]);
+    }
+
+    #[test]
+    fn a_cut_title_ends_with_an_ellipsis_and_keeps_its_head() {
+        let g = graph_of(&["とても長い題名のタスクでどこまで表示されるか"], 8);
+        let list = build_display_list(&g, date(2026, 6, 1), None, None);
+        let label = &row_label_texts(&list)[0].content;
+        assert!(label.starts_with("とても長い"), "{label}");
+        assert!(label.ends_with('…'));
     }
 }

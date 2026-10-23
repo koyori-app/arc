@@ -36,9 +36,58 @@ pub struct GanttDep {
 }
 ```
 
+### 日付と日時の字
+
+`start`・`end`・`today_iso` は、次のどれの字も受ける。
+
+- 日付: `2026-06-01`
+- 時差つきの日時（RFC 3339）: `2026-06-01T09:00:00Z`、`2026-06-08T09:00:00+09:00`、小数秒つき `2026-06-01T09:00:00.123Z`
+- 時差なしの日時: `2026-06-01T09:00:00`、`2026-06-01 09:00:00`
+
+task の `hard_deadline` と `soft_deadline` は timestamptz なので、JSON ではそのまま日時の字で届く。呼び手が日付へ直さなくても渡せる。
+
+### 時差の指定（`tz_offset_minutes`）
+
+日時の字がどの暦の日になるかは、呼び手が渡す時差で決まる。
+`tz_offset_minutes` は、UTC から東へ何分ずれているかを表す、符号つきの整数である（JST は `540`、アメリカ東部の標準時は `-300`）。
+
+| 字 | 指定なし | `540`（JST） | `0`（UTC） |
+|---|---|---|---|
+| `2026-06-08`（日付だけ） | 6 月 8 日 | 6 月 8 日 | 6 月 8 日 |
+| `2026-06-08T15:30:00Z` | 6 月 8 日 | 6 月 9 日 | 6 月 8 日 |
+| `2026-06-09T00:30:00+09:00` | 6 月 9 日 | 6 月 9 日 | 6 月 8 日 |
+| `2026-06-08T23:30:00`（時差なしの日時） | 6 月 8 日 | 6 月 8 日 | 6 月 8 日 |
+
+- **日付だけの字は換算しない。** 暦の日がもう書かれている。換算すると、書かれた日からかえってずれる。
+- **時差なしの日時の字も換算しない。** どの時差の時刻か分からず、直す元が無い。書かれた日を取る。
+- **時差つきの日時の字は、指定があればその時差の暦の日へ直す。** 指定がなければ、字が書いている暦の日をそのまま取る（`+09:00` の字なら、その `+09:00` の日）。
+- **指定なしと `0` は同じではない。** `+09:00` の字を、指定なしなら書かれた日で、`0` なら UTC の日で読む。指定なしは、この口ができる前の振る舞いと 1 字も違わない。
+- `start`・`end`・`today_iso` の三つとも、同じ筋で読む。
+- 整数でない値、NaN、無限大、絶対値が 1439 を超える値は、黙って 0 にせず `parse_error` で断る（メッセージに `tz_offset_minutes` と入る）。現実の時差は `-720` から `840` の間である。
+
+**task に結ぶ時に渡す値**: `hard_deadline` と `soft_deadline` は timestamptz で、UTC の字（`...Z`）で届くことが多い。
+指定なしのまま渡すと、日本の締切（6 月 9 日の 00:30 JST は UTC では 6 月 8 日の 15:30）が、黙って前の日に描かれる。
+利用者の時差で締切の日を見せたいなら、その利用者の時差を `tz_offset_minutes` に渡す。
+日付だけの字（sprint の `start_date` など）は、換算されずにそのまま使われるので、同じ呼び出しに混ぜてよい。
+
+**なぜ時差を暗黙に拾わないか**: arc は利用者の時差を自分では決めない。ブラウザの時差（`Intl.DateTimeFormat().resolvedOptions().timeZone`）も読まない。
+暗黙に拾うと、同じデータが、見る人の端末の設定によって違う日に描かれる。
+スクリーンショットや VRT も、実行した環境で結果が変わる。
+どの時差で見せるかは、呼び手が決めて明に渡す。たとえば task が利用者の設定にある時差を持っているなら、それを渡す。
+
+**限界**: 一つの図には一つの固定の時差（分）しか渡せない。夏時間のある地域では、夏と冬で時差が変わるので、片方の季節の締切が 1 日ずれうる。
+そういう呼び手は、渡す前に自分の暦で日付（`YYYY-MM-DD`）へ直す。日付だけの字は換算されない。
+IANA の名前（`Asia/Tokyo`）を受ける案は採らなかった。wasm の束が約 4 倍に太るためである（下の「束の大きさ」）。
+
+**束の大きさ（IANA の名前を受ける案との比較）**: `chrono-tz`（既定の機能、全地域）を足した試作の wasm は、`wasm-pack build --release` で 284,936 バイト（gzip 115,502）から 1,162,180 バイト（gzip 264,401）になった。
+約 877 KB（gzip で約 149 KB）の増加である。alpha の段階では、分の整数で足りるうえに軽い。
+
+読めない字は、黙って捨てずに明に断る。`start` と `end` は JSON 全体が `parse_error` になり（メッセージに `tasks[3].end` のように、何番目のタスクのどの欄かが入る）、`today_iso` も同じく `parse_error` になる（メッセージに `today` と入る）。
+`today_iso` が `undefined`・`null`・空の字・空白だけの時は「今日の線なし」で、誤りではない。
+
 `GanttTask` メソッド:
 - `start_days(epoch)` — epoch からの経過日数
-- `end_days(epoch)` — epoch から終了日までの経過日数。`end` が `None` の場合は `start + 1日` にフォールバック
+- `end_days(epoch)` — epoch から終了日までの経過日数。`end` が `None` の場合は `start + 1日` にフォールバック。`end` が `start` より前なら `start` に切る
 - `progress()` — `progress_pct` (0-100) を 0.0-1.0 に正規化
 
 ## API
@@ -58,16 +107,17 @@ pub fn render(
 
 ```rust
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>) -> String
+pub fn render_svg(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>, tz_offset_minutes: Option<f64>) -> String
 
 #[wasm_bindgen]
-pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>) -> String
+pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Option<String>, viewport_json: Option<String>, tz_offset_minutes: Option<f64>) -> String
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
-- `today_iso`: 今日マーカー用の ISO 8601 日付文字列（例: `"2026-06-16"`）。省略可
+- `today_iso`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。省略可。読めない字は断る（上の「日付と日時の字」）
+- `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略可。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
 - `viewport_json`: 仮想スクロール用 `ScrollViewport` の JSON 文字列。省略可
-- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error` から理由を取得できる
+- `render_svg` はパースエラー時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, today_iso, tz_offset_minutes)` から理由を取得できる。`today_iso` と `tz_offset_minutes` は `render_svg` に渡したものと同じ値を渡す（読めない `today_iso` と使えない時差も断りの一つで、この経路でしか分からない）
 - `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
 
 ### arc-vue
@@ -77,6 +127,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
   :tasks="tasks"
   :deps="deps"
   :today="todayIso"
+  :tz-offset-minutes="540"
   @task-click="onTaskClick"
 />
 ```
@@ -99,12 +150,13 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
   - 背景バー `class="bar-bg"`（未達部分、`#d1d5db`）
   - 進捗バー `class="bar-progress bar-tier-{low|mid|high|done}"`（達成部分、達成率帯で色分け）
   - 進捗% テキスト（任意表示だが現行実装ではバー上に表示）
-  - 左ラベル: 長タイトルは 16 文字で `…` 省略（全文は `<title>` で参照可）
+  - 左ラベル: 長タイトルはラベル欄の幅（112px）に収まるまで切り `…` を付ける（全文は `<title>` で参照可）。幅は字ごとの見積もりで、和文は 1 字 12px、英数字は 12px の 0.3〜0.85 倍。字数でもバイト数でもない
 - ゼロ期間タスク: `◇` ダイヤモンドマーカー（`<polygon class="bar-milestone bar-tier-...">`）
-- `end < start` ガード: 負の幅バーを生成しない（幅 0 扱い）
+- `end < start` ガード: `end` を `start` に切る（幅 0 扱い）。幅 0 のタスクは `◇` で描くので、`end < start` でもタスクは消えない。進捗の点も `start` より左へ出ない
 - 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）
 - 進捗ステータスライン: 全タスクの進捗ポイントを結ぶ赤破線ジグザグ（`class="progress-status-line"`）— **設計意図どおり温存**
   - **1 タスク = 1 代表点**: `(progress_x, y_mid)`。`progress_x = start + (end - start) × progress`、`y_mid = (y_top + y_bottom) / 2`
+  - **点の順は行の順**: 代表点は入力の順でなく、行（上から下）の順に結ぶ。依存で行が入れ替わっても、線は上から下へ単調に進む
   - **斜め直線結線**: 連続する代表点は斜め直線で結ぶ。バー縦貫（`y_top`→`y_bottom` の垂直線）や水平ジョグ（直角エルボー）は禁止
   - **today 指定かつチャート範囲内**: 端点を today 縦線上に固定。`(today_x, 最上段 y_top)` から開始 → 各タスクの代表点へ斜め接続 → `(today_x, 最下段 y_bottom)` で終端
   - **today 未指定、または today が範囲外**: レガシー。各タスクの代表点のみを斜め直線で順に結び、today 縦線へのアンカーは行わない
@@ -121,7 +173,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, today_iso: Opti
 | 高 | 67–99 | `#0ea5e9` | `bar-tier-high` |
 | 完了 | 100 | `#22c55e` | `bar-tier-done` |
 
-未達部分は常に `#d1d5db`（`bar-bg`）。凡例は SVG 下部に `bar-tier-legend` として表示。
+未達部分は常に `#d1d5db`（`bar-bg`）。凡例は SVG 下部に `bar-tier-legend` として表示。字送りは字ごとの幅の見積もり（和文 1 字は文字の大きさと同じ）で数え、UTF-8 のバイト数では数えない。図の幅が凡例の幅に満たない時（日数の短い図）は、図の幅を凡例の右端まで広げる。
 
 ### 色定数
 

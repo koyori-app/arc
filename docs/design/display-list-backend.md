@@ -149,7 +149,7 @@ pub struct GroupPrim {
 | タスクバー背景 `bar-bg` | `RoundRect` | `fill: ColorId::BarBg` |
 | 達成率塗り `bar-progress bar-tier-*` | `RoundRect` | tier に応じた `ColorId::TierLow..Done` |
 | 進捗% テキスト | `Text` | `font_weight: 600`, anchor 動的 |
-| 左ラベル（16文字省略） | `Text` | `anchor: End` |
+| 左ラベル（ラベル欄の幅で省略） | `Text` | `anchor: End` |
 | ゼロ期間タスク `◇` | `Polygon` | `bar-milestone` 相当 |
 | 依存矢印 `<path>` | `Path` | frappe-gantt 互換 elbow |
 | イナズマ線 `<polyline class="progress-status-line">` | `Polyline` | today アンカー仕様は `progress.rs` 踏襲 |

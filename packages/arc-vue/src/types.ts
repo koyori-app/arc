@@ -6,9 +6,18 @@ export interface GanttTask {
   title: string;
   /** `tasks.progress_pct` (0–100) */
   progress_pct: number;
-  /** Resolved from sprint.start_date or another source; ISO 8601 date string */
+  /**
+   * Resolved from sprint.start_date or another source. ISO 8601 date
+   * (`2026-06-01`) or date-time (`2026-06-01T09:00:00Z`). A date-only string is
+   * never converted. A date-time with an offset is converted to the calendar
+   * day of `tzOffsetMinutes`, or kept as written when that is not given.
+   */
   start: string;
-  /** `tasks.hard_deadline` or `tasks.soft_deadline`; ISO 8601 date string */
+  /**
+   * `tasks.hard_deadline` or `tasks.soft_deadline`. Same formats as `start`, so
+   * a timestamptz can be passed as it is. An `end` before `start` is drawn as if
+   * it were equal to `start`.
+   */
   end?: string;
 }
 
