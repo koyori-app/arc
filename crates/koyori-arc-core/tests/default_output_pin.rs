@@ -266,6 +266,43 @@ fn samples() -> Vec<Sample> {
     out.push(span("span_11d_today_day12", 11, Some(day(12))));
     out.push(span("span_12d", 12, None));
 
+    // 札が日数の幅の右へ伸びる図。凡例の下支えは効かない長さで、札の右端が幅を決める。
+    out.push(small(
+        "label_milestone_on_last_day",
+        vec![
+            task("a", "A", 40, 0, Some(20)),
+            task("m", "M", 100, 20, Some(20)),
+        ],
+        vec![],
+        None,
+    ));
+    // 今日が最後の日の翌日にある。札が幅を押し広げるので、今日の線が図の内に入る。
+    out.push(small(
+        "label_milestone_today_after_last_day",
+        vec![
+            task("a", "A", 40, 0, Some(20)),
+            task("m", "M", 100, 20, Some(20)),
+        ],
+        vec![],
+        Some(day(21)),
+    ));
+    out.push(small(
+        "label_one_day_bar_on_last_day",
+        vec![
+            task("a", "A", 40, 0, Some(19)),
+            task("b", "B", 100, 19, Some(20)),
+        ],
+        vec![],
+        None,
+    ));
+    // 最初の日(2026-06-01)は月曜で、21 日目も月曜。目盛りの札が最後の日に立つ。
+    out.push(small(
+        "label_last_day_is_monday",
+        vec![task("a", "A", 40, 0, Some(21))],
+        vec![],
+        None,
+    ));
+
     // 大きい試料。
     let sparse = generate_tasks(100);
     let sparse_deps = generate_deps(&sparse, DepDensity::Sparse);

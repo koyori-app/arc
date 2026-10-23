@@ -979,49 +979,68 @@ mod tests {
 
     #[test]
     fn the_canvas_guard_counts_the_labels_that_run_past_the_days() {
-        // The days fit, the milestone's label does not. The chart without a
-        // legend is wider than its days, and the guard has to refuse it.
+        // The days fit, the milestone's label does not. The chart is wider than
+        // its days, with a legend or without one, and the guard has to refuse it.
         let span = MAX_CANVAS_DATE_SPAN_DAYS;
         assert!(chart_width(span as f64) <= MAX_CANVAS_SIDE_PX as f64);
         let tasks = tasks_with_tail(2, span, Tail::Milestone);
-        let (hidden_w, _) = drawn_size(&tasks, LegendMode::Hidden);
-        assert!(
-            hidden_w > MAX_CANVAS_SIDE_PX as f64,
-            "the example is on the wrong side"
-        );
-        assert!(!canvas_accepts(&tasks, LegendMode::Hidden));
-        // The same chart with a legend is drawn at its days, and is still accepted.
-        let (shown_w, _) = drawn_size(&tasks, LegendMode::Shown);
-        assert!(shown_w <= MAX_CANVAS_SIDE_PX as f64);
-        assert!(canvas_accepts(&tasks, LegendMode::Shown));
-        // One day less, the label fits too, and the chart without a legend is accepted.
+        for legend in [LegendMode::Shown, LegendMode::Hidden] {
+            let (w, _) = drawn_size(&tasks, legend);
+            assert!(
+                w > MAX_CANVAS_SIDE_PX as f64,
+                "{legend:?}: the example is on the wrong side"
+            );
+            assert!(!canvas_accepts(&tasks, legend), "{legend:?}");
+        }
+        // One day less, the label fits too, and the chart is accepted either way.
         let shorter = tasks_with_tail(2, span - 1, Tail::Milestone);
-        let (w, _) = drawn_size(&shorter, LegendMode::Hidden);
-        assert!(w <= MAX_CANVAS_SIDE_PX as f64);
-        assert!(canvas_accepts(&shorter, LegendMode::Hidden));
-    }
-
-    #[test]
-    fn a_chart_with_a_legend_is_judged_by_its_days_whatever_its_labels_do() {
-        // The guard of a chart with a legend is what it was before the legend
-        // could be hidden: the days decide the side limit.
-        for span in (MAX_CANVAS_DATE_SPAN_DAYS - 3)..=(MAX_CANVAS_DATE_SPAN_DAYS + 1) {
-            for tail in TAILS {
-                let tasks = tasks_with_tail(2, span, tail);
-                assert_eq!(
-                    canvas_accepts(&tasks, LegendMode::Shown),
-                    span <= MAX_CANVAS_DATE_SPAN_DAYS,
-                    "{tail:?} span {span}"
-                );
-            }
+        for legend in [LegendMode::Shown, LegendMode::Hidden] {
+            let (w, _) = drawn_size(&shorter, legend);
+            assert!(w <= MAX_CANVAS_SIDE_PX as f64, "{legend:?}");
+            assert!(canvas_accepts(&shorter, legend), "{legend:?}");
         }
     }
 
     #[test]
-    fn the_canvas_area_guard_is_not_looser_than_the_chart_drawn_without_a_legend() {
-        // A chart without a legend is 40px shorter than the guard's height and
-        // wider than its days. Neither may let the area slip past the limit, at
-        // any number of rows. Only the guard runs here, so many charts are tried.
+    fn the_verdict_of_a_chart_with_a_legend_moves_only_toward_refusal() {
+        // Before the labels counted for a chart with a legend, the days alone
+        // decided the side limit (the legend's own floor is far below it here).
+        // The verdict has to move only one way: whatever is accepted now was
+        // accepted then, and the ones that moved are the charts whose labels run
+        // past the days, which the guard used to under-count.
+        let side = MAX_CANVAS_SIDE_PX as f64;
+        let (mut moved, mut kept_accepted, mut kept_refused) = (0, 0, 0);
+        for span in (MAX_CANVAS_DATE_SPAN_DAYS - 3)..=(MAX_CANVAS_DATE_SPAN_DAYS + 1) {
+            for tail in TAILS {
+                let tasks = tasks_with_tail(2, span, tail);
+                let was_accepted =
+                    span <= MAX_CANVAS_DATE_SPAN_DAYS && chart_width(span as f64) <= side;
+                let is_accepted = canvas_accepts(&tasks, LegendMode::Shown);
+                assert!(
+                    !is_accepted || was_accepted,
+                    "{tail:?} span {span}: refused before, accepted now"
+                );
+                match (was_accepted, is_accepted) {
+                    (true, false) => {
+                        moved += 1;
+                        // Only a tail that draws a label past the days can move it.
+                        assert!(!matches!(tail, Tail::Plain), "{tail:?} span {span}");
+                    }
+                    (true, true) => kept_accepted += 1,
+                    _ => kept_refused += 1,
+                }
+            }
+        }
+        // A window that shows no move, or no charts that stay, tests nothing.
+        assert!(moved > 0 && kept_accepted > 0 && kept_refused > 0);
+    }
+
+    #[test]
+    fn the_canvas_area_guard_is_not_looser_than_the_chart_drawn() {
+        // A chart without a legend is 40px shorter than the guard's height, and
+        // a chart of either kind is wider than its days when its labels run on.
+        // Neither may let the area slip past the limit, at any number of rows.
+        // Only the guard runs here, so many charts are tried.
         let area = MAX_CANVAS_AREA_PX as f64;
         let (mut accepted, mut refused) = (0, 0);
         for rows in (20..=MAX_CANVAS_ROWS).step_by(23).chain([MAX_CANVAS_ROWS]) {
@@ -1031,15 +1050,18 @@ mod tests {
                 if days_w * chart_height(rows as f64) < area * 0.97 {
                     continue;
                 }
-                for tail in TAILS {
+                for (tail, legend) in TAILS
+                    .into_iter()
+                    .flat_map(|t| [(t, LegendMode::Shown), (t, LegendMode::Hidden)])
+                {
                     let tasks = tasks_with_tail(rows, span, tail);
-                    let (w, h) = drawn_size(&tasks, LegendMode::Hidden);
-                    let verdict = canvas_graph_limit_error(&tasks, &[], LegendMode::Hidden);
+                    let (w, h) = drawn_size(&tasks, legend);
+                    let verdict = canvas_graph_limit_error(&tasks, &[], legend);
                     if verdict.is_none() {
                         accepted += 1;
                         assert!(
                             w * h <= area,
-                            "{rows} rows, {tail:?} span {span}: {w} x {h}"
+                            "{legend:?}, {rows} rows, {tail:?} span {span}: {w} x {h}"
                         );
                     } else {
                         refused += 1;
