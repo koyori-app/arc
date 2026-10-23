@@ -70,16 +70,22 @@ pub fn build_display_list(
     // its days give it (design/legend-opt-out.md, 4.7).
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
     let days_w = chart_width(total_days as f64);
-    // The width covers the right edge of everything the chart puts to the right
-    // of the days: the labels that run on past a bar's end. Every task counts,
-    // not only the rows in the window, or the width would change as the chart
-    // scrolls.
-    let labels_w = labels_right_edge(graph, epoch, total_days);
+    // A chart without a legend takes the width that covers the right edge of
+    // everything it puts to the right of the days: the labels that run on past a
+    // bar's end. Every task counts, not only the rows in the window, or the width
+    // would change as the chart scrolls.
+    //
+    // A chart with a legend does not take it. Its labels run past the viewBox for
+    // some inputs (a milestone or a one day bar that ends on the last day, or a
+    // last day that is a Monday), and that has been so since before the legend
+    // could be hidden. Widening it would change the default output, which this
+    // change promises not to do, so it is left to its own change
+    // (design/legend-opt-out.md, 4.8).
     let chart_w = match &legend {
-        Some(legend) => days_w
-            .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
-            .max(labels_w),
-        None => days_w.max(labels_w),
+        Some(legend) => {
+            days_w.max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
+        }
+        None => days_w.max(labels_right_edge(graph, epoch, total_days)),
     };
     let chart_h = chart_height_with(rows.len() as f64, legend_mode);
 

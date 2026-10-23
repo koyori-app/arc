@@ -12,7 +12,7 @@ use serde_json::Value;
 use super::build::build_display_list;
 use super::constants::*;
 use super::legend::{PROGRESS_LABEL, TIER_ITEMS};
-use super::right_edge_tests::right_edges;
+use super::right_edge_tests::{build as build_spans, charts, right_edges};
 use super::text_metrics::text_width_px;
 use super::types::*;
 use crate::backend::{BackendOutput, CanvasBackend, RenderBackend, SvgBackend};
@@ -178,6 +178,26 @@ fn hidden_takes_back_the_legend_height_and_keeps_the_bottom_padding() {
             chart_height_with(rows, LegendMode::Hidden)
         );
     }
+}
+
+#[test]
+fn shown_keeps_the_width_it_has_always_had_whatever_the_labels_do() {
+    // Shown の幅は、日数の幅と凡例の下支えの大きいほう。札の右端は幅を決めない
+    // (design 4.8)。札が溢れる図も含めて、全部の図でこの式のままである。
+    let mut checked = 0;
+    for epoch_back in 0..7 {
+        for (name, spans) in charts() {
+            let total_days = spans.iter().map(|s| s.1).max().unwrap() + epoch_back;
+            let expected = chart_width(total_days as f64).max(floor_px());
+            let l = build_spans(&spans, epoch_back, LegendMode::Shown);
+            assert_eq!(
+                l.viewport.width, expected,
+                "epoch {epoch_back} earlier, {name}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 1_000);
 }
 
 #[test]
