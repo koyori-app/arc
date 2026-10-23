@@ -110,6 +110,40 @@ describe('verify-release.sh', () => {
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.stdout, 'rc\n');
     });
+
+    // 関門は語を並べて許すのではなく、npm が断る形だけを断る。普通の前置きは
+    // 一覧に無くても通ることを縛る
+    for (const word of ['alpha', 'beta', 'rc', 'next', 'canary', 'pre', 'preview']) {
+      it(`普通の前置き ${word} は通る`, () => {
+        const version = `0.1.0-${word}.1`;
+        const result = runVerify([`v${version}`, SHA], { crate: version, vue: version });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, `${word}\n`);
+      });
+    }
+  });
+
+  // npm は semver の範囲として読める tag を断る（npm publish の
+  // "Tag name must not be a valid SemVer range"）。publish の前に関門で止める
+  describe('npm が範囲と読む dist-tag は標準出力を空にして exit 1', () => {
+    for (const [label, version] of [
+      ['前置きが空', '0.1.0-'],
+      ['前置きの頭の語が空', '0.1.0-.1'],
+      ['前置きが数字だけ', '0.1.0-1'],
+      ['前置きの頭の語が 0', '0.1.0-0.3'],
+      ['前置きの頭の語が x', '0.1.0-x.1'],
+      ['前置きの頭の語が X', '0.1.0-X.1'],
+      ['前置きの頭の語が v に数字', '0.1.0-v2.1'],
+      ['前置きの頭の語が v に x', '0.1.0-vx'],
+    ]) {
+      it(`${label}（v${version}）`, () => {
+        assertRefused(
+          runVerify([`v${version}`, SHA], { crate: version, vue: version }),
+          1,
+          /npm が semver の範囲として読む/,
+        );
+      });
+    }
   });
 
   describe('揃っていない時は標準出力を空にして exit 1', () => {

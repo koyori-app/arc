@@ -53,7 +53,17 @@ fi
 case "$ver" in
   *-*)
     pre="${ver#*-}"
-    echo "${pre%%.*}"
+    dist_tag="${pre%%.*}"
+    # npm は semver の範囲として読める tag を断る（npm publish の
+    # "Tag name must not be a valid SemVer range"）。前置きの頭の語の字種
+    # （英数とハイフン）では、範囲と読まれるのは空の字（* と読まれる）と、
+    # v を頭に付けてもよい x、X、数字の一続きである。語を並べて許すのではなく、
+    # この規則に当たる物だけを断る。
+    semver_range_re='^v*(x|X|0|[1-9][0-9]*)$'
+    if [ -z "$dist_tag" ] || [[ "$dist_tag" =~ $semver_range_re ]]; then
+      fail "タグ ${tag} の前置きから選んだ dist-tag「${dist_tag}」は、npm が semver の範囲として読むので publish で断られる。前置きの頭の語を、空でも数字だけでもなく、x、X、v に数字や x が続く形でもない語にして（alpha.1 など）、タグと版を作り直すこと"
+    fi
+    echo "$dist_tag"
     ;;
   *)
     echo "latest"
