@@ -116,9 +116,9 @@ describe('loadLegendSpec, against the real Wasm', () => {
 });
 
 describe('a canvas the limit refuses, drawn as the SVG it falls back to', () => {
-  // A chart whose last day holds a milestone. Without a legend the milestone's
-  // label runs past the days, so the canvas limit refuses such a chart one day
-  // sooner than it refuses the same chart with a legend.
+  // A chart whose last day holds a milestone. Its label runs past the days, and
+  // the canvas limit counts the label whether the chart has a legend or not, so
+  // the two are refused at the same span.
   const dayMs = 24 * 60 * 60 * 1000;
   const iso = (offsetDays: number) =>
     new Date(Date.UTC(2026, 0, 1) + offsetDays * dayMs).toISOString().slice(0, 10);
@@ -135,17 +135,18 @@ describe('a canvas the limit refuses, drawn as the SVG it falls back to', () => 
     return span;
   };
 
-  it('is refused sooner without a legend, and by the capacity code that has a fallback', () => {
+  it('is refused at the same span with and without a legend, by the capacity code that has a fallback', () => {
     const shown = longestAccepted(undefined);
     const gone = longestAccepted(hidden);
-    expect(gone).toBeLessThan(shown);
-    const refused = canvasError(shown, hidden);
-    expect(refused.code).toBe(RUST_ERROR_CODES.CODE_CANVAS_CAPACITY);
-    expect(canvasError(shown, undefined).error).toBeUndefined();
+    expect(gone).toBe(shown);
+    for (const options of [undefined, hidden]) {
+      expect(canvasError(shown, options).error).toBeUndefined();
+      expect(canvasError(shown + 1, options).code).toBe(RUST_ERROR_CODES.CODE_CANVAS_CAPACITY);
+    }
   });
 
   it('falls back to an SVG without the legend, as tall as the room reserved for it', () => {
-    const span = longestAccepted(undefined);
+    const span = longestAccepted(hidden) + 1;
     const tasksOfChart = chartOf(span);
     const failure = canvasError(span, hidden);
     // What GanttChart.vue asks for when it falls back: the same legend, and a
