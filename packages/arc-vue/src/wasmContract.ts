@@ -58,6 +58,18 @@ export const RUST_LAYOUT = {
   BAR_H: 20,
 } as const;
 
+/**
+ * Keys are the Rust constant names in `crates/koyori-arc-core/src/render.rs`.
+ *
+ * core はこの二つで、CSS の寸法の canvas が上限に収まるかを決める。
+ * JS は devicePixelRatio に合わせて裏打ちを広げる時、同じ上限で頭打ちにする
+ * （`canvasScale.ts`）。core が受けた寸法を、JS が上限の外へ広げないためである。
+ */
+export const RUST_CANVAS_LIMITS = {
+  MAX_CANVAS_SIDE_PX: 16_384,
+  MAX_CANVAS_AREA_PX: 32 * 1024 * 1024,
+} as const;
+
 /** A refusal from a Wasm entry point. `code` drives control flow; `message` is for display. */
 export interface RenderFailure {
   message: string;

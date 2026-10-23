@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import init, {
   render_svg,
   render_svg_error,
@@ -15,6 +15,7 @@ import {
 } from './replayCommands';
 import { resetCanvasElement } from './canvasLifecycle';
 import { buildOptionsJson } from './options';
+import { backingSize, cssPointFromClient } from './canvasScale';
 import {
   chartHeightForTaskCount,
   isCanvasCapacityError,
@@ -69,6 +70,8 @@ const hitRegions = ref<TaskHitRegion[]>([]);
 const canvasFallbackSvg = ref('');
 const canvasError = ref('');
 const canvasFailure = ref<RenderFailure | null>(null);
+/** 描いた canvas の CSS の寸法。当たり判定はこの座標で押した点を照らす。 */
+let canvasCssSize = { width: 0, height: 0 };
 /**
  * The empty-chart markup of the `@koyori-app/arc` build actually loaded.
  *
@@ -285,21 +288,69 @@ async function paintCanvas() {
 
   clearCanvasFailure();
 
-  canvas.width = buffer.viewport_width;
-  canvas.height = buffer.viewport_height;
-  canvas.style.width = `${buffer.viewport_width}px`;
-  canvas.style.height = `${buffer.viewport_height}px`;
+  // 裏打ちは devicePixelRatio 倍にし、CSS の寸法は変えない。描画の命令は CSS の
+  // 座標のままなので、setTransform で裏打ちの倍率を掛けて合わせる。
+  const cssWidth = buffer.viewport_width;
+  const cssHeight = buffer.viewport_height;
+  const backing = backingSize(cssWidth, cssHeight, pixelRatio.value);
+  canvas.width = backing.width;
+  canvas.height = backing.height;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  canvasCssSize = { width: cssWidth, height: cssHeight };
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     resetCanvas(canvas);
     return;
   }
+  if (cssWidth > 0 && cssHeight > 0) {
+    ctx.setTransform(backing.width / cssWidth, 0, 0, backing.height / cssHeight, 0, 0);
+  }
   const result = replayCommands(ctx, buffer);
   hitRegions.value = result.hitRegions;
 }
 
 watch(canvasCommandsJson, () => { void nextTick().then(paintCanvas); }, { immediate: true });
+
+/**
+ * devicePixelRatio が途中で変わったら描き直す。窓を倍率の違う画面へ移した時や、
+ * 拡大率を変えた時に変わる。追わないと、変わる前の倍率の裏打ちが引き伸ばされ、
+ * 直す前と同じくぼやける。変わるのは稀で、描き直しは一回で済む。
+ * 変化は `(resolution: Ndppx)` の matchMedia で知る。一致が外れたら今の値で
+ * 問い直し、次の変化を待つ。
+ */
+const pixelRatio = ref(currentPixelRatio());
+let pixelRatioQuery: MediaQueryList | null = null;
+
+function currentPixelRatio(): number {
+  if (typeof window === 'undefined') return 1;
+  return window.devicePixelRatio || 1;
+}
+
+function stopWatchingPixelRatio() {
+  pixelRatioQuery?.removeEventListener('change', onPixelRatioChange);
+  pixelRatioQuery = null;
+}
+
+function watchPixelRatio() {
+  stopWatchingPixelRatio();
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+  pixelRatioQuery = window.matchMedia(`(resolution: ${currentPixelRatio()}dppx)`);
+  pixelRatioQuery.addEventListener('change', onPixelRatioChange);
+}
+
+function onPixelRatioChange() {
+  pixelRatio.value = currentPixelRatio();
+  watchPixelRatio();
+}
+
+onMounted(watchPixelRatio);
+onBeforeUnmount(stopWatchingPixelRatio);
+
+watch(pixelRatio, () => {
+  if (canvasRef.value && canvasCommandsJson.value) void paintCanvas();
+});
 
 function onScroll(e: Event) {
   syncScrollViewport(e.target as HTMLElement);
@@ -316,12 +367,16 @@ function onSvgClick(e: MouseEvent) {
 function onCanvasClick(e: MouseEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const x = (e.clientX - rect.left) * scaleX;
-  const y = (e.clientY - rect.top) * scaleY;
-  const taskId = findTaskAtPoint(hitRegions.value, x, y);
+  // 当たり判定の領域は CSS の座標なので、裏打ちの寸法ではなく CSS の寸法へ戻す。
+  const point = cssPointFromClient(
+    e.clientX,
+    e.clientY,
+    canvas.getBoundingClientRect(),
+    canvasCssSize.width,
+    canvasCssSize.height,
+  );
+  if (!point) return;
+  const taskId = findTaskAtPoint(hitRegions.value, point.x, point.y);
   if (!taskId) return;
   const task = props.tasks.find((t) => t.id === taskId);
   if (task) emit('taskClick', task);
