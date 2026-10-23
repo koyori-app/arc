@@ -4,8 +4,9 @@ use wasm_bindgen::prelude::*;
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::date_input::{parse_tz_offset, resolve_date};
+use crate::display_list::build::chart_width_for;
 use crate::display_list::constants::{
-    chart_height, chart_width, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
+    chart_height, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
 use crate::display_list::legend::legend_spec;
 use crate::display_list::{
@@ -150,7 +151,15 @@ fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Rende
     None
 }
 
-fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<RenderError> {
+/// Refuses a chart the canvas cannot hold. It never accepts a chart that is
+/// larger than the one drawn: the width is the width `build_display_list` draws
+/// for this `legend`, and the height is the taller of the two (the one with the
+/// legend), so a chart without a legend, which is shorter, is not under-counted.
+fn canvas_graph_limit_error(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    legend: LegendMode,
+) -> Option<RenderError> {
     if let Some(err) = common_graph_limit_error(tasks, deps) {
         return Some(err);
     }
@@ -174,7 +183,18 @@ fn canvas_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Re
             ),
         ));
     }
-    let width_px = chart_width(span_days as f64);
+    // The days are checked first, so a chart of a plausible length reaches the
+    // exact width. A label can run past the days, so the days alone under-count.
+    let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
+    let width_px = chart_width_for(tasks, epoch, legend);
+    if width_px > MAX_CANVAS_SIDE_PX as f64 {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+            ),
+        ));
+    }
     let height_px = chart_height(tasks.len() as f64);
     if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
         return Some(RenderError::new(
@@ -307,6 +327,10 @@ fn resolve_options(options_json: Option<&str>) -> Result<ResolvedOptions, Render
 }
 
 impl ResolvedOptions {
+    fn legend(&self) -> LegendMode {
+        self.wire.legend
+    }
+
     fn chart_options(&self) -> Result<ChartOptions, RenderError> {
         Ok(ChartOptions {
             today: parse_today(self.wire.today.as_deref(), self.offset)?,
@@ -485,7 +509,7 @@ pub fn render_canvas_commands(
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
-    if let Some(err) = canvas_graph_limit_error(&tasks, &deps) {
+    if let Some(err) = canvas_graph_limit_error(&tasks, &deps, resolved.legend()) {
         return err.to_json();
     }
     let options = match resolved.chart_options() {
@@ -506,7 +530,7 @@ mod test_common;
 mod tests {
     use super::*;
     #[cfg(test)]
-    use crate::display_list::constants::{ARROW_CURVE, ARROW_HEAD};
+    use crate::display_list::constants::{chart_width, ARROW_CURVE, ARROW_HEAD, LEGEND_H};
     use crate::display_list::types::{ColorId, Palette};
     use crate::render::test_common;
     use chrono::NaiveDate;
@@ -852,6 +876,186 @@ mod tests {
                 end: Some(date(2026, 1, 1) + Duration::days(end_offset_days)),
             })
             .collect()
+    }
+
+    // --- The canvas guard is never looser than the chart that is drawn ---
+
+    /// What the guard sees of the end of the chart: nothing special, a milestone
+    /// on the last day, or a one day bar that ends on it. The last two draw their
+    /// percent label to the right of the days, so a chart without a legend is
+    /// wider than its days.
+    #[derive(Clone, Copy, Debug)]
+    enum Tail {
+        Plain,
+        Milestone,
+        OneDayBar,
+    }
+
+    const TAILS: [Tail; 3] = [Tail::Plain, Tail::Milestone, Tail::OneDayBar];
+
+    /// `rows` tasks, one of which runs `span` days. With a tail, one more task
+    /// (so `rows` tasks in all) ends on the last day with a 100% label.
+    fn tasks_with_tail(rows: usize, span: i64, tail: Tail) -> Vec<GanttTask> {
+        let mut tasks = canvas_tasks(rows, span);
+        let last = tasks.last_mut().unwrap();
+        match tail {
+            Tail::Plain => {}
+            Tail::Milestone => {
+                last.start = date(2026, 1, 1) + Duration::days(span);
+                last.end = Some(last.start);
+                last.progress_pct = 100;
+            }
+            Tail::OneDayBar => {
+                last.start = date(2026, 1, 1) + Duration::days(span - 1);
+                last.end = Some(last.start + Duration::days(1));
+                last.progress_pct = 100;
+            }
+        }
+        tasks
+    }
+
+    fn legend_options(legend: LegendMode) -> Option<String> {
+        (legend == LegendMode::Hidden).then(|| r#"{"legend":"hidden"}"#.to_string())
+    }
+
+    /// The width, height and area of the chart the canvas would be given,
+    /// measured on the display list and not on the guard's own arithmetic.
+    fn drawn_size(tasks: &[GanttTask], legend: LegendMode) -> (f64, f64) {
+        let epoch = tasks.iter().map(|t| t.start).min().unwrap();
+        let graph = GanttGraph {
+            tasks: tasks.to_vec(),
+            deps: vec![],
+        };
+        let list = build_display_list(
+            &graph,
+            epoch,
+            &ChartOptions {
+                legend,
+                ..Default::default()
+            },
+        );
+        (list.viewport.width, list.viewport.height)
+    }
+
+    fn canvas_accepts(tasks: &[GanttTask], legend: LegendMode) -> bool {
+        let json = render_canvas_commands(
+            &serde_json::to_string(tasks).unwrap(),
+            "[]",
+            legend_options(legend),
+        );
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value.get("error").is_none()
+    }
+
+    #[test]
+    fn the_canvas_guard_never_accepts_a_chart_larger_than_the_one_drawn() {
+        let side = MAX_CANVAS_SIDE_PX as f64;
+        let area = MAX_CANVAS_AREA_PX as f64;
+        let (mut accepted, mut refused) = (0, 0);
+        // The days limit and a few days either side of it: the labels push the
+        // width of a chart without a legend over the side limit while its days
+        // are still under it.
+        for span in (MAX_CANVAS_DATE_SPAN_DAYS - 3)..=(MAX_CANVAS_DATE_SPAN_DAYS + 1) {
+            for tail in TAILS {
+                for legend in [LegendMode::Shown, LegendMode::Hidden] {
+                    let tasks = tasks_with_tail(2, span, tail);
+                    let (w, h) = drawn_size(&tasks, legend);
+                    if canvas_accepts(&tasks, legend) {
+                        accepted += 1;
+                        assert!(w <= side, "{legend:?} {tail:?} span {span}: width {w}");
+                        assert!(
+                            h <= side && w * h <= area,
+                            "{legend:?} {tail:?} span {span}"
+                        );
+                    } else {
+                        refused += 1;
+                    }
+                }
+            }
+        }
+        // A window that never tests both sides does not test the guard.
+        assert!(accepted > 0 && refused > 0);
+    }
+
+    #[test]
+    fn the_canvas_guard_counts_the_labels_that_run_past_the_days() {
+        // The days fit, the milestone's label does not. The chart without a
+        // legend is wider than its days, and the guard has to refuse it.
+        let span = MAX_CANVAS_DATE_SPAN_DAYS;
+        assert!(chart_width(span as f64) <= MAX_CANVAS_SIDE_PX as f64);
+        let tasks = tasks_with_tail(2, span, Tail::Milestone);
+        let (hidden_w, _) = drawn_size(&tasks, LegendMode::Hidden);
+        assert!(
+            hidden_w > MAX_CANVAS_SIDE_PX as f64,
+            "the example is on the wrong side"
+        );
+        assert!(!canvas_accepts(&tasks, LegendMode::Hidden));
+        // The same chart with a legend is drawn at its days, and is still accepted.
+        let (shown_w, _) = drawn_size(&tasks, LegendMode::Shown);
+        assert!(shown_w <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(canvas_accepts(&tasks, LegendMode::Shown));
+        // One day less, the label fits too, and the chart without a legend is accepted.
+        let shorter = tasks_with_tail(2, span - 1, Tail::Milestone);
+        let (w, _) = drawn_size(&shorter, LegendMode::Hidden);
+        assert!(w <= MAX_CANVAS_SIDE_PX as f64);
+        assert!(canvas_accepts(&shorter, LegendMode::Hidden));
+    }
+
+    #[test]
+    fn a_chart_with_a_legend_is_judged_by_its_days_whatever_its_labels_do() {
+        // The guard of a chart with a legend is what it was before the legend
+        // could be hidden: the days decide the side limit.
+        for span in (MAX_CANVAS_DATE_SPAN_DAYS - 3)..=(MAX_CANVAS_DATE_SPAN_DAYS + 1) {
+            for tail in TAILS {
+                let tasks = tasks_with_tail(2, span, tail);
+                assert_eq!(
+                    canvas_accepts(&tasks, LegendMode::Shown),
+                    span <= MAX_CANVAS_DATE_SPAN_DAYS,
+                    "{tail:?} span {span}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_canvas_area_guard_is_not_looser_than_the_chart_drawn_without_a_legend() {
+        // A chart without a legend is 40px shorter than the guard's height and
+        // wider than its days. Neither may let the area slip past the limit, at
+        // any number of rows. Only the guard runs here, so many charts are tried.
+        let area = MAX_CANVAS_AREA_PX as f64;
+        let (mut accepted, mut refused) = (0, 0);
+        for rows in (20..=MAX_CANVAS_ROWS).step_by(23).chain([MAX_CANVAS_ROWS]) {
+            for span in 0..=MAX_CANVAS_DATE_SPAN_DAYS {
+                // Only spans near the area limit can tell the guard apart.
+                let days_w = chart_width(span as f64);
+                if days_w * chart_height(rows as f64) < area * 0.97 {
+                    continue;
+                }
+                for tail in TAILS {
+                    let tasks = tasks_with_tail(rows, span, tail);
+                    let (w, h) = drawn_size(&tasks, LegendMode::Hidden);
+                    let verdict = canvas_graph_limit_error(&tasks, &[], LegendMode::Hidden);
+                    if verdict.is_none() {
+                        accepted += 1;
+                        assert!(
+                            w * h <= area,
+                            "{rows} rows, {tail:?} span {span}: {w} x {h}"
+                        );
+                    } else {
+                        refused += 1;
+                    }
+                }
+                if days_w * chart_height(rows as f64) > area * 1.03 {
+                    break;
+                }
+            }
+        }
+        assert!(accepted > 0 && refused > 0);
+        // The height of a chart without a legend is shorter by the legend's.
+        assert_eq!(
+            drawn_size(&tasks_with_tail(5, 1, Tail::Plain), LegendMode::Hidden).1,
+            drawn_size(&tasks_with_tail(5, 1, Tail::Plain), LegendMode::Shown).1 - LEGEND_H
+        );
     }
 
     #[test]

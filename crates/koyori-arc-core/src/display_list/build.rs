@@ -57,36 +57,12 @@ pub fn build_display_list(
     } = *options;
     let rows = assign_rows(&graph.tasks, &graph.deps);
 
-    let total_days = graph
-        .tasks
-        .iter()
-        .map(|t| t.end_days(epoch))
-        .fold(0.0_f64, f64::max)
-        .ceil() as i64;
+    let total_days = total_days_of(&graph.tasks, epoch);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
-    // A chart without a legend has nothing to hold up, so it takes the width
-    // its days give it (design/legend-opt-out.md, 4.7).
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let days_w = chart_width(total_days as f64);
-    // A chart without a legend takes the width that covers the right edge of
-    // everything it puts to the right of the days: the labels that run on past a
-    // bar's end. Every task counts, not only the rows in the window, or the width
-    // would change as the chart scrolls.
-    //
-    // A chart with a legend does not take it. Its labels run past the viewBox for
-    // some inputs (a milestone or a one day bar that ends on the last day, or a
-    // last day that is a Monday), and that has been so since before the legend
-    // could be hidden. Widening it would change the default output, which this
-    // change promises not to do, so it is left to its own change
-    // (design/legend-opt-out.md, 4.8).
-    let chart_w = match &legend {
-        Some(legend) => {
-            days_w.max(LABEL_W + LEGEND_LEFT_PAD_PX + legend.width + CHART_RIGHT_PADDING_PX)
-        }
-        None => days_w.max(labels_right_edge(graph, epoch, total_days)),
-    };
+    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode);
     let chart_h = chart_height_with(rows.len() as f64, legend_mode);
 
     let viewport = Viewport {
@@ -485,6 +461,45 @@ fn is_zero_duration(task: &GanttTask) -> bool {
     task.end.is_some_and(|end| end <= task.start)
 }
 
+fn total_days_of(tasks: &[GanttTask], epoch: NaiveDate) -> i64 {
+    tasks
+        .iter()
+        .map(|t| t.end_days(epoch))
+        .fold(0.0_f64, f64::max)
+        .ceil() as i64
+}
+
+/// The width the chart is drawn at. Drawing and the canvas size guard
+/// (`render::canvas_graph_limit_error`) both read this, so the guard cannot
+/// accept a chart wider than the one that is drawn.
+///
+/// A chart with a legend is as wide as its days, held up by the legend's right
+/// edge so the legend does not run past the viewBox. A chart without one has
+/// nothing to hold up, and takes the width that covers the right edge of
+/// everything it puts to the right of the days: the labels that run on past a
+/// bar's end (design/legend-opt-out.md, 4.7). Every task counts, not only the
+/// rows in the window, or the width would change as the chart scrolls.
+///
+/// A chart with a legend does not take the labels' right edge. Its labels run
+/// past the viewBox for some inputs (a milestone or a one day bar that ends on
+/// the last day, or a last day that is a Monday), and that has been so since
+/// before the legend could be hidden. Widening it would change the default
+/// output, which this change promises not to do, so it is left to its own
+/// change (design/legend-opt-out.md, 4.8).
+pub(crate) fn chart_width_for(
+    tasks: &[GanttTask],
+    epoch: NaiveDate,
+    legend_mode: LegendMode,
+) -> f64 {
+    let total_days = total_days_of(tasks, epoch);
+    let days_w = chart_width(total_days as f64);
+    match legend_mode {
+        LegendMode::Shown => days_w
+            .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX),
+        LegendMode::Hidden => days_w.max(labels_right_edge(tasks, epoch, total_days)),
+    }
+}
+
 const GRID_LABEL_FONT_PX: f64 = 11.0;
 
 /// The Mondays the grid draws, from the first one on or after `epoch` to the
@@ -566,8 +581,8 @@ fn text_right_edge(
 /// that runs on past the end of the days, such as a percent label to the right of
 /// a bar that ends on the last day, needs the width to reach it. The bars and the
 /// lines stop at the last day and need nothing.
-fn labels_right_edge(graph: &GanttGraph, epoch: NaiveDate, total_days: i64) -> f64 {
-    let tasks = graph.tasks.iter().map(|task| {
+fn labels_right_edge(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> f64 {
+    let task_edges = tasks.iter().map(|task| {
         let label = percent_label(task, epoch);
         text_right_edge(
             label.x,
@@ -586,7 +601,7 @@ fn labels_right_edge(graph: &GanttGraph, epoch: NaiveDate, total_days: i64) -> f
             None,
         )
     });
-    tasks.chain(grid).fold(0.0, f64::max)
+    task_edges.chain(grid).fold(0.0, f64::max)
 }
 
 fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextAnchor, ColorId) {
