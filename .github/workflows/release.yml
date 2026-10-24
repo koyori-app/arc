@@ -1,7 +1,32 @@
 name: Release
 
-# 初版は手動 publish 後、npmjs.com でこのリポジトリ + workflow を
-# Trusted Publisher として登録すること。以降は GitHub Release 公開で自動 publish。
+# npm と crates.io へは Trusted Publishing（OIDC）で出す。この repo とこの workflow
+# （release.yml）はどちらにも登録済みで、以後は GitHub Release を公開すれば、この
+# workflow が publish する。初版の 0.1.0-alpha.1 は、npm と crates.io の双方へ手で出した
+# （2026-10-24）。登録と初版は、メンテナが npm と crates.io の設定で確かめた
+# （2026-10-25。公開の文書には無い、手元の確かめ）。
+#
+# npm の登録を作り直す時の戒め（https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた）:
+# - 新しく作った登録は、2 日のうちに最初の publish で検められなければ失効する。
+#   「A newly created trusted publisher configuration must complete its first
+#   successful publish within 2 days.」
+# - 登録の Allowed actions で、npm publish と npm dist-tag を許しておく。この workflow は
+#   最後の段で npm dist-tag を撃つ。dist-tag は既定で許されていない。
+#   「select Allow npm dist-tag for its trusted publisher configuration in your package
+#   settings. This option is disabled by default.」
+# - 落とし穴: 別の workflow から publish の workflow を起こすと、検めは呼ぶ側の
+#   workflow の名を見ることがある。「Some GitHub Actions workflows use workflow_call to
+#   invoke other workflows that run npm publish, or use workflow_dispatch for manual
+#   publishing. When this happens, validation checks the calling workflow's name
+#   instead of the workflow that actually contains the publish command」
+#   この workflow は tag-release.yml から gh workflow run で起こされる。これは release.yml
+#   そのものの新しい run を作り、publish の段もこの run の中に直にあって、workflow_call で
+#   呼ばれる形ではない。GitHub の OIDC token の workflow_ref は「The ref path to the
+#   workflow.」で、この run では release.yml を指す（job_workflow_ref は「For jobs using
+#   a reusable workflow」だけに付く。https://docs.github.com/en/actions/reference/security/oidc、
+#   2026-10-25 に引いた）。そのため文書の上では当たらないと見る。ただし npm が token の
+#   どの claim を照らすかは npm の文書に書かれていないので、実の publish では未確認。最初の
+#   自動 publish で、検めが tag-release.yml の名で落ちないかを見張ること。
 #
 # tag-release.yml が作る Release は GITHUB_TOKEN 由来なので、release イベントで
 # この workflow は起きない。そのため tag-release.yml は Release を作った後に
@@ -12,9 +37,17 @@ on:
     types: [published]
   workflow_dispatch:
 
-# 同じタグで二度走っても、片方が終わるまでもう片方を待たせる。
+# release は tag によらず一つずつ順に走らせる。最後の段は registry の latest を読んでから
+# 書くので、別の tag の release が並んで走ると、読みと書きの間に割り込まれうる。
+# 群れは package ごとの固定の値にする。既定では群れの中で待てる run は一つだけで、
+# 後から来た run が待っている run を取り消す。tag を続けて押した時に間の release が
+# 黙って消えないよう、queue: max で待ちを積む（https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax、
+# 2026-10-25 に引いた。「By default, only one job or workflow run can be pending in a
+# concurrency group at a time. To allow multiple runs to queue instead of being canceled,
+# set queue: max.」）。走っている publish を消さないよう cancel-in-progress は false のまま。
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-koyori-arc
+  queue: max
   cancel-in-progress: false
 
 permissions:
@@ -98,3 +131,18 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p koyori-arc-core
+
+      # 正式版を出すまでは、前置き付きの版を出すたびに npm の latest もその版へ動かす。
+      # 正式版が latest になったら自ら止まる。判断は scripts/npm-latest-follow.sh が
+      # registry の latest を見て決める（手元でも --apply 無しで同じ判断を撃てる）。
+      # 二つの publish の後に置くので、どちらかが落ちればこの段は走らず、latest は動かない。
+      # npm dist-tag の OIDC 認証は、11 系では 11.21.0 から、12 系では 12.2.0 から入った
+      # （https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた。「dist-tags with
+      # OIDC Trusted publishing requires npm CLI version 11.21.0 (or later) and 12.2.0
+      # (or later).」）。Node 24 同梱の npm 11.19.0 では足りず、固定した 12.2.1 なら足りる。
+      # そこで、この段でだけ版を固定した npm を入れる（publish は済んでいる）。
+      # id-token の権限を持つ job で道具を入れるので、lifecycle script は走らせない。
+      - name: Let npm latest follow pre-releases until the first stable release
+        run: |
+          npm install -g --ignore-scripts npm@12.2.1
+          bash scripts/npm-latest-follow.sh --apply @koyori-app/arc "${GITHUB_REF_NAME#v}"

@@ -281,6 +281,7 @@ Tarjan 法で強連結成分を縮約し、成分間をトポロジカル順に�
 
 - `ci.yml`: `rust` job (nextest + wasm-pack test + npm パッケージビルド) → `vue` job (pnpm install + typecheck + build)
 - タグ push (`v[0-9]*`) → `tag-release.yml` が git-cliff で changelog 生成 → GitHub Release 作成 → `release.yml` が npm (`@koyori-app/arc`, OIDC Trusted Publishing) + crates.io (`koyori-arc-core`, Trusted Publishing) へ publish
+- npm の `latest` は、正式版を出すまでは前置き付きの版を出すたびにその版へ動き、正式版が `latest` になった後は前置き付きの版を出しても動かない（registry の `latest` を見て `scripts/npm-latest-follow.sh` が自ら決める）
 - changelog は Conventional Commits ベース。`chore`/`ci`/`style`/`test` は `<details>Other changes</details>` にまとめて表示
 
 ## 既知の未実装・将来課題
