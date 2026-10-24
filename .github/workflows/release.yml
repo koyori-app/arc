@@ -1,7 +1,24 @@
 name: Release
 
-# 初版は手動 publish 後、npmjs.com でこのリポジトリ + workflow を
-# Trusted Publisher として登録すること。以降は GitHub Release 公開で自動 publish。
+# npm と crates.io へは Trusted Publishing（OIDC）で出す。どちらも、この repo と
+# この workflow（release.yml）を、package と crate の設定に登録しておく。登録の後は、
+# GitHub Release の公開でこの workflow が publish する。
+#
+# npm（https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた）:
+# - 新しく作った登録は、2 日のうちに最初の publish で検められなければ失効する。
+#   「A newly created trusted publisher configuration must complete its first
+#   successful publish within 2 days.」
+# - 登録の Allowed actions で、npm publish と npm dist-tag を許しておく。この workflow は
+#   最後の段で npm dist-tag を撃つ。dist-tag は既定で許されていない。
+#   「select Allow npm dist-tag for its trusted publisher configuration in your package
+#   settings. This option is disabled by default.」
+#
+# crates.io（RFC 3691、https://github.com/rust-lang/rfcs/blob/master/text/3691-trusted-publishing-cratesio.md、
+# 2026-10-25 に引いた）:
+# - 登録は crate を一度手で出した後でないと作れない。
+#   「A Trusted Publisher Configuration can only be created after an initial manual
+#   publishing of a crate.」
+# - 今の crates.io の文書（https://crates.io/docs/trusted-publishing）で同じかは未確認。
 #
 # tag-release.yml が作る Release は GITHUB_TOKEN 由来なので、release イベントで
 # この workflow は起きない。そのため tag-release.yml は Release を作った後に
@@ -105,7 +122,8 @@ jobs:
       # 二つの publish の後に置くので、どちらかが落ちればこの段は走らず、latest は動かない。
       # npm dist-tag の OIDC 認証は npm 12.2.0 から入った。Node 24 同梱の npm 11.19.0 では
       # 認証できないので、この段でだけ版を固定した npm を入れる（publish は済んでいる）。
+      # id-token の権限を持つ job で道具を入れるので、lifecycle script は走らせない。
       - name: Let npm latest follow pre-releases until the first stable release
         run: |
-          npm install -g npm@12.2.1
+          npm install -g --ignore-scripts npm@12.2.1
           bash scripts/npm-latest-follow.sh --apply @koyori-app/arc "${GITHUB_REF_NAME#v}"
