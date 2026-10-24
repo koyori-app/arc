@@ -1,10 +1,12 @@
 name: Release
 
-# npm と crates.io へは Trusted Publishing（OIDC）で出す。どちらも、この repo と
-# この workflow（release.yml）を、package と crate の設定に登録しておく。登録の後は、
-# GitHub Release の公開でこの workflow が publish する。
+# npm と crates.io へは Trusted Publishing（OIDC）で出す。この repo とこの workflow
+# （release.yml）はどちらにも登録済みで、以後は GitHub Release を公開すれば、この
+# workflow が publish する。初版の 0.1.0-alpha.1 は、npm と crates.io の双方へ手で出した
+# （2026-10-24）。登録と初版は、メンテナが npm と crates.io の設定で確かめた
+# （2026-10-25。公開の文書には無い、手元の確かめ）。
 #
-# npm（https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた）:
+# npm の登録を作り直す時の戒め（https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた）:
 # - 新しく作った登録は、2 日のうちに最初の publish で検められなければ失効する。
 #   「A newly created trusted publisher configuration must complete its first
 #   successful publish within 2 days.」
@@ -25,13 +27,6 @@ name: Release
 #   2026-10-25 に引いた）。そのため文書の上では当たらないと見る。ただし npm が token の
 #   どの claim を照らすかは npm の文書に書かれていないので、実の publish では未確認。最初の
 #   自動 publish で、検めが tag-release.yml の名で落ちないかを見張ること。
-#
-# crates.io（RFC 3691、https://github.com/rust-lang/rfcs/blob/master/text/3691-trusted-publishing-cratesio.md、
-# 2026-10-25 に引いた）:
-# - 登録は crate を一度手で出した後でないと作れない。
-#   「A Trusted Publisher Configuration can only be created after an initial manual
-#   publishing of a crate.」
-# - 今の crates.io の文書（https://crates.io/docs/trusted-publishing）で同じかは未確認。
 #
 # tag-release.yml が作る Release は GITHUB_TOKEN 由来なので、release イベントで
 # この workflow は起きない。そのため tag-release.yml は Release を作った後に
