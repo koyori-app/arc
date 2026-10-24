@@ -26,6 +26,16 @@
 #   書かずに exit 1 で止まる。workflow の外で人が npm publish や npm dist-tag を撃った
 #   場合への備えで、窓は狭まるが閉じない（読み直しと書きの間に撃たれれば防げない）。
 #   workflow の外で撃たれる事は、この script も release.yml の排他も塞げない。
+#
+# 読み直しで止まった後の手順:
+#   この段は release.yml の最後の段なので、止まった時には npm と crates.io への publish は
+#   済んでおり、latest だけが動いていない。release は一つずつ順に走るので、止まった原因は
+#   workflow の外で latest が動いた事の見込みが高い（実際に止まった例はまだ無く、未確認）。
+#   その run を再走しても足りない。job は一つなので publish の段から撃ち直しになり、
+#   既に出した版の publish を npm が断る。メンテナが手元で npm view <package> dist-tags で
+#   今の latest を見て、この script を --apply 無しで撃って判断を確かめ、「動かす」なら
+#   --apply を付けて撃つ。手で npm dist-tag add を撃つ時も、先にこの判断を見ること
+#   （正式版の latest を前置き付きの版へ戻さないため）。
 set -euo pipefail
 
 fail() {
