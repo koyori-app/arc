@@ -18,6 +18,14 @@
 #   latest が前置き付き     出した版の方が新しい時だけ動かす。同じ版や古い版を出しても、
 #                           latest は下がらない
 # registry への問い合わせが落ちた時は、動かさずに exit 1 で止まる。
+#
+# 読んでから書くまでの間に latest が変わる事への備え:
+#   release.yml は排他の群れを package ごとに固定にし、release を一つずつ順に走らせる。
+#   workflow の中から並んで走る事はそれで無くなる。
+#   この script は --apply の時、書く直前に latest を読み直し、最初に読んだ値と違えば
+#   書かずに exit 1 で止まる。workflow の外で人が npm publish や npm dist-tag を撃った
+#   場合への備えで、窓は狭まるが閉じない（読み直しと書きの間に撃たれれば防げない）。
+#   workflow の外で撃たれる事は、この script も release.yml の排他も塞げない。
 set -euo pipefail
 
 fail() {
@@ -55,15 +63,27 @@ esac
 # それ以外の失敗で動かすと、正式版の latest を巻き戻しうるので止まる。
 err_file=$(mktemp)
 trap 'rm -f "$err_file"' EXIT
-if latest=$(npm view "$pkg" dist-tags.latest 2>"$err_file"); then
-  :
-elif grep -q 'E404' "$err_file"; then
-  latest=""
-else
-  fail "registry から ${pkg} の latest を引けなかった。latest は動かさない。npm view の出力: $(tr '\n' ' ' <"$err_file")"
-fi
+read_latest() {
+  local out
+  if out=$(npm view "$pkg" dist-tags.latest 2>"$err_file"); then
+    printf '%s' "$out"
+  elif grep -q 'E404' "$err_file"; then
+    printf ''
+  else
+    fail "registry から ${pkg} の latest を引けなかった。latest は動かさない。npm view の出力: $(tr '\n' ' ' <"$err_file")"
+  fi
+}
+latest=$(read_latest)
 
 move() {
+  if [ "$apply" = true ]; then
+    # 書く直前に読み直す。判じた時の latest と違えば、その判じは古いので書かない
+    local again
+    again=$(read_latest)
+    if [ "$again" != "$latest" ]; then
+      fail "読んでから書くまでの間に latest が ${latest:-未設定} から ${again:-未設定} へ変わった。latest は動かさない。もう一度撃って判じ直すこと"
+    fi
+  fi
   echo "動かす: latest を ${ver} へ（今の latest: ${latest:-未設定}）"
   if [ "$apply" = true ]; then
     npm dist-tag add "${pkg}@${ver}" latest >&2 \

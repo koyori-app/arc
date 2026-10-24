@@ -37,9 +37,17 @@ on:
     types: [published]
   workflow_dispatch:
 
-# 同じタグで二度走っても、片方が終わるまでもう片方を待たせる。
+# release は tag によらず一つずつ順に走らせる。最後の段は registry の latest を読んでから
+# 書くので、別の tag の release が並んで走ると、読みと書きの間に割り込まれうる。
+# 群れは package ごとの固定の値にする。既定では群れの中で待てる run は一つだけで、
+# 後から来た run が待っている run を取り消す。tag を続けて押した時に間の release が
+# 黙って消えないよう、queue: max で待ちを積む（https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax、
+# 2026-10-25 に引いた。「By default, only one job or workflow run can be pending in a
+# concurrency group at a time. To allow multiple runs to queue instead of being canceled,
+# set queue: max.」）。走っている publish を消さないよう cancel-in-progress は false のまま。
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-koyori-arc
+  queue: max
   cancel-in-progress: false
 
 permissions:
