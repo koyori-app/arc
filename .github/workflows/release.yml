@@ -98,3 +98,14 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p koyori-arc-core
+
+      # 正式版を出すまでは、前置き付きの版を出すたびに npm の latest もその版へ動かす。
+      # 正式版が latest になったら自ら止まる。判断は scripts/npm-latest-follow.sh が
+      # registry の latest を見て決める（手元でも --apply 無しで同じ判断を撃てる）。
+      # 二つの publish の後に置くので、どちらかが落ちればこの段は走らず、latest は動かない。
+      # npm dist-tag の OIDC 認証は npm 12.2.0 から入った。Node 24 同梱の npm 11.19.0 では
+      # 認証できないので、この段でだけ版を固定した npm を入れる（publish は済んでいる）。
+      - name: Let npm latest follow pre-releases until the first stable release
+        run: |
+          npm install -g npm@12.2.1
+          bash scripts/npm-latest-follow.sh --apply @koyori-app/arc "${GITHUB_REF_NAME#v}"
