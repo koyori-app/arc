@@ -12,6 +12,19 @@ name: Release
 #   最後の段で npm dist-tag を撃つ。dist-tag は既定で許されていない。
 #   「select Allow npm dist-tag for its trusted publisher configuration in your package
 #   settings. This option is disabled by default.」
+# - 落とし穴: 別の workflow から publish の workflow を起こすと、検めは呼ぶ側の
+#   workflow の名を見ることがある。「Some GitHub Actions workflows use workflow_call to
+#   invoke other workflows that run npm publish, or use workflow_dispatch for manual
+#   publishing. When this happens, validation checks the calling workflow's name
+#   instead of the workflow that actually contains the publish command」
+#   この workflow は tag-release.yml から gh workflow run で起こされる。これは release.yml
+#   そのものの新しい run を作り、publish の段もこの run の中に直にあって、workflow_call で
+#   呼ばれる形ではない。GitHub の OIDC token の workflow_ref は「The ref path to the
+#   workflow.」で、この run では release.yml を指す（job_workflow_ref は「For jobs using
+#   a reusable workflow」だけに付く。https://docs.github.com/en/actions/reference/security/oidc、
+#   2026-10-25 に引いた）。そのため文書の上では当たらないと見る。ただし npm が token の
+#   どの claim を照らすかは npm の文書に書かれていないので、実の publish では未確認。最初の
+#   自動 publish で、検めが tag-release.yml の名で落ちないかを見張ること。
 #
 # crates.io（RFC 3691、https://github.com/rust-lang/rfcs/blob/master/text/3691-trusted-publishing-cratesio.md、
 # 2026-10-25 に引いた）:
@@ -120,8 +133,11 @@ jobs:
       # 正式版が latest になったら自ら止まる。判断は scripts/npm-latest-follow.sh が
       # registry の latest を見て決める（手元でも --apply 無しで同じ判断を撃てる）。
       # 二つの publish の後に置くので、どちらかが落ちればこの段は走らず、latest は動かない。
-      # npm dist-tag の OIDC 認証は npm 12.2.0 から入った。Node 24 同梱の npm 11.19.0 では
-      # 認証できないので、この段でだけ版を固定した npm を入れる（publish は済んでいる）。
+      # npm dist-tag の OIDC 認証は、11 系では 11.21.0 から、12 系では 12.2.0 から入った
+      # （https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた。「dist-tags with
+      # OIDC Trusted publishing requires npm CLI version 11.21.0 (or later) and 12.2.0
+      # (or later).」）。Node 24 同梱の npm 11.19.0 では足りず、固定した 12.2.1 なら足りる。
+      # そこで、この段でだけ版を固定した npm を入れる（publish は済んでいる）。
       # id-token の権限を持つ job で道具を入れるので、lifecycle script は走らせない。
       - name: Let npm latest follow pre-releases until the first stable release
         run: |
