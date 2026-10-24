@@ -181,23 +181,72 @@ fn hidden_takes_back_the_legend_height_and_keeps_the_bottom_padding() {
 }
 
 #[test]
-fn shown_keeps_the_width_it_has_always_had_whatever_the_labels_do() {
-    // Shown の幅は、日数の幅と凡例の下支えの大きいほう。札の右端は幅を決めない
-    // (design 4.8)。札が溢れる図も含めて、全部の図でこの式のままである。
+fn shown_is_hidden_held_up_by_the_legend() {
+    // 二つの姿の幅は一つの式で決まる: 日数の幅、右へ伸びる札の右端、そして Shown だけが
+    // 凡例の下支え。だから Shown の幅は、Hidden の幅と下支えの大きいほうである。
+    // 札の右端を Shown が見ない形に割り直せば、札が溢れる図で等しくなくなる。
     let mut checked = 0;
     for epoch_back in 0..7 {
         for (name, spans) in charts() {
-            let total_days = spans.iter().map(|s| s.1).max().unwrap() + epoch_back;
-            let expected = chart_width(total_days as f64).max(floor_px());
-            let l = build_spans(&spans, epoch_back, LegendMode::Shown);
+            let shown = build_spans(&spans, epoch_back, LegendMode::Shown);
+            let hidden = build_spans(&spans, epoch_back, LegendMode::Hidden);
             assert_eq!(
-                l.viewport.width, expected,
+                shown.viewport.width,
+                hidden.viewport.width.max(floor_px()),
                 "epoch {epoch_back} earlier, {name}"
             );
             checked += 1;
         }
     }
     assert!(checked > 1_000);
+}
+
+#[test]
+fn the_corpus_reaches_each_of_the_three_overflows_the_old_shown_width_left() {
+    // 直す前の Shown の幅は、日数の幅と下支えの大きいほうだった。その幅を越えて立つ札が、
+    // 三つの形のどれについても走査の入力にあることを確かめる。無ければ、走査が Shown で
+    // 通ることは何も言わない。
+    let mut beyond = std::collections::BTreeSet::new();
+    for epoch_back in 0..7 {
+        for (name, spans) in charts() {
+            let total_days = spans.iter().map(|s| s.1).max().unwrap() + epoch_back;
+            let old_width = chart_width(total_days as f64).max(floor_px());
+            let list = build_spans(&spans, epoch_back, LegendMode::Shown);
+            for (what, right) in right_edges(&list) {
+                let kind = what.split_whitespace().next().unwrap();
+                // 見出しの帯は図の幅いっぱいに引くので、幅が増えれば帯の右端も増える。
+                if kind == "HeaderBackground" {
+                    continue;
+                }
+                if right > old_width + 1e-9 {
+                    let shape = if kind == "GridLabel" {
+                        "the last day is a Monday"
+                    } else if name.starts_with("milestone") {
+                        "a milestone on the last day"
+                    } else if name.starts_with("one day bar") {
+                        "a one day bar ending on the last day"
+                    } else {
+                        "a bar"
+                    };
+                    beyond.insert(format!("{shape}: {kind}"));
+                }
+            }
+        }
+    }
+    for expected in [
+        "a milestone on the last day: ProgressPercent",
+        "a one day bar ending on the last day: ProgressPercent",
+        "the last day is a Monday: GridLabel",
+    ] {
+        assert!(beyond.contains(expected), "{expected} is not in {beyond:?}");
+    }
+    // 他の部品は、旧い幅を越えない。越えるなら、三つの形のほかに溢れがあったということ。
+    assert!(
+        beyond
+            .iter()
+            .all(|b| b.ends_with(": ProgressPercent") || b.ends_with(": GridLabel")),
+        "{beyond:?}"
+    );
 }
 
 #[test]

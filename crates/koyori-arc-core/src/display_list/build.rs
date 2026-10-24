@@ -473,19 +473,12 @@ fn total_days_of(tasks: &[GanttTask], epoch: NaiveDate) -> i64 {
 /// (`render::canvas_graph_limit_error`) both read this, so the guard cannot
 /// accept a chart wider than the one that is drawn.
 ///
-/// A chart with a legend is as wide as its days, held up by the legend's right
-/// edge so the legend does not run past the viewBox. A chart without one has
-/// nothing to hold up, and takes the width that covers the right edge of
-/// everything it puts to the right of the days: the labels that run on past a
-/// bar's end (design/legend-opt-out.md, 4.7). Every task counts, not only the
-/// rows in the window, or the width would change as the chart scrolls.
-///
-/// A chart with a legend does not take the labels' right edge. Its labels run
-/// past the viewBox for some inputs (a milestone or a one day bar that ends on
-/// the last day, or a last day that is a Monday), and that has been so since
-/// before the legend could be hidden. Widening it would change the default
-/// output, which this change promises not to do, so it is left to its own
-/// change (design/legend-opt-out.md, 4.8).
+/// The chart is as wide as its days, held up by what it puts to the right of
+/// them: the right edge of the labels that run on past a bar's end
+/// (design/legend-opt-out.md, 4.7), and, for a chart with a legend, the
+/// legend's right edge, so the legend does not run past the viewBox. A chart
+/// without a legend has no legend edge to hold up. Every task counts, not only
+/// the rows in the window, or the width would change as the chart scrolls.
 pub(crate) fn chart_width_for(
     tasks: &[GanttTask],
     epoch: NaiveDate,
@@ -493,11 +486,15 @@ pub(crate) fn chart_width_for(
 ) -> f64 {
     let total_days = total_days_of(tasks, epoch);
     let days_w = chart_width(total_days as f64);
-    match legend_mode {
-        LegendMode::Shown => days_w
-            .max(LABEL_W + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX),
-        LegendMode::Hidden => days_w.max(labels_right_edge(tasks, epoch, total_days)),
-    }
+    let legend_edge = match legend_mode {
+        LegendMode::Shown => {
+            LABEL_W + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
+        }
+        LegendMode::Hidden => 0.0,
+    };
+    days_w
+        .max(legend_edge)
+        .max(labels_right_edge(tasks, epoch, total_days))
 }
 
 const GRID_LABEL_FONT_PX: f64 = 11.0;

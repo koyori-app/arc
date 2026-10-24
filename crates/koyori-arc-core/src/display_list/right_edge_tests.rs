@@ -149,76 +149,25 @@ pub(super) fn charts() -> Vec<(String, Vec<Span>)> {
 }
 
 #[test]
-fn nothing_drawn_runs_past_the_viewbox_when_the_legend_is_hidden() {
+fn nothing_drawn_runs_past_the_viewbox() {
     let mut checked = 0;
-    for epoch_back in 0..7 {
-        for (name, spans) in charts() {
-            let list = build(&spans, epoch_back, LegendMode::Hidden);
-            for (what, right) in right_edges(&list) {
-                checked += 1;
-                assert!(
-                    right <= list.viewport.width + 1e-9,
-                    "epoch {epoch_back} days earlier, {name}: {what} ends at {right}, the viewBox is {}",
-                    list.viewport.width
-                );
-            }
-        }
-    }
-    // 何も走査していない試験は何も縛らない。
-    assert!(checked > 5_000, "{checked} parts scanned");
-}
-
-/// `Shown` の図で、右端が viewBox を越える部品の名の集まり。
-fn shown_overflows() -> std::collections::BTreeSet<String> {
-    let mut found = std::collections::BTreeSet::new();
-    for epoch_back in 0..7 {
-        for (_, spans) in charts() {
-            let list = build(&spans, epoch_back, LegendMode::Shown);
-            for (what, right) in right_edges(&list) {
-                if right > list.viewport.width + 1e-9 {
-                    // 札の中身(百分率や日付)は名から外し、部品の種類だけを残す。
-                    found.insert(what.split_whitespace().next().unwrap().to_string());
+    for legend in [LegendMode::Shown, LegendMode::Hidden] {
+        for epoch_back in 0..7 {
+            for (name, spans) in charts() {
+                let list = build(&spans, epoch_back, legend);
+                for (what, right) in right_edges(&list) {
+                    checked += 1;
+                    assert!(
+                        right <= list.viewport.width + 1e-9,
+                        "{legend:?}, epoch {epoch_back} days earlier, {name}: {what} ends at {right}, the viewBox is {}",
+                        list.viewport.width
+                    );
                 }
             }
         }
     }
-    found
-}
-
-/// `Shown` の図は、今は札が viewBox の外へ出る入力を持つ。
-///
-/// これは凡例とは別の、凡例を消せるようになる前からある瑕疵で、この変更では直さない。
-/// 直せば `Shown` の幅が動き、「指定が無い時の出力は今と寸分違わぬ」という約束が破れる
-/// (design/legend-opt-out.md の 4.8)。直す変更は、`default_output_pin` の試料と golden を
-/// 意図して焼き直す。
-///
-/// この試験は、その瑕疵を記録している。溢れが消えたら落ちる向きに書いてある。
-/// 落ちたら `Shown` が直ったということなので、次のようにする。
-/// 1. この試験を消す。
-/// 2. 上の `nothing_drawn_runs_past_the_viewbox_when_the_legend_is_hidden` の `Hidden` に限る
-///    縛りを外し、`Shown` にも当てる。
-/// 3. 動いた `default_output_pin` の試料と golden が意図した動きかを確かめて焼き直す。
-#[test]
-fn shown_is_known_to_overflow_until_it_is_fixed_in_its_own_change() {
-    let found = shown_overflows();
-    // 三箇所のどれも、まだ溢れる。一つでも欠ければ、その一箇所は直ったということ。
-    assert!(
-        found.contains("ProgressPercent"),
-        "the percent labels no longer overflow in Shown ({found:?}): Shown has been fixed, see the note above"
-    );
-    assert!(
-        found.contains("GridLabel"),
-        "the grid labels no longer overflow in Shown ({found:?}): Shown has been fixed, see the note above"
-    );
-    // 溢れるのはこの二種類の札だけで、他の部品が増えていない。
-    // 増えたら、新しい溢れを見つけたということ。ここに足す前に、直すべきかを決める。
-    assert_eq!(
-        found,
-        ["GridLabel", "ProgressPercent"]
-            .into_iter()
-            .map(String::from)
-            .collect()
-    );
+    // 何も走査していない試験は何も縛らない。
+    assert!(checked > 10_000, "{checked} parts scanned");
 }
 
 #[test]
