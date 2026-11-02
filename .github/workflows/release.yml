@@ -24,9 +24,12 @@ name: Release
 #   呼ばれる形ではない。GitHub の OIDC token の workflow_ref は「The ref path to the
 #   workflow.」で、この run では release.yml を指す（job_workflow_ref は「For jobs using
 #   a reusable workflow」だけに付く。https://docs.github.com/en/actions/reference/security/oidc、
-#   2026-10-25 に引いた）。そのため文書の上では当たらないと見る。ただし npm が token の
-#   どの claim を照らすかは npm の文書に書かれていないので、実の publish では未確認。最初の
-#   自動 publish で、検めが tag-release.yml の名で落ちないかを見張ること。
+#   2026-10-25 に引いた）。そのため文書の上では当たらないと見る。npm が token のどの claim を
+#   照らすかは npm の文書に書かれていないが、0.1.0-alpha.2 は tag-release.yml から起こされた
+#   この workflow で全ての段が通った、初めての自動の release であった（2026-11-02）。検めは
+#   tag-release.yml の名で落ちず、release.yml の名で通ったと見てよい。ただしこれは芯の
+#   @koyori-app/arc で確かめただけである。@koyori-app/arc-vue をこの workflow で出すのは
+#   0.1.0-alpha.3 が初めてなので、arc-vue の publish と dist-tag が同じく通るかを見張ること。
 #
 # tag-release.yml が作る Release は GITHUB_TOKEN 由来なので、release イベントで
 # この workflow は起きない。そのため tag-release.yml は Release を作った後に
@@ -115,11 +118,50 @@ jobs:
       - name: Build npm package
         run: bash scripts/build-npm.sh
 
+      # 殻の @koyori-app/arc-vue も同じ札で出す。殻は芯を peer に持つので、芯の後に出す。
+      # 組むのと包むのは publish の前に済ませ、ここで落ちれば何も出ない。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.11.0
+
+      # id-token の権限を持つ job で依存を入れるので、lifecycle script は走らせない。
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build arc-vue
+        run: pnpm --filter @koyori-app/arc-vue build
+
+      # arc-vue の devDependency は workspace:* なので、npm publish で包むとその字がそのまま
+      # 載る。pnpm pack は workspace:* を版へ書き換えて包む。出すのはこの tarball で、
+      # 包みの版が札と揃い、workspace: の字が残っていないことを確かめてから出す。
+      - name: Pack arc-vue
+        id: pack_vue
+        working-directory: packages/arc-vue
+        run: |
+          set -euo pipefail
+          tarball=$(pnpm pack --pack-destination "${RUNNER_TEMP}" | tail -n 1)
+          manifest=$(tar -xzOf "${tarball}" package/package.json)
+          version=$(printf '%s' "${manifest}" | jq -r '.version')
+          if [ "${version}" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::包んだ arc-vue の版 ${version} が札 ${GITHUB_REF_NAME} と食い違う"
+            exit 1
+          fi
+          if printf '%s' "${manifest}" | grep -q '"workspace:'; then
+            echo "::error::包んだ arc-vue の package.json に workspace: の字が残っている"
+            exit 1
+          fi
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+
       # No NODE_AUTH_TOKEN needed — OIDC id-token is exchanged automatically.
       - name: Publish to npm
         working-directory: crates/koyori-arc-core/pkg
         # 前置き付きの版は latest を動かさず、前置きの dist-tag（alpha など）で出す。
         run: npm publish --provenance --access public --tag "${{ steps.verify.outputs.dist_tag }}"
+
+      # 殻は芯と同じく npm で出す。OIDC の受け渡しは npm が担う。
+      - name: Publish arc-vue to npm
+        run: npm publish "${{ steps.pack_vue.outputs.tarball }}" --provenance --access public --tag "${{ steps.verify.outputs.dist_tag }}"
 
       # crates.io Trusted Publisher (OIDC) — no stored token needed.
       # Register this repo + workflow on crates.io before the first publish.
@@ -135,7 +177,8 @@ jobs:
       # 正式版を出すまでは、前置き付きの版を出すたびに npm の latest もその版へ動かす。
       # 正式版が latest になったら自ら止まる。判断は scripts/npm-latest-follow.sh が
       # registry の latest を見て決める（手元でも --apply 無しで同じ判断を撃てる）。
-      # 二つの publish の後に置くので、どちらかが落ちればこの段は走らず、latest は動かない。
+      # npm の二つの包みと crates.io の publish の後に置くので、どれかが落ちればこの段は走らず、
+      # latest はどちらの包みも動かない。
       # npm dist-tag の OIDC 認証は、11 系では 11.21.0 から、12 系では 12.2.0 から入った
       # （https://docs.npmjs.com/trusted-publishers、2026-10-25 に引いた。「dist-tags with
       # OIDC Trusted publishing requires npm CLI version 11.21.0 (or later) and 12.2.0
@@ -146,3 +189,4 @@ jobs:
         run: |
           npm install -g --ignore-scripts npm@12.2.1
           bash scripts/npm-latest-follow.sh --apply @koyori-app/arc "${GITHUB_REF_NAME#v}"
+          bash scripts/npm-latest-follow.sh --apply @koyori-app/arc-vue "${GITHUB_REF_NAME#v}"

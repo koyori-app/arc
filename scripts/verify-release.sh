@@ -35,7 +35,7 @@ if [ "$ver" != "$crate_ver" ]; then
   fail "タグ ${tag} と koyori-arc-core の版 ${crate_ver} が食い違う。タグか Cargo.toml を直してから release を作り直すこと"
 fi
 
-# arc-vue はこの workflow では出さないが、版を Rust の側と揃えておく。
+# arc-vue も同じ札で npm へ出すので、版を Rust の側と揃えておく。
 # ずれたまま出すと、どの arc-vue がどの arc と組むのかが読めなくなる。
 vue_ver=$(jq -r '.version' packages/arc-vue/package.json)
 if [ "$ver" != "$vue_ver" ]; then
