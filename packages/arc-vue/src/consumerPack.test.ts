@@ -52,6 +52,20 @@ describe('consumer pack', () => {
       const tarball = packOutput.trim().split('\n').at(-1)!;
       expect(tarball).toMatch(/\.tgz$/);
 
+      // What npm will show and install: the README is listed in `files` and must
+      // be in the tarball; story types are for this repo only.
+      const entries = execSync(`tar -tzf "${tarball}"`, { encoding: 'utf8' }).trim().split('\n');
+      expect(entries).toContain('package/README.md');
+      expect(entries.filter((entry) => entry.includes('.stories.'))).toEqual([]);
+      expect(entries).toContain('package/dist/index.d.ts');
+
+      // `workspace:*` must be rewritten to this version, or the published
+      // manifest names a protocol that npm cannot resolve.
+      const packed = JSON.parse(
+        execSync(`tar -xzOf "${tarball}" package/package.json`, { encoding: 'utf8' }),
+      ) as { version: string; devDependencies?: Record<string, string> };
+      expect(packed.devDependencies?.['@koyori-app/arc']).toBe(packed.version);
+
       const installDir = join(tmp, 'install');
       execSync(`mkdir -p "${installDir}"`, { encoding: 'utf8' });
       execSync(

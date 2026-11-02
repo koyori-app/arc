@@ -6,7 +6,9 @@ import dts from 'vite-plugin-dts';
 export default defineConfig({
   plugins: [
     vue(),
-    dts({ include: ['src'] }),
+    // Stories and tests are for this repo only; keep their types out of dist.
+    // `exclude` replaces the tsconfig exclude here, so tests are listed again.
+    dts({ include: ['src'], exclude: ['src/**/*.stories.ts', 'src/**/*.test.ts'] }),
   ],
   test: {
     // Default environment. Per-file DOM needs are declared with a
