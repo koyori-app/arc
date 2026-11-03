@@ -23,12 +23,16 @@ pub use display_list::types::{
     PolylinePrim, PolylineSemantic, Primitive, ProgressTier, RectPrim, RectSemantic, RoundRectPrim,
     RoundRectSemantic, TaskBBox, TextAnchor, TextBaseline, TextPrim, TextSemantic, Viewport,
 };
-pub use display_list::{build_display_list, compute_row_window, DisplayList, ScrollViewport};
+pub use display_list::{
+    build_display_list, build_lane_display_list, compute_row_window, lane_chart_width, plan_lanes,
+    visible_band, visible_lanes, DisplayList, Lane, LaneBlock, LaneLayout, LanePlan, Placement,
+    ScrollViewport,
+};
 pub use error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-pub use graph::{GanttDep, GanttGraph, GanttTask};
+pub use graph::{parse_tasks_with_lanes_json, GanttDep, GanttGraph, GanttTask};
 pub use render::{
-    empty_svg_markup, legend_spec_json, render, render_canvas, render_canvas_commands, render_svg,
-    render_svg_error,
+    empty_svg_markup, legend_spec_json, render, render_canvas, render_canvas_commands,
+    render_canvas_lanes, render_lanes, render_svg, render_svg_error,
 };

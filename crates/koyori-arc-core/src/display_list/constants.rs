@@ -95,6 +95,26 @@ pub const PROGRESS_LABEL_FONT_WEIGHT: u16 = 600;
 /// falls back to, matching the `font-size`/`font-weight` on the SVG root.
 pub const DEFAULT_FONT_SIZE_PX: f64 = 12.0;
 pub const DEFAULT_FONT_WEIGHT: u16 = 400;
+/// Lane layout (a chart given `lanes`). A lane is as tall as the rows its bars
+/// need, one `ROW_H` per row, and at least one row so an empty lane still shows
+/// its label.
+///
+/// Font of a bar's title, drawn above the bar inside the row's top padding. It is
+/// smaller than `DEFAULT_FONT_SIZE_PX` so it fits the `BAR_PAD` above the bar.
+pub const LANE_TITLE_FONT_PX: f64 = 10.0;
+/// Widest a bar's title may be when nothing to its right limits it. The chart is
+/// widened to hold it, so a bar near the right edge still has its title.
+pub const LANE_TITLE_MAX_W_PX: f64 = 160.0;
+/// Gap kept between a title and the next bar in the same row.
+pub const LANE_TITLE_GAP_PX: f64 = 4.0;
+/// Gap kept between two bars packed into one row of a lane. Measured between the
+/// right edge of the earlier bar (or of its percent label, whichever is further)
+/// and the left edge of the next.
+pub const LANE_PACK_GAP_PX: f64 = 4.0;
+/// Most lanes a chart accepts, and most bars (one per task per lane it belongs to)
+/// it will draw. Both bound the work and the markup a request can ask for.
+pub const MAX_LANES: usize = 1_000;
+pub const MAX_LANE_BARS: usize = 50_000;
 /// Visible rows ± buffer for row virtualization (§5.2, §6.5).
 pub const ROW_BUFFER: u32 = 2;
 /// Phase 1 DOM_CAP design target (§6.5.3).

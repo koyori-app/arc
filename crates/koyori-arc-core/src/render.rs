@@ -5,19 +5,23 @@ use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::build::chart_width_for;
+use crate::display_list::constants::{chart_chrome_h, MAX_LANES, MAX_LANE_BARS};
 use crate::display_list::constants::{
     chart_height, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
 };
+use crate::display_list::lanes::{lane_chart_width, plan_lanes, Lane};
 use crate::display_list::legend::legend_spec;
 use crate::display_list::{
-    build_display_list,
+    build_display_list, build_lane_display_list,
     types::{ChartOptions, LegendMode, Palette},
     ScrollViewport,
 };
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttTask};
+use crate::graph::{
+    parse_tasks_json, parse_tasks_with_lanes_json, GanttDep, GanttGraph, GanttTask,
+};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
@@ -32,6 +36,9 @@ pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
 /// Upper bound on `options_json`. It holds a handful of scalar keys, so this is
 /// far more than a real value needs; a larger string is refused before it is parsed.
 pub const MAX_OPTIONS_JSON_BYTES: usize = 4 * 1024;
+/// The same bound for an `options_json` that carries `lanes`: the bound above plus what
+/// `MAX_LANES` lanes of an id and a name come to.
+pub const MAX_OPTIONS_WITH_LANES_JSON_BYTES: usize = MAX_OPTIONS_JSON_BYTES + MAX_LANES * 256;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
@@ -205,6 +212,65 @@ fn canvas_graph_limit_error(
     None
 }
 
+/// `canvas_graph_limit_error` for a chart drawn in lanes. The height is the lanes' own
+/// height, which depends on how the bars pack, so it is read from the plan the chart is
+/// drawn from; the width is the width that plan is drawn at.
+fn canvas_lane_limit_error(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    input: &LaneInput,
+    legend: LegendMode,
+) -> Option<RenderError> {
+    if let Some(err) = common_graph_limit_error(tasks, deps) {
+        return Some(err);
+    }
+    let plan = plan_lanes(tasks, &input.task_lanes, &input.lanes);
+    if plan.bar_count() > MAX_LANE_BARS {
+        return Some(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("lane bar count exceeds limit ({MAX_LANE_BARS})"),
+        ));
+    }
+    let span_days = match rendered_date_span_days(&plan.drawn) {
+        Ok(days) => days,
+        Err(err) => return Some(err),
+    };
+    if span_days > MAX_CANVAS_DATE_SPAN_DAYS {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+            ),
+        ));
+    }
+    let width_px = lane_chart_width(&plan, tasks, legend);
+    if width_px > MAX_CANVAS_SIDE_PX as f64 {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas date range exceeds limit ({MAX_CANVAS_DATE_SPAN_DAYS} days / {MAX_CANVAS_SIDE_PX}px)"
+            ),
+        ));
+    }
+    // The taller chart, the one with the legend, as `canvas_graph_limit_error` takes it.
+    let height_px = plan.layout.height() + chart_chrome_h(LegendMode::Shown);
+    if height_px > MAX_CANVAS_SIDE_PX as f64 {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
+            ),
+        ));
+    }
+    if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!("canvas area exceeds limit ({MAX_CANVAS_AREA_PX} pixels)"),
+        ));
+    }
+    None
+}
+
 /// `today` as `options_json` carries it. Absent or blank means "no today
 /// marker". A value that is present but unreadable is a refusal, not a silent
 /// `None`: dropping it would also switch the progress line from the
@@ -234,11 +300,26 @@ struct WireOptions {
     scroll_viewport: Option<ScrollViewport>,
     tz_offset_minutes: Option<f64>,
     legend: LegendMode,
+    /// `Some` (even an empty list) draws the chart in lanes; absent or `null` does not.
+    lanes: Option<Vec<Lane>>,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
 /// that a misspelt one cannot silently do nothing.
-const OPTION_KEYS: &[&str] = &["today", "scroll_viewport", "tz_offset_minutes", "legend"];
+const OPTION_KEYS: &[&str] = &[
+    "today",
+    "scroll_viewport",
+    "tz_offset_minutes",
+    "legend",
+    "lanes",
+];
+
+fn options_limit_error(limit: usize) -> RenderError {
+    RenderError::new(
+        CODE_INPUT_LIMIT,
+        format!("options JSON byte size exceeds limit ({limit})"),
+    )
+}
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
     RenderError::new(CODE_PARSE_ERROR, format!("parse error: options: {message}"))
@@ -254,15 +335,21 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         scroll_viewport: None,
         tz_offset_minutes: None,
         legend: LegendMode::Shown,
+        lanes: None,
     };
     let Some(json) = options_json else {
         return Ok(wire);
     };
-    if json.len() > MAX_OPTIONS_JSON_BYTES {
-        return Err(RenderError::new(
-            CODE_INPUT_LIMIT,
-            format!("options JSON byte size exceeds limit ({MAX_OPTIONS_JSON_BYTES})"),
-        ));
+    // An options string that does not spell out `"lanes"` is held to the bound it always had,
+    // judged before it is parsed. One that does gets the larger bound, and is held to the
+    // smaller one after all if the word turned out not to be the key.
+    let limit = if json.contains("\"lanes\"") {
+        MAX_OPTIONS_WITH_LANES_JSON_BYTES
+    } else {
+        MAX_OPTIONS_JSON_BYTES
+    };
+    if json.len() > limit {
+        return Err(options_limit_error(limit));
     }
     let value: serde_json::Value = serde_json::from_str(json).map_err(options_error)?;
     let serde_json::Value::Object(map) = value else {
@@ -307,10 +394,43 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
                     _ => return Err(options_error("legend: expected \"shown\" or \"hidden\"")),
                 }
             }
+            "lanes" => wire.lanes = Some(parse_lanes(value)?),
             _ => unreachable!("OPTION_KEYS covers every arm"),
         }
     }
+    if wire.lanes.is_none() && json.len() > MAX_OPTIONS_JSON_BYTES {
+        return Err(options_limit_error(MAX_OPTIONS_JSON_BYTES));
+    }
     Ok(wire)
+}
+
+/// `lanes` as `options_json` carries it: an array of `{"id":string,"label":string}`, top
+/// lane first. An id that appears twice is refused, since a task naming it could not tell
+/// which lane is meant.
+fn parse_lanes(value: serde_json::Value) -> Result<Vec<Lane>, RenderError> {
+    if !value.is_array() {
+        return Err(options_error(
+            "lanes: expected an array of {\"id\": string, \"label\": string}",
+        ));
+    }
+    let lanes: Vec<Lane> =
+        serde_json::from_value(value).map_err(|e| options_error(format!("lanes: {e}")))?;
+    if lanes.len() > MAX_LANES {
+        return Err(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("lane count exceeds limit ({MAX_LANES})"),
+        ));
+    }
+    let mut seen = std::collections::HashSet::with_capacity(lanes.len());
+    for (i, lane) in lanes.iter().enumerate() {
+        if !seen.insert(lane.id.as_str()) {
+            return Err(options_error(format!(
+                "lanes[{i}]: duplicate id `{}`",
+                lane.id
+            )));
+        }
+    }
+    Ok(lanes)
 }
 
 /// What a Wasm entry point has once every refusal about the inputs but the
@@ -331,6 +451,10 @@ impl ResolvedOptions {
         self.wire.legend
     }
 
+    fn lanes(&self) -> Option<&[Lane]> {
+        self.wire.lanes.as_deref()
+    }
+
     fn chart_options(&self) -> Result<ChartOptions, RenderError> {
         Ok(ChartOptions {
             today: parse_today(self.wire.today.as_deref(), self.offset)?,
@@ -345,6 +469,47 @@ struct PreparedSvgInput {
     tasks: Vec<GanttTask>,
     deps: Vec<GanttDep>,
     options: ChartOptions,
+    /// Present when the options carried `lanes`.
+    lanes: Option<LaneInput>,
+}
+
+/// The lanes of a chart, and which lanes each of its tasks names.
+struct LaneInput {
+    lanes: Vec<Lane>,
+    task_lanes: Vec<Vec<String>>,
+}
+
+/// Reads the tasks, and their `lane_ids` when the chart is drawn in lanes. The result is the
+/// same list of tasks either way; only a lane chart looks at `lane_ids`.
+fn parse_tasks_for(
+    tasks_json: &str,
+    resolved: &ResolvedOptions,
+) -> Result<(Vec<GanttTask>, Option<LaneInput>), String> {
+    match resolved.lanes() {
+        None => parse_tasks_json(tasks_json, resolved.offset).map(|tasks| (tasks, None)),
+        Some(lanes) => {
+            parse_tasks_with_lanes_json(tasks_json, resolved.offset).map(|(tasks, task_lanes)| {
+                (
+                    tasks,
+                    Some(LaneInput {
+                        lanes: lanes.to_vec(),
+                        task_lanes,
+                    }),
+                )
+            })
+        }
+    }
+}
+
+/// How many bars a lane chart would draw, refused above `MAX_LANE_BARS`.
+fn lane_bar_limit_error(tasks: &[GanttTask], input: &LaneInput) -> Option<RenderError> {
+    let plan = plan_lanes(tasks, &input.task_lanes, &input.lanes);
+    (plan.bar_count() > MAX_LANE_BARS).then(|| {
+        RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("lane bar count exceeds limit ({MAX_LANE_BARS})"),
+        )
+    })
 }
 
 /// Every Wasm SVG rejection runs through here — `render_svg` and
@@ -358,11 +523,14 @@ fn prepare_svg_input(
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return Err(err);
     }
-    let tasks = parse_tasks_json(tasks_json, resolved.offset)
+    let (tasks, lanes) = parse_tasks_for(tasks_json, &resolved)
         .map_err(|e| RenderError::new(CODE_PARSE_ERROR, e))?;
     let deps: Vec<GanttDep> = serde_json::from_str(deps_json)
         .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")))?;
     if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
+        return Err(err);
+    }
+    if let Some(err) = lanes.as_ref().and_then(|l| lane_bar_limit_error(&tasks, l)) {
         return Err(err);
     }
     let options = resolved.chart_options()?;
@@ -370,6 +538,7 @@ fn prepare_svg_input(
         tasks,
         deps,
         options,
+        lanes,
     })
 }
 
@@ -387,6 +556,47 @@ pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) ->
     let list = build_display_list(&graph, epoch, options);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+/// Native entry point: the chart drawn in lanes. `task_lanes[i]` names the lanes of
+/// `tasks[i]`; see `display_list::lanes` for what a lane is and how bars are packed.
+/// Dependencies are not an input: a lane chart draws no arrows.
+pub fn render_lanes(
+    tasks: &[GanttTask],
+    task_lanes: &[Vec<String>],
+    lanes: &[Lane],
+    options: &ChartOptions,
+) -> String {
+    if tasks.is_empty() {
+        return crate::backend::svg::empty_svg();
+    }
+    let list = build_lane_display_list(tasks, task_lanes, lanes, options);
+    match SvgBackend.render(&list) {
+        BackendOutput::Svg(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+/// Native entry point: the lane chart as a `CommandBuffer` for Canvas2D replay.
+pub fn render_canvas_lanes(
+    tasks: &[GanttTask],
+    task_lanes: &[Vec<String>],
+    lanes: &[Lane],
+    options: &ChartOptions,
+) -> CommandBuffer {
+    if tasks.is_empty() {
+        return CommandBuffer {
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+            ops: vec![],
+            palette: Palette::standard(),
+        };
+    }
+    let list = build_lane_display_list(tasks, task_lanes, lanes, options);
+    match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
         _ => unreachable!(),
     }
 }
@@ -424,6 +634,9 @@ pub fn render_canvas(
 /// - `today`: an ISO 8601 date (e.g. "2026-06-16") or date-time (e.g.
 ///   "2026-06-16T09:00:00+09:00") for the today marker; the calendar day as written is used.
 /// - `scroll_viewport`: `{"scroll_y":f64,"client_height":f64}` for row virtualization.
+/// - `lanes`: `[{"id":string,"label":string}, ...]`. Given, the chart is drawn in lanes (see
+///   `display_list::lanes`) and a task's `lane_ids` name the lanes it is in. Absent or `null`,
+///   the chart is the usual one and `lane_ids` are not read.
 /// - `tz_offset_minutes`: the caller's time zone as a signed integer of minutes east of UTC
 ///   (JST is 540). Absent keeps the day a date-time string is written in; present converts
 ///   date-time strings that carry an offset to that zone's calendar day. Date-only strings
@@ -439,11 +652,15 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String
         tasks,
         deps,
         options,
+        lanes,
     }) = prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
     else {
         return empty_svg();
     };
-    render(&tasks, &deps, &options)
+    match lanes {
+        Some(input) => render_lanes(&tasks, &input.task_lanes, &input.lanes, &options),
+        None => render(&tasks, &deps, &options),
+    }
 }
 
 /// Wasm entry point — why `render_svg` would refuse this input, as the same
@@ -501,7 +718,7 @@ pub fn render_canvas_commands(
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
         return err.to_json();
     }
-    let tasks = match parse_tasks_json(tasks_json, resolved.offset) {
+    let (tasks, lanes) = match parse_tasks_for(tasks_json, &resolved) {
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, e).to_json(),
     };
@@ -509,14 +726,21 @@ pub fn render_canvas_commands(
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
-    if let Some(err) = canvas_graph_limit_error(&tasks, &deps, resolved.legend()) {
+    let limit_error = match &lanes {
+        Some(input) => canvas_lane_limit_error(&tasks, &deps, input, resolved.legend()),
+        None => canvas_graph_limit_error(&tasks, &deps, resolved.legend()),
+    };
+    if let Some(err) = limit_error {
         return err.to_json();
     }
     let options = match resolved.chart_options() {
         Ok(options) => options,
         Err(err) => return err.to_json(),
     };
-    let buffer = render_canvas(&tasks, &deps, &options);
+    let buffer = match &lanes {
+        Some(input) => render_canvas_lanes(&tasks, &input.task_lanes, &input.lanes, &options),
+        None => render_canvas(&tasks, &deps, &options),
+    };
     serde_json::to_string(&buffer).unwrap_or_else(|e| {
         RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
     })

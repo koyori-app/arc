@@ -71,6 +71,11 @@ struct RawTask {
     start: String,
     #[serde(default)]
     end: Option<String>,
+    /// Read only when the chart is drawn in lanes (see `parse_tasks_with_lanes_json`).
+    /// Kept as a raw value so a task that carries a `lane_ids` the lane layout would
+    /// refuse is still drawn as before by a chart that has no lanes.
+    #[serde(default)]
+    lane_ids: serde_json::Value,
 }
 
 /// Reads a tasks JSON array. `offset` is the caller's time zone, or `None` for
@@ -78,6 +83,42 @@ struct RawTask {
 /// messages; a bad date names the task index and the field.
 pub fn parse_tasks_json(json: &str, offset: Option<FixedOffset>) -> Result<Vec<GanttTask>, String> {
     let raw: Vec<RawTask> = serde_json::from_str(json).map_err(|e| format!("parse error: {e}"))?;
+    parse_raw_tasks(raw, offset)
+}
+
+/// Like `parse_tasks_json`, and also reads each task's `lane_ids` (absent or `null`
+/// is no lane). The second value holds one list per task, in the same order.
+pub fn parse_tasks_with_lanes_json(
+    json: &str,
+    offset: Option<FixedOffset>,
+) -> Result<(Vec<GanttTask>, Vec<Vec<String>>), String> {
+    let raw: Vec<RawTask> = serde_json::from_str(json).map_err(|e| format!("parse error: {e}"))?;
+    let lane_ids = raw
+        .iter()
+        .enumerate()
+        .map(|(i, t)| match &t.lane_ids {
+            serde_json::Value::Null => Ok(Vec::new()),
+            serde_json::Value::Array(items) => items
+                .iter()
+                .map(|item| {
+                    item.as_str().map(str::to_owned).ok_or_else(|| {
+                        format!("parse error: tasks[{i}].lane_ids: expected an array of strings")
+                    })
+                })
+                .collect(),
+            _ => Err(format!(
+                "parse error: tasks[{i}].lane_ids: expected an array of strings"
+            )),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let tasks = parse_raw_tasks(raw, offset)?;
+    Ok((tasks, lane_ids))
+}
+
+fn parse_raw_tasks(
+    raw: Vec<RawTask>,
+    offset: Option<FixedOffset>,
+) -> Result<Vec<GanttTask>, String> {
     raw.into_iter()
         .enumerate()
         .map(|(i, t)| {
