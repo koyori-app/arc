@@ -6,7 +6,7 @@ import init, {
   render_canvas_commands,
   empty_svg_markup,
 } from '@koyori-app/arc';
-import type { GanttTask, GanttDep } from './types.ts';
+import type { GanttTask, GanttDep, GanttLane } from './types.ts';
 import {
   parseCommandBuffer,
   replayCommands,
@@ -16,6 +16,7 @@ import {
 import { resetCanvasElement } from './canvasLifecycle';
 import { buildOptionsJson } from './options';
 import { backingSize, cssPointFromClient } from './canvasScale';
+import { estimateLaneChartHeight, svgRootHeight } from './laneHeight';
 import {
   chartHeightForTaskCount,
   isCanvasCapacityError,
@@ -58,6 +59,18 @@ const props = defineProps<{
    * legend of every existing caller.
    */
   legend?: 'shown' | 'hidden';
+  /**
+   * Draws the chart in lanes: one lane per entry, top first, with the name in the left
+   * column. A task goes into every lane its `lane_ids` names, and the bars of a lane are
+   * packed into as many rows as they need, so bars that overlap in time sit one above
+   * the other. A task in no lane is not drawn. Left out, the chart is the usual one,
+   * one row a task, and `lane_ids` are ignored.
+   *
+   * A chart in lanes draws no dependency arrows and no progress status line (a task in
+   * two lanes has no single place for an arrow to start or end), and its legend leaves
+   * out the progress-line sample. `deps` is accepted and not drawn.
+   */
+  lanes?: GanttLane[];
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -75,6 +88,8 @@ const clientHeight = ref(600);
 const scrollRef = ref<HTMLElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const hitRegions = ref<TaskHitRegion[]>([]);
+/** The CSS height of the canvas last painted; a chart in lanes reads its height from here. */
+const canvasCssHeight = ref(0);
 const canvasFallbackSvg = ref('');
 const canvasError = ref('');
 const canvasFailure = ref<RenderFailure | null>(null);
@@ -146,8 +161,34 @@ watch(requestedVirtualization, async (virtual) => {
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
+  if (props.lanes != null) return laneChartHeight.value;
   return chartHeightForTaskCount(props.tasks.length, props.legend);
 });
+
+/**
+ * A chart in lanes is as tall as its rows pack, which only the Wasm knows, so the room
+ * reserved for it is read off what was drawn: the root height of the SVG, or the canvas's
+ * own. Until something is drawn it is a guess of one row a lane.
+ */
+const laneChartHeight = computed(() => {
+  const drawn = useCanvas.value && !canvasFallbackSvg.value
+    ? canvasCssHeight.value
+    : svgRootHeight(canvasFallbackSvg.value || svg.value);
+  return drawn || estimateLaneChartHeight(props.lanes?.length ?? 0, props.legend);
+});
+
+/**
+ * A chart in lanes is only as tall as its drawing says, and the room first reserved for it
+ * is a guess. The window sent to the Wasm is measured off the scroll box, so it has to be
+ * measured again once the real height is in: otherwise a box that grew keeps the window of
+ * the guess, and the lanes below it are never drawn although they are in view. (A chart
+ * without lanes knows its height before the first draw and does not need this.)
+ */
+watch(laneChartHeight, async () => {
+  if (props.lanes == null || !requestedVirtualization.value) return;
+  await nextTick();
+  syncScrollViewport();
+}, { flush: 'post' });
 
 const scrollViewport = computed(() => {
   if (!requestedVirtualization.value || !viewportReady.value) return undefined;
@@ -163,6 +204,7 @@ const optionsJson = computed(() =>
     scrollViewport: scrollViewport.value,
     tzOffsetMinutes: props.tzOffsetMinutes,
     legend: props.legend,
+    lanes: props.lanes,
   }),
 );
 
@@ -224,6 +266,7 @@ const displayError = computed(() => canvasError.value || svgFailure.value?.messa
 
 function resetCanvas(canvas: HTMLCanvasElement | null) {
   hitRegions.value = [];
+  canvasCssHeight.value = 0;
   resetCanvasElement(canvas);
 }
 
@@ -251,6 +294,7 @@ function renderCanvasFallback(failure: RenderFailure) {
           // Left out here, the SVG the canvas falls back to would bring the
           // legend back and be taller than the height reserved for it.
           legend: props.legend,
+          lanes: props.lanes,
         }),
       );
     } catch {
@@ -310,6 +354,7 @@ async function paintCanvas() {
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
   canvasCssSize = { width: cssWidth, height: cssHeight };
+  canvasCssHeight.value = cssHeight;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {

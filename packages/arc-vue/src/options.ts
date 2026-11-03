@@ -15,11 +15,19 @@ export interface ScrollViewportOption {
 /** Whether the chart draws its own legend. Left out, the legend is drawn. */
 export type LegendMode = 'shown' | 'hidden';
 
+/** One lane: see `GanttLane`. Declared here too so `options.ts` stands alone. */
+export interface LaneOption {
+  id: string;
+  label: string;
+}
+
 export interface ChartOptionsInput {
   today?: string | null;
   scrollViewport?: ScrollViewportOption | null;
   tzOffsetMinutes?: number | null;
   legend?: LegendMode | null;
+  /** Draws the chart in lanes. Left out (or `null`), the chart is the usual one. */
+  lanes?: LaneOption[] | null;
 }
 
 /**
@@ -31,6 +39,7 @@ export interface ChartOptions {
   scroll_viewport?: ScrollViewportOption;
   tz_offset_minutes?: number | string;
   legend?: LegendMode;
+  lanes?: LaneOption[];
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -48,5 +57,8 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   // Only a given value is written. A key that is always present would turn
   // "left out" into a choice, and an old reader of the options would refuse it.
   if (input.legend != null) options.legend = input.legend;
+  // An empty list is a choice (a chart in lanes with none), so it is written; only
+  // a missing one is left out.
+  if (input.lanes != null) options.lanes = input.lanes;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }
