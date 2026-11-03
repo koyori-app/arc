@@ -127,6 +127,33 @@ pub struct ChartOptions {
 }
 
 pub fn legend_spec() -> LegendSpec
+
+// 段の形(「段の形」の節)。`task_lanes[i]` は `tasks[i]` が属する段の id の並び
+pub fn render_lanes(
+    tasks: &[GanttTask],
+    task_lanes: &[Vec<String>],
+    lanes: &[Lane],
+    options: &ChartOptions,
+) -> String
+
+pub fn render_canvas_lanes(
+    tasks: &[GanttTask],
+    task_lanes: &[Vec<String>],
+    lanes: &[Lane],
+    options: &ChartOptions,
+) -> CommandBuffer
+
+pub fn build_lane_display_list(
+    tasks: &[GanttTask],
+    task_lanes: &[Vec<String>],
+    lanes: &[Lane],
+    options: &ChartOptions,
+) -> DisplayList
+
+pub struct Lane {
+    pub id: String,
+    pub label: String,
+}
 ```
 
 `ChartOptions::default()` は、今日の線も仮想スクロールも無く、凡例を出す図を描く。
@@ -151,9 +178,10 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
   - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
+  - `lanes`: `[{"id": string, "label": string}, ...]`。渡した時だけ、図が段の形になる（下の「段の形」）。渡さない（省略、`null`）時は、これまでと一字も変わらぬ図を描く。空の配列は「段の形で、段が無い」図になる
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
-  - 4 KiB を超える字は `input_limit` で断る
+  - 4 KiB を超える字は `input_limit` で断る。ただし `"lanes"` の字を含む設定には、段の数の上限（1000）の分を足した大きい上限を当てる
 - `render_svg` は断る時に空 SVG を返し、`render_svg_error(tasks_json, deps_json, options_json)` から理由を取得できる。`render_svg` に渡したものと同じ `options_json` を渡す（読めない設定も断りの一つで、この経路でしか分からない）
 - `render_canvas_commands` は Canvas2D 再生用 `CommandBuffer` の JSON を返し、エラー時も `{"error": ..., "code": ...}` の JSON を返す
 - `legend_spec_json()`: 凡例の中身（段の `key`、名、色、範囲と、進捗の線の名、色、太さ、破線）の JSON を返す。凡例を消した使い手が、同じ凡例を描くために読む。範囲は `ProgressTier::from_pct` を 0 から 100 まで走らせて導き、色は図が使うパレットから引く
@@ -171,6 +199,8 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 ```
 
 - `data-task-id` 属性によるクリックデリゲーションで `taskClick` イベントを emit
+- `lanes`: `{ id, label }[]`。渡した時だけ段の形で描く（下の「段の形」）。課題の `lane_ids: string[]` が属する段を指す。渡さなければ、これまでの図で、`lane_ids` は読まない
+  - 段の形の図の高さは、段の中の詰め方で決まり、wasm が答えるまで分からない。入れ物の高さは、描いた SVG の根の `height`（canvas では裏打ちの CSS の高さ）から取る。答えが来るまでは、一段一行の見積もりを置き、仮想化の窓は答えが来た後に測り直す
 - `legend`: `'shown'`(既定)か `'hidden'`。`'hidden'` で凡例を描かず、図の高さも凡例の分(`LEGEND_H`、40px)だけ詰める。SVG にも canvas にも、canvas が SVG に落ちた時の図にも効く
   - 真偽値の prop にしないのは、Vue が省略された真偽値の prop を `false` に変えるため。省略は今まで通り凡例を出す
   - 省略した時、wasm へ渡す `options_json` は `legend` の鍵を持たない
@@ -179,6 +209,23 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - 値は arc-vue に書き写さず、読み込んだ `@koyori-app/arc` に問う。arc と arc-vue は別の版で入り得るため
   - 型 `LegendSpec`、`LegendTier`、`LegendProgressLine` は `index.ts` から出す。形は core の `LegendSpec` を JSON にした物と同じ
 - `chartHeightForTaskCount` は内部の関数で、`legend` の指定に応じて入れ物の高さを求める。`wasmContract.ts` の `RUST_LAYOUT` は変えない
+
+## 段の形
+
+`options_json` に `lanes` を渡すと、一課題一行の図の代わりに、段ごとに棒を詰めた図を描く。
+担当者ごとに一段を充て、その人の課題の棒を段の中に置く使い方を想定する。
+`lanes` を渡さない図は、この節の影響を受けない（`default_output_pin` と既存の試験が縛る）。
+
+- **段**: `{ id, label }` の並びで、並びの順が上からの順。`label` は左の欄（`LABEL_W`）に、段の縦の真ん中へ出す。欄に収まらなければ `…` で切る。一つ置きの段に薄い帯を敷く。`id` の重複は `parse_error` で断る。段は 1000 まで
+- **課題と段**: 課題は `lane_ids: string[]` で、属する段を幾つでも指せる。二つの段に属する課題は、二つの段の両方に棒を出す。`data-task-id`（canvas では GroupStart の `task_id`）はどちらの棒も同じなので、どちらを押しても同じ課題が返る。どの段にも属さない課題は描かない。段に無い id は無視する。棒は全部で 50000 本まで（`input_limit`）。`lane_ids` は段の形の時だけ読み、配列でない値は `parse_error`。段の形でない時は、何が書いてあっても読まない
+- **起点の日**: 描く課題のうち一番早い開始日。どの段にも属さない課題は起点に数えない
+- **詰め方**: 段ごとに、開始日、終了日、`id`、入力の位置の順に並べ、前から一本ずつ、重ならない最も上の行に置く（重ならなければ新しい行を開く）。同じ入力は必ず同じ形になる。「重ならない」は、行の最後の棒の右端（棒からはみ出す達成率の字があれば、その右端まで）から 4px 空いて次の棒が始まること。終わりの日と始まりの日が同じ棒は、詰まって見えぬよう別の行に置く
+- **段の高さと位置**: 段の高さは、段の行の数 × `ROW_H`（行が無い段も一行）。段の上端は、前の段までの高さの積み上げ（`LaneLayout::tops`）で引き、`index * ROW_H` では引かない。棒の縦は、`HEADER_H + 段の上端 + 行 × ROW_H + BAR_PAD`。図の高さは、段の高さの和に `CHART_CHROME_H` を足す（凡例を隠せば `LEGEND_H` を引く）
+- **仮想化**: `scroll_viewport` の窓が見せる帯（窓から `HEADER_H` を引き、上下に 2 行分を足す）にかかる段だけを、積み上げの表を二分で探して拾う。段の中は、帯にかかる行の棒だけを描く。段の名と帯も、窓にかかる段だけ描く
+- **題と達成率**: 棒の題は棒の上（`BAR_PAD` の中）に、10px の字で出し、同じ行の次の棒の手前で切る（切る時は `…` を付ける）。題が 160px を超えて伸びることは無い。図の幅は、題も含めて決める。達成率の字は今まで通り棒の中か右に出す
+- **描かない物**: 依存の矢と進捗の status line は描かない。一つの課題が二つの段に出るので、矢の始まりと終わりが一つに決まらず、status line は一行に一本の棒を通る線だからである。`deps` は受けるが無視する。凡例は、進捗の線の見本だけを外し、色の見本はそのまま出す（高さは変わらない）。`legend_spec` は今まで通り進捗の線の見本を返す
+- **canvas の上限**: 高さは段の高さの和で測る。縦が上限（16384px）を超えれば `canvas_capacity` で断り、arc-vue は SVG に落とす
+- **今日の線、凡例の出し隠し、時差、`canvasFallback`、押した所の課題の拾い**: 一課題一行の図と同じに働く
 
 ## SVG 出力仕様
 

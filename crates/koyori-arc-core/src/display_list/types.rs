@@ -297,6 +297,10 @@ pub enum TextSemantic {
     RowLabel,
     LegendProgress,
     LegendTier,
+    /// A lane's name in the left column (lane layout only).
+    LaneLabel,
+    /// A bar's title above the bar (lane layout only).
+    BarTitle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

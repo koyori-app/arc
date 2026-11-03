@@ -78,54 +78,8 @@ pub fn build_display_list(
     let mut layers = Vec::new();
     let mut task_bboxes = Vec::new();
 
-    // Background layer
-    layers.push(Layer {
-        kind: LayerKind::Background,
-        primitives: vec![Primitive::Rect(RectPrim {
-            x: LABEL_W,
-            y: 0.0,
-            width: chart_w - LABEL_W,
-            height: HEADER_H,
-            fill: ColorId::HeaderBg,
-            rx: None,
-            semantic: RectSemantic::HeaderBackground,
-        })],
-    });
-
-    // Grid layer
-    let mut grid_prims = Vec::new();
-    // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
-    // but the native entry points have no such guard, so every step here is
-    // checked: an overflow stops the grid instead of panicking.
-    for grid_day in grid_days(epoch, total_days) {
-        let x = LABEL_W + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
-        grid_prims.push(Primitive::Line(LinePrim {
-            x1: x,
-            y1: HEADER_H,
-            x2: x,
-            y2: chart_h,
-            stroke: ColorId::Grid,
-            stroke_width: 1.0,
-            stroke_dash: None,
-            semantic: LineSemantic::Grid,
-        }));
-        let label = grid_label(grid_day);
-        grid_prims.push(Primitive::Text(TextPrim {
-            x,
-            y: HEADER_H / 2.0 + 4.0,
-            content: label,
-            fill: Some(ColorId::GridLabel),
-            font_size: Some(GRID_LABEL_FONT_PX),
-            font_weight: None,
-            anchor: None,
-            baseline: TextBaseline::Auto,
-            semantic: TextSemantic::GridLabel,
-        }));
-    }
-    layers.push(Layer {
-        kind: LayerKind::Grid,
-        primitives: grid_prims,
-    });
+    layers.push(background_layer(chart_w));
+    layers.push(grid_layer(epoch, total_days, chart_h));
 
     // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
@@ -134,95 +88,12 @@ pub fn build_display_list(
             continue;
         }
         let y = HEADER_H + row.row as f64 * ROW_H + BAR_PAD;
-        let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
-        let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
-        let prog = task.progress();
-        let prog_w = w * prog;
-        let prog_pct = task.progress_pct.clamp(0, 100);
-        let tier = ProgressTier::from_pct(prog_pct);
-        let pct_label = format!("{prog_pct}%");
-        let end_label = task.end.map(format_date).unwrap_or_else(|| {
-            format_date(
-                task.start
-                    .checked_add_signed(Duration::days(1))
-                    .unwrap_or(task.start),
-            )
-        });
-        let tooltip = format!(
-            "{}: {} – {} ({pct_label})",
-            task.title,
-            format_date(task.start),
-            end_label,
-        );
-
-        let mut children = Vec::new();
-
-        if is_zero_duration(task) {
-            let cx = x;
-            let cy = y + BAR_H / 2.0;
-            let half = BAR_H / 2.0;
-            children.push(Primitive::Polygon(PolygonPrim {
-                points: vec![
-                    (cx, cy - half),
-                    (cx + half, cy),
-                    (cx, cy + half),
-                    (cx - half, cy),
-                ],
-                fill: tier_fill_color(tier),
-                stroke: ColorId::BarBg,
-                stroke_width: 1.0,
-                tier,
-                semantic: PolygonSemantic::Milestone,
-            }));
-            let label = percent_label(task, epoch);
-            children.push(Primitive::Text(TextPrim {
-                x: label.x,
-                y: cy,
-                content: label.content,
-                fill: Some(label.fill),
-                font_size: Some(PROGRESS_LABEL_FONT_PX),
-                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: label.anchor,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::ProgressPercent,
-            }));
-        } else {
-            if w > 0.0 {
-                children.push(Primitive::Rect(RectPrim {
-                    x,
-                    y,
-                    width: w,
-                    height: BAR_H,
-                    fill: ColorId::BarBg,
-                    rx: Some(BAR_CORNER_RADIUS_PX),
-                    semantic: RectSemantic::BarBackground,
-                }));
-                if prog_w > 0.0 {
-                    children.push(Primitive::RoundRect(RoundRectPrim {
-                        x,
-                        y,
-                        width: prog_w,
-                        height: BAR_H,
-                        fill: tier_fill_color(tier),
-                        rx: BAR_CORNER_RADIUS_PX,
-                        tier,
-                        semantic: RoundRectSemantic::BarProgress,
-                    }));
-                }
-            }
-            let label = percent_label(task, epoch);
-            children.push(Primitive::Text(TextPrim {
-                x: label.x,
-                y: y + BAR_H / 2.0,
-                content: label.content,
-                fill: Some(label.fill),
-                font_size: Some(PROGRESS_LABEL_FONT_PX),
-                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: label.anchor,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::ProgressPercent,
-            }));
-        }
+        let BarParts {
+            mut children,
+            tooltip,
+            x,
+            w,
+        } = bar_parts(task, epoch, y);
 
         let display_title =
             truncate_to_width(&task.title, DEFAULT_FONT_SIZE_PX, ROW_LABEL_MAX_W_PX);
@@ -362,28 +233,9 @@ pub fn build_display_list(
     });
 
     // Today marker
-    let today_x = today.and_then(|today| {
-        let x = LABEL_W + (today - epoch).num_days() as f64 * PX_PER_DAY;
-        if x >= LABEL_W && x <= chart_w {
-            Some(x)
-        } else {
-            None
-        }
-    });
+    let today_x = today_x_of(today, epoch, chart_w);
     if let Some(x) = today_x {
-        layers.push(Layer {
-            kind: LayerKind::TodayMarker,
-            primitives: vec![Primitive::Line(LinePrim {
-                x1: x,
-                y1: 0.0,
-                x2: x,
-                y2: chart_h,
-                stroke: ColorId::Today,
-                stroke_width: 2.0,
-                stroke_dash: Some("4,3".to_string()),
-                semantic: LineSemantic::TodayMarker,
-            })],
-        });
+        layers.push(today_layer(x, chart_h));
     }
 
     // Progress line layer — delegates geometry to progress_line().
@@ -424,7 +276,7 @@ pub fn build_display_list(
     }
 
     if let Some(legend) = &legend {
-        layers.push(legend_layer(chart_h, legend));
+        layers.push(legend_layer(chart_h, legend, true));
     }
 
     let primitive_count = layers
@@ -446,22 +298,212 @@ pub fn build_display_list(
     }
 }
 
+/// The header strip behind the day labels. Shared by the row layout and the lane layout.
+pub(super) fn background_layer(chart_w: f64) -> Layer {
+    Layer {
+        kind: LayerKind::Background,
+        primitives: vec![Primitive::Rect(RectPrim {
+            x: LABEL_W,
+            y: 0.0,
+            width: chart_w - LABEL_W,
+            height: HEADER_H,
+            fill: ColorId::HeaderBg,
+            rx: None,
+            semantic: RectSemantic::HeaderBackground,
+        })],
+    }
+}
+
+/// The weekly grid lines and their labels.
+pub(super) fn grid_layer(epoch: NaiveDate, total_days: i64, chart_h: f64) -> Layer {
+    let mut grid_prims = Vec::new();
+    // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
+    // but the native entry points have no such guard, so every step here is
+    // checked: an overflow stops the grid instead of panicking.
+    for grid_day in grid_days(epoch, total_days) {
+        let x = LABEL_W + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
+        grid_prims.push(Primitive::Line(LinePrim {
+            x1: x,
+            y1: HEADER_H,
+            x2: x,
+            y2: chart_h,
+            stroke: ColorId::Grid,
+            stroke_width: 1.0,
+            stroke_dash: None,
+            semantic: LineSemantic::Grid,
+        }));
+        let label = grid_label(grid_day);
+        grid_prims.push(Primitive::Text(TextPrim {
+            x,
+            y: HEADER_H / 2.0 + 4.0,
+            content: label,
+            fill: Some(ColorId::GridLabel),
+            font_size: Some(GRID_LABEL_FONT_PX),
+            font_weight: None,
+            anchor: None,
+            baseline: TextBaseline::Auto,
+            semantic: TextSemantic::GridLabel,
+        }));
+    }
+    Layer {
+        kind: LayerKind::Grid,
+        primitives: grid_prims,
+    }
+}
+
+/// The x of the today marker, or `None` when `today` is unset or off the chart.
+pub(super) fn today_x_of(today: Option<NaiveDate>, epoch: NaiveDate, chart_w: f64) -> Option<f64> {
+    today.and_then(|today| {
+        let x = LABEL_W + (today - epoch).num_days() as f64 * PX_PER_DAY;
+        if x >= LABEL_W && x <= chart_w {
+            Some(x)
+        } else {
+            None
+        }
+    })
+}
+
+pub(super) fn today_layer(x: f64, chart_h: f64) -> Layer {
+    Layer {
+        kind: LayerKind::TodayMarker,
+        primitives: vec![Primitive::Line(LinePrim {
+            x1: x,
+            y1: 0.0,
+            x2: x,
+            y2: chart_h,
+            stroke: ColorId::Today,
+            stroke_width: 2.0,
+            stroke_dash: Some("4,3".to_string()),
+            semantic: LineSemantic::TodayMarker,
+        })],
+    }
+}
+
+/// What a bar is drawn from, apart from the label that names it: the bar (or the
+/// diamond of a zero-length task) and its percent label, the tooltip, and where
+/// the bar starts and how wide it is. Shared by the row layout and the lane layout.
+pub(super) struct BarParts {
+    pub children: Vec<Primitive>,
+    pub tooltip: String,
+    pub x: f64,
+    pub w: f64,
+}
+
+/// `y` is the top of the bar itself, not of the row it sits in.
+pub(super) fn bar_parts(task: &GanttTask, epoch: NaiveDate, y: f64) -> BarParts {
+    let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
+    let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
+    let prog = task.progress();
+    let prog_w = w * prog;
+    let prog_pct = task.progress_pct.clamp(0, 100);
+    let tier = ProgressTier::from_pct(prog_pct);
+    let pct_label = format!("{prog_pct}%");
+    let end_label = task.end.map(format_date).unwrap_or_else(|| {
+        format_date(
+            task.start
+                .checked_add_signed(Duration::days(1))
+                .unwrap_or(task.start),
+        )
+    });
+    let tooltip = format!(
+        "{}: {} – {} ({pct_label})",
+        task.title,
+        format_date(task.start),
+        end_label,
+    );
+
+    let mut children = Vec::new();
+
+    if is_zero_duration(task) {
+        let cx = x;
+        let cy = y + BAR_H / 2.0;
+        let half = BAR_H / 2.0;
+        children.push(Primitive::Polygon(PolygonPrim {
+            points: vec![
+                (cx, cy - half),
+                (cx + half, cy),
+                (cx, cy + half),
+                (cx - half, cy),
+            ],
+            fill: tier_fill_color(tier),
+            stroke: ColorId::BarBg,
+            stroke_width: 1.0,
+            tier,
+            semantic: PolygonSemantic::Milestone,
+        }));
+        let label = percent_label(task, epoch);
+        children.push(Primitive::Text(TextPrim {
+            x: label.x,
+            y: cy,
+            content: label.content,
+            fill: Some(label.fill),
+            font_size: Some(PROGRESS_LABEL_FONT_PX),
+            font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
+            anchor: label.anchor,
+            baseline: TextBaseline::Middle,
+            semantic: TextSemantic::ProgressPercent,
+        }));
+    } else {
+        if w > 0.0 {
+            children.push(Primitive::Rect(RectPrim {
+                x,
+                y,
+                width: w,
+                height: BAR_H,
+                fill: ColorId::BarBg,
+                rx: Some(BAR_CORNER_RADIUS_PX),
+                semantic: RectSemantic::BarBackground,
+            }));
+            if prog_w > 0.0 {
+                children.push(Primitive::RoundRect(RoundRectPrim {
+                    x,
+                    y,
+                    width: prog_w,
+                    height: BAR_H,
+                    fill: tier_fill_color(tier),
+                    rx: BAR_CORNER_RADIUS_PX,
+                    tier,
+                    semantic: RoundRectSemantic::BarProgress,
+                }));
+            }
+        }
+        let label = percent_label(task, epoch);
+        children.push(Primitive::Text(TextPrim {
+            x: label.x,
+            y: y + BAR_H / 2.0,
+            content: label.content,
+            fill: Some(label.fill),
+            font_size: Some(PROGRESS_LABEL_FONT_PX),
+            font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
+            anchor: label.anchor,
+            baseline: TextBaseline::Middle,
+            semantic: TextSemantic::ProgressPercent,
+        }));
+    }
+    BarParts {
+        children,
+        tooltip,
+        x,
+        w,
+    }
+}
+
 fn format_date(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-fn task_bar_width_days(task: &GanttTask, epoch: NaiveDate) -> f64 {
+pub(super) fn task_bar_width_days(task: &GanttTask, epoch: NaiveDate) -> f64 {
     (task.end_days(epoch) - task.start_days(epoch)).max(0.0)
 }
 
 /// A task with no width is drawn as a diamond. That covers `end == start`, and
 /// also `end < start`: `end_days` cuts the latter to `start`, so without this it
 /// would have no bar at all and could not be seen or clicked.
-fn is_zero_duration(task: &GanttTask) -> bool {
+pub(super) fn is_zero_duration(task: &GanttTask) -> bool {
     task.end.is_some_and(|end| end <= task.start)
 }
 
-fn total_days_of(tasks: &[GanttTask], epoch: NaiveDate) -> i64 {
+pub(super) fn total_days_of(tasks: &[GanttTask], epoch: NaiveDate) -> i64 {
     tasks
         .iter()
         .map(|t| t.end_days(epoch))
@@ -526,18 +568,18 @@ fn grid_label(day: NaiveDate) -> String {
 }
 
 /// A task's percent label as it is drawn.
-struct PercentLabel {
-    x: f64,
-    anchor: Option<TextAnchor>,
-    fill: ColorId,
-    content: String,
+pub(super) struct PercentLabel {
+    pub x: f64,
+    pub anchor: Option<TextAnchor>,
+    pub fill: ColorId,
+    pub content: String,
 }
 
 /// Where a task's percent label sits. A milestone's runs on to the right of the
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate) -> PercentLabel {
+pub(super) fn percent_label(task: &GanttTask, epoch: NaiveDate) -> PercentLabel {
     let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
@@ -559,7 +601,7 @@ fn percent_label(task: &GanttTask, epoch: NaiveDate) -> PercentLabel {
 }
 
 /// The right edge of the text estimate for a label drawn at `x` with `anchor`.
-fn text_right_edge(
+pub(super) fn text_right_edge(
     x: f64,
     anchor: Option<TextAnchor>,
     content: &str,
@@ -578,7 +620,7 @@ fn text_right_edge(
 /// that runs on past the end of the days, such as a percent label to the right of
 /// a bar that ends on the last day, needs the width to reach it. The bars and the
 /// lines stop at the last day and need nothing.
-fn labels_right_edge(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> f64 {
+pub(super) fn labels_right_edge(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> f64 {
     let task_edges = tasks.iter().map(|task| {
         let label = percent_label(task, epoch);
         text_right_edge(
@@ -620,46 +662,51 @@ fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextA
     }
 }
 
-/// The legend: the progress-line sample, then one swatch per tier.
-fn legend_layer(chart_h: f64, legend: &LegendLayout) -> Layer {
+/// The legend: the progress-line sample (when `with_progress`), then one swatch per
+/// tier. A chart that draws no progress line leaves the sample out and keeps the
+/// swatches where they are, so the legend's height does not change.
+pub(super) fn legend_layer(chart_h: f64, legend: &LegendLayout, with_progress: bool) -> Layer {
     let legend_y1 = chart_h - LEGEND_H + 14.0;
     let legend_x = LABEL_W + LEGEND_LEFT_PAD_PX;
     let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
     let sw = LEGEND_SWATCH_PX;
 
-    let mut legend_prims = vec![Primitive::Group(GroupPrim {
-        task_id: None,
-        tooltip: None,
-        bbox: BBox {
-            x: legend_x,
-            y: legend_y1 - 4.0,
-            width: legend.progress_width,
-            height: 20.0,
-        },
-        children: vec![
-            Primitive::Line(LinePrim {
-                x1: legend_x,
-                y1: legend_y1,
-                x2: legend_x + LEGEND_LINE_SAMPLE_W_PX,
-                y2: legend_y1,
-                stroke: ColorId::Progress,
-                stroke_width: PROGRESS_LINE_STROKE_W,
-                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
-                semantic: LineSemantic::LegendProgressLine,
-            }),
-            Primitive::Text(TextPrim {
-                x: legend_x + LEGEND_LINE_SAMPLE_W_PX + LEGEND_LINE_TEXT_GAP_PX,
-                y: legend_y1 + 4.0,
-                content: PROGRESS_LABEL.to_string(),
-                fill: Some(ColorId::GridLabel),
-                font_size: Some(LEGEND_PROGRESS_FONT_PX),
-                font_weight: None,
-                anchor: None,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::LegendProgress,
-            }),
-        ],
-    })];
+    let mut legend_prims = Vec::new();
+    if with_progress {
+        legend_prims.push(Primitive::Group(GroupPrim {
+            task_id: None,
+            tooltip: None,
+            bbox: BBox {
+                x: legend_x,
+                y: legend_y1 - 4.0,
+                width: legend.progress_width,
+                height: 20.0,
+            },
+            children: vec![
+                Primitive::Line(LinePrim {
+                    x1: legend_x,
+                    y1: legend_y1,
+                    x2: legend_x + LEGEND_LINE_SAMPLE_W_PX,
+                    y2: legend_y1,
+                    stroke: ColorId::Progress,
+                    stroke_width: PROGRESS_LINE_STROKE_W,
+                    stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
+                    semantic: LineSemantic::LegendProgressLine,
+                }),
+                Primitive::Text(TextPrim {
+                    x: legend_x + LEGEND_LINE_SAMPLE_W_PX + LEGEND_LINE_TEXT_GAP_PX,
+                    y: legend_y1 + 4.0,
+                    content: PROGRESS_LABEL.to_string(),
+                    fill: Some(ColorId::GridLabel),
+                    font_size: Some(LEGEND_PROGRESS_FONT_PX),
+                    font_weight: None,
+                    anchor: None,
+                    baseline: TextBaseline::Middle,
+                    semantic: TextSemantic::LegendProgress,
+                }),
+            ],
+        }));
+    }
 
     let mut tier_children = Vec::new();
     let mut lx = legend_x;
@@ -710,16 +757,16 @@ fn legend_layer(chart_h: f64, legend: &LegendLayout) -> Layer {
 /// How wide the legend's two rows are, measured from `legend_x`. They depend on
 /// the text only, never on the chart, so the chart width can be raised to hold
 /// them before anything is laid out.
-struct LegendLayout {
+pub(super) struct LegendLayout {
     /// The dashed sample, the gap, and the progress-line caption.
-    progress_width: f64,
+    pub progress_width: f64,
     /// The five tier swatches with their captions, up to the last caption's end.
-    tier_width: f64,
+    pub tier_width: f64,
     /// The wider of the two rows.
-    width: f64,
+    pub width: f64,
 }
 
-fn legend_layout() -> LegendLayout {
+pub(super) fn legend_layout() -> LegendLayout {
     let progress_width = LEGEND_LINE_SAMPLE_W_PX
         + LEGEND_LINE_TEXT_GAP_PX
         + text_width_px(PROGRESS_LABEL, LEGEND_PROGRESS_FONT_PX);

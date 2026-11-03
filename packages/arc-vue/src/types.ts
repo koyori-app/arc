@@ -19,6 +19,22 @@ export interface GanttTask {
    * it were equal to `start`.
    */
   end?: string;
+  /**
+   * The ids of the lanes this task belongs to, used only when the chart is given
+   * `lanes`. A task in two lanes is drawn once in each, and clicking either bar
+   * emits this same task. A task in none of the lanes is not drawn. Ignored when
+   * the chart has no `lanes`.
+   */
+  lane_ids?: string[];
+}
+
+/**
+ * One lane of a chart given `lanes`: the name drawn in the left column, and the id
+ * tasks name in `lane_ids`. The order of the lanes given is the order drawn, top first.
+ */
+export interface GanttLane {
+  id: string;
+  label: string;
 }
 
 /** Mirrors `task_relations` entity. */
