@@ -174,6 +174,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
   - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る
   - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる
+  - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
@@ -210,6 +211,8 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - `rows`: 使う側が並べた図の行（型 `GanttRow`）。渡した時だけ、wasm の入口に四つ目の引数 `rows_json` を付けて呼ぶ。入れ物の高さも一覧の行の高さの和で取り置く
 - `rowHeight`、`headerHeight`、`barHeight`（px）と `barAlign`（`'middle'` か `'bottom'`）: `options_json` の寸法の鍵に渡す。読み込み中の骨組みの行の高さも `rowHeight` に合わせる
 - 型 `GanttRow` と `BarAlign` は `index.ts` から出す
+- `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く
+- 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
 
 ## SVG 出力仕様
 
@@ -296,6 +299,8 @@ Canvas の上限の判定は、実際に描く幅（題の列と進みの字の�
 | 今日マーカー | `#f59e0b` |
 | ヘッダー背景 | `#f3f4f6` |
 | グリッドラベル | `#6b7280` |
+
+既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）の落ち先は見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
 
 ## レイアウト定数
 
