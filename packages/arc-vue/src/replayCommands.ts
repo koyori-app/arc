@@ -13,7 +13,8 @@ export type ColorIdName =
   | 'HeaderBg'
   | 'GridLabel'
   | 'ProgressTextOnFg'
-  | 'ProgressTextOnBg';
+  | 'ProgressTextOnBg'
+  | 'GroupRow';
 
 export interface CommandBuffer {
   viewport_width: number;
@@ -78,14 +79,42 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'GridLabel',
   'ProgressTextOnFg',
   'ProgressTextOnBg',
+  'GroupRow',
 ];
 
-function resolveColor(buffer: CommandBuffer, colorId: number): string {
+/**
+ * Where a colour the palette has no entry for falls back to — the same table
+ * as `ColorId::fallback` in the crate. Names added after the standard palette
+ * was pinned are left out of it until a caller sets them.
+ */
+const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
+  GroupRow: 'HeaderBg',
+};
+
+function paletteColor(buffer: CommandBuffer, name: ColorIdName): string | undefined {
+  const entry = buffer.palette.colors.find(([id]) => id === name);
+  if (entry) return entry[1];
+  const fallback = COLOR_FALLBACK[name];
+  return fallback ? paletteColor(buffer, fallback) : undefined;
+}
+
+/**
+ * A canvas cannot draw `var(--name)`, which the SVG path writes as it is. It is
+ * read off the canvas element's computed style, where the caller's tokens are
+ * in scope; a name with no value there draws black, as a missing colour does.
+ */
+export function resolveCssColor(color: string, el: Element | undefined): string {
+  const match = /^var\((--[A-Za-z0-9_-]+)\)$/.exec(color);
+  if (!match) return color;
+  if (!el || typeof getComputedStyle === 'undefined') return '#000000';
+  return getComputedStyle(el).getPropertyValue(match[1]).trim() || '#000000';
+}
+
+function resolveColor(buffer: CommandBuffer, colorId: number, el?: Element): string {
   if (colorId === 255) return '#374151';
   const name = COLOR_ID_NAMES[colorId];
   if (!name) return '#000000';
-  const entry = buffer.palette.colors.find(([id]) => id === name);
-  return entry?.[1] ?? '#000000';
+  return resolveCssColor(paletteColor(buffer, name) ?? '#000000', el);
 }
 
 function unionRect(
@@ -130,7 +159,7 @@ function applyStrokeStyle(
   width: number,
   dash: string | null,
 ) {
-  ctx.strokeStyle = resolveColor(buffer, colorId);
+  ctx.strokeStyle = resolveColor(buffer, colorId, ctx.canvas);
   ctx.lineWidth = width;
   if (dash) {
     const parts = dash.split(',').map((s) => Number.parseFloat(s.trim()));
@@ -178,7 +207,7 @@ export function replayCommands(
 
     if ('FillRect' in op) {
       const { x, y, w, h, color_id, radius } = op.FillRect;
-      ctx.fillStyle = resolveColor(buffer, color_id);
+      ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
       fillRoundedRect(ctx, x, y, w, h, radius);
       if (currentTaskId) {
         groupBounds = unionRect(groupBounds, x, y, w, h);
@@ -189,7 +218,7 @@ export function replayCommands(
     if ('FillPolygon' in op) {
       const { points, color_id } = op.FillPolygon;
       if (points.length === 0) continue;
-      ctx.fillStyle = resolveColor(buffer, color_id);
+      ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
       ctx.beginPath();
       ctx.moveTo(points[0][0], points[0][1]);
       for (let i = 1; i < points.length; i++) {
@@ -236,7 +265,7 @@ export function replayCommands(
 
     if ('DrawText' in op) {
       const { x, y, text, color_id, anchor, size, weight } = op.DrawText;
-      ctx.fillStyle = resolveColor(buffer, color_id);
+      ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
       ctx.font = `${weight} ${size}px sans-serif`;
       ctx.textBaseline = 'alphabetic';
       if (anchor === 1) ctx.textAlign = 'center';

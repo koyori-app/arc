@@ -14,7 +14,7 @@ import {
   type TaskHitRegion,
 } from './replayCommands';
 import { resetCanvasElement } from './canvasLifecycle';
-import { buildOptionsJson } from './options';
+import { buildOptionsJson, type PaletteOverrides } from './options';
 import { backingSize, cssPointFromClient } from './canvasScale';
 import {
   chartHeightForRows,
@@ -84,6 +84,12 @@ const props = defineProps<{
   barHeight?: number;
   /** `'bottom'` sets a bar low in a tall row, leaving the room above it. */
   barAlign?: 'middle' | 'bottom';
+  /**
+   * Colours that replace the chart's own, by colour name, such as
+   * `{ HeaderBg: 'var(--koyori-color-surface)' }`. The SVG path writes
+   * `var(--…)` as it is; the canvas path reads it off the canvas's computed style.
+   */
+  palette?: PaletteOverrides;
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -199,6 +205,7 @@ function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | 
     headerHeightPx: props.headerHeight,
     barHeightPx: props.barHeight,
     barAlign: props.barAlign,
+    palette: props.palette,
   });
 }
 
