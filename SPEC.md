@@ -124,12 +124,14 @@ pub struct ChartOptions {
     pub today: Option<NaiveDate>,
     pub scroll_viewport: Option<ScrollViewport>,
     pub legend: LegendMode, // Shown（既定）か Hidden
+    pub row_labels: LabelMode, // Shown（既定）か Hidden
+    pub percent_labels: LabelMode, // Shown（既定）か Hidden
 }
 
 pub fn legend_spec() -> LegendSpec
 ```
 
-`ChartOptions::default()` は、今日の線も仮想スクロールも無く、凡例を出す図を描く。
+`ChartOptions::default()` は、今日の線も仮想スクロールも無く、凡例と題と進みの字を出す図を描く。
 `ChartOptions { today: Some(day), ..Default::default() }` のように組む。
 
 ### Wasm
@@ -151,6 +153,8 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
   - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
+  - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W`（120）だけ詰める（下の「題と進みの字を消す」）
+  - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
   - 4 KiB を超える字は `input_limit` で断る
@@ -179,6 +183,10 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - 値は arc-vue に書き写さず、読み込んだ `@koyori-app/arc` に問う。arc と arc-vue は別の版で入り得るため
   - 型 `LegendSpec`、`LegendTier`、`LegendProgressLine` は `index.ts` から出す。形は core の `LegendSpec` を JSON にした物と同じ
 - `chartHeightForTaskCount` は内部の関数で、`legend` の指定に応じて入れ物の高さを求める。`wasmContract.ts` の `RUST_LAYOUT` は変えない
+- `rowLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で題の列を描かず、図の幅を `LABEL_W` だけ詰める。押した時に当たるのは棒だけになる。読み込み中の骨組みも題の列を持たない
+- `percentLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で `NN%` を描かない
+  - どちらも、省略した時に wasm へ渡す `options_json` は、その鍵を持たない。真偽値にしない訳は `legend` と同じ
+- 型 `LabelMode` は `index.ts` から出す
 
 ## SVG 出力仕様
 
@@ -236,6 +244,19 @@ Canvas の上限の判定は、実際に描く図より緩まない。
 高さは、凡例を消していても凡例の分を足したままにする。
 幅は、実際に描く幅で測る。凡例を消した図は、札が右へ伸びる分だけ日数の幅を越えることがあるため、判定は `legend` を見る。
 凡例を出す図の判定は、これまで通り日数で決まる。
+
+### 題と進みの字を消す
+
+`options_json` の `row_labels` に `"hidden"` を渡すと、左の題の列（`LABEL_W`、120）を描かない。
+図の全ての x（見出しの帯、目盛りの線と字、棒、マイルストーン、依存の矢印、今日の線、進捗の線、凡例）が 120 だけ左へ寄り、図の幅も 120 詰まる。高さは変わらない。
+題の字と、題の左へ伸びていた当たりの範囲（`LABEL_HIT_W`）は無くなり、タスクの当たりの範囲は棒の範囲と同じになる。
+並べた自分の一覧で題を出す使い手が使う（docs/design/labels-opt-out.md）。
+
+`percent_labels` に `"hidden"` を渡すと、棒とマイルストーンの `NN%` を描かない。
+棒の右へはみ出す `NN%` が図の幅を広げていた分も無くなり、幅は日数の幅、凡例の右端、目盛りの字の右端のどれかで決まる。
+
+どちらも、`"shown"` と省略は既定と一字も違わない図になる。
+Canvas の上限の判定は、実際に描く幅（題の列と進みの字の指定を見た幅）で測る。日数の上限は題の列を出す図のまま数えるので、緩まない。
 
 ### 色定数
 
