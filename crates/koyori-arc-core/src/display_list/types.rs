@@ -113,8 +113,20 @@ pub enum LegendMode {
     Hidden,
 }
 
+/// Whether the chart draws one kind of its own text. `row_labels` uses it for
+/// the task titles left of the days, `percent_labels` for the `NN%` on each bar
+/// and milestone. A caller that lays the chart beside a list of its own, which
+/// already shows the titles and the progress, asks for `Hidden`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LabelMode {
+    #[default]
+    Shown,
+    Hidden,
+}
+
 /// What a caller chooses about one drawing. `Default` is the chart drawn with no
-/// today marker, no row window, and the legend shown.
+/// today marker, no row window, and the legend and every label shown.
 ///
 /// There is deliberately no `#[non_exhaustive]`: nothing promises a stable shape
 /// during 0.1.0-alpha, and a caller builds one with
@@ -129,6 +141,13 @@ pub struct ChartOptions {
     /// `Hidden` leaves the legend out and takes its height back; see
     /// `docs/design/legend-opt-out.md` (4) for what else moves.
     pub legend: LegendMode,
+    /// `Hidden` leaves the title column out: the days start at x = 0 and the
+    /// rows have no title text and no hit area left of the bar. See
+    /// `docs/design/labels-opt-out.md`.
+    pub row_labels: LabelMode,
+    /// `Hidden` leaves out the `NN%` on every bar and milestone, and the width
+    /// a label running past the last day would have held up.
+    pub percent_labels: LabelMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -351,3 +351,82 @@ fn legend_spec_json_is_the_spec() {
     assert_eq!(from_json["tiers"][0]["key"], "none");
     assert_eq!(from_json["progress_line"]["dash"], "6,3");
 }
+
+// --- row_labels / percent_labels ---
+
+fn width_of(svg: &str) -> f64 {
+    let start = svg.find(" width=\"").unwrap() + " width=\"".len();
+    let rest = &svg[start..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+}
+
+#[test]
+fn shown_labels_are_the_default_however_they_are_spelt() {
+    let plain = svg(None);
+    let canvas = render_canvas_commands(TASKS, "[]", None);
+    for options in [
+        r#"{"row_labels":"shown"}"#,
+        r#"{"percent_labels":"shown"}"#,
+        r#"{"row_labels":null,"percent_labels":null}"#,
+        r#"{"row_labels":"shown","percent_labels":"shown","legend":"shown"}"#,
+    ] {
+        assert_eq!(svg(s(options)), plain, "{options}");
+        assert_eq!(
+            render_canvas_commands(TASKS, "[]", s(options)),
+            canvas,
+            "{options}"
+        );
+        assert_eq!(render_svg_error(TASKS, "[]", s(options)), None, "{options}");
+    }
+}
+
+#[test]
+fn hidden_row_labels_leave_the_titles_out_and_take_their_width_back() {
+    let shown = svg(None);
+    let hidden = svg(s(r#"{"row_labels":"hidden"}"#));
+    assert!(shown.contains(">A</text>") && shown.contains(">B</text>"));
+    assert!(!hidden.contains(">A</text>") && !hidden.contains(">B</text>"));
+    // 進みの字は残る
+    assert!(hidden.contains(">50%</text>"));
+    assert_eq!(width_of(&shown) - width_of(&hidden), 120.0);
+
+    let shown_canvas: serde_json::Value =
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None)).unwrap();
+    let hidden_canvas: serde_json::Value = serde_json::from_str(&render_canvas_commands(
+        TASKS,
+        "[]",
+        s(r#"{"row_labels":"hidden"}"#),
+    ))
+    .unwrap();
+    assert_eq!(
+        shown_canvas["viewport_width"].as_f64().unwrap()
+            - hidden_canvas["viewport_width"].as_f64().unwrap(),
+        120.0
+    );
+}
+
+#[test]
+fn hidden_percent_labels_leave_the_percent_out() {
+    let hidden = svg(s(r#"{"percent_labels":"hidden"}"#));
+    assert!(!hidden.contains(">50%</text>") && !hidden.contains(">10%</text>"));
+    // 題は残る
+    assert!(hidden.contains(">A</text>"));
+}
+
+#[test]
+fn hidden_labels_go_with_the_other_keys() {
+    let all = r#"{"row_labels":"hidden","percent_labels":"hidden","legend":"hidden","today":"2026-06-04","tz_offset_minutes":540,"scroll_viewport":{"scroll_y":0,"client_height":40}}"#;
+    let out = svg(s(all));
+    assert_ne!(out, empty_svg());
+    assert!(!out.contains(">A</text>") && !out.contains(">50%</text>"));
+    assert_eq!(render_svg_error(TASKS, "[]", s(all)), None);
+}
+
+#[test]
+fn an_unknown_label_value_is_refused_and_named() {
+    for key in ["row_labels", "percent_labels"] {
+        for value in [r#""Hidden""#, r#""none""#, r#""""#, "true", "1", "[]", "{}"] {
+            assert_refused(&format!(r#"{{"{key}":{value}}}"#), CODE_PARSE_ERROR, key);
+        }
+    }
+}
