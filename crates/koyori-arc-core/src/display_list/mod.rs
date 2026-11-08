@@ -13,6 +13,8 @@ mod hidden_labels_tests;
 mod hidden_legend_tests;
 #[cfg(test)]
 mod right_edge_tests;
+#[cfg(test)]
+mod scale_tests;
 
 pub use build::{build_display_list, build_display_list_with_rows, compute_row_window};
 pub use types::{DisplayList, ScrollViewport};

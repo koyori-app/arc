@@ -205,7 +205,7 @@ fn hidden_percent_labels_draw_no_percent_and_hold_no_width() {
                 );
                 assert!(hidden.viewport.width <= shown.viewport.width);
                 let label_w = shown.viewport.label_width;
-                let days_w = chart_width_with_label(days as f64, label_w);
+                let days_w = chart_width_with_label(days as f64, label_w, PX_PER_DAY);
                 assert!(hidden.viewport.width >= days_w);
             }
         }

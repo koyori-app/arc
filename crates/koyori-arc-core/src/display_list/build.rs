@@ -67,21 +67,23 @@ pub fn build_display_list_with_rows(
         today,
         scroll_viewport,
         legend: legend_mode,
-        row_labels,
         percent_labels,
+        scale,
+        weekend,
         ..
     } = *options;
     let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
     let header_h = plan.header_h;
     let bar_h = plan.bar_h;
-    let label_w = label_width(row_labels);
+    let axis = XAxis::of(options);
+    let label_w = axis.label_w;
 
     let total_days = total_days_of(&graph.tasks, epoch);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode, row_labels, percent_labels);
+    let chart_w = chart_width_for(&graph.tasks, epoch, options);
     let chart_h = chart_height_of(&plan, legend_mode);
 
     let viewport = Viewport {
@@ -136,14 +138,36 @@ pub fn build_display_list_with_rows(
         });
     }
 
+    // Weekend bands over the rows, over the group bands too so a weekend reads
+    // through a group's heading. None unless the caller names weekend days.
+    let weekend_bands: Vec<Primitive> = calendar_days(epoch, total_days)
+        .filter(|d| weekend.contains(d.weekday()))
+        .map(|d| {
+            Primitive::Rect(RectPrim {
+                x: axis.day_x(epoch, d),
+                y: header_h,
+                width: axis.px_per_day,
+                height: plan.rows_height(),
+                fill: ColorId::Weekend,
+                rx: None,
+                semantic: RectSemantic::Weekend,
+            })
+        })
+        .collect();
+    if !weekend_bands.is_empty() {
+        layers.push(Layer {
+            kind: LayerKind::Background,
+            primitives: weekend_bands,
+        });
+    }
+
     // Grid layer
     let mut grid_prims = Vec::new();
     // The Wasm entry points reject dates without headroom below `NaiveDate::MAX`,
     // but the native entry points have no such guard, so every step here is
     // checked: an overflow stops the grid instead of panicking.
-    for grid_day in grid_days(epoch, total_days) {
-        let x = label_w + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
-        grid_prims.push(Primitive::Line(LinePrim {
+    let grid_line = |x: f64| {
+        Primitive::Line(LinePrim {
             x1: x,
             y1: header_h,
             x2: x,
@@ -152,19 +176,29 @@ pub fn build_display_list_with_rows(
             stroke_width: 1.0,
             stroke_dash: None,
             semantic: LineSemantic::Grid,
-        }));
-        let label = grid_label(grid_day);
-        grid_prims.push(Primitive::Text(TextPrim {
-            x,
-            y: header_h / 2.0 + 4.0,
-            content: label,
-            fill: Some(ColorId::GridLabel),
-            font_size: Some(GRID_LABEL_FONT_PX),
-            font_weight: None,
-            anchor: None,
-            baseline: TextBaseline::Auto,
-            semantic: TextSemantic::GridLabel,
-        }));
+        })
+    };
+    match scale {
+        // A line and its label in turn, as the chart drawn before scales.
+        Scale::Week | Scale::Month => {
+            for grid_day in grid_days_of(scale, epoch, total_days) {
+                grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
+                grid_prims.push(Primitive::Text(grid_text_of(
+                    &axis, epoch, grid_day, scale, header_h,
+                )));
+            }
+        }
+        // The Monday lines, then every day's labels.
+        Scale::Day => {
+            for grid_day in grid_days(epoch, total_days) {
+                grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
+            }
+            grid_prims.extend(
+                day_texts(&axis, epoch, total_days, header_h, options)
+                    .into_iter()
+                    .map(Primitive::Text),
+            );
+        }
     }
     layers.push(Layer {
         kind: LayerKind::Grid,
@@ -183,8 +217,8 @@ pub fn build_display_list_with_rows(
             continue;
         }
         let y = plan.bar_top(&plan.slots[slot_index]);
-        let x = label_w + task.start_days(epoch) * PX_PER_DAY;
-        let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
+        let x = axis.x(task.start_days(epoch));
+        let w = axis.len(task_bar_width_days(task, epoch));
         let prog = task.progress();
         let prog_w = w * prog;
         let prog_pct = task.progress_pct.clamp(0, 100);
@@ -224,7 +258,7 @@ pub fn build_display_list_with_rows(
                 semantic: PolygonSemantic::Milestone,
             }));
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, &axis);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: cy,
@@ -262,7 +296,7 @@ pub fn build_display_list_with_rows(
                 }
             }
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, &axis);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: y + bar_h / 2.0,
@@ -279,7 +313,7 @@ pub fn build_display_list_with_rows(
 
         // Without the title column the row has nothing left of the bar to hit,
         // so the hit area is the bar's own.
-        let hit_left = match row_labels {
+        let hit_left = match options.row_labels {
             LabelMode::Shown => {
                 let display_title =
                     truncate_to_width(&task.title, DEFAULT_FONT_SIZE_PX, ROW_LABEL_MAX_W_PX);
@@ -366,9 +400,9 @@ pub fn build_display_list_with_rows(
             continue;
         }
 
-        let from_x = label_w + from_t.start_days(epoch) * PX_PER_DAY;
-        let from_w = task_bar_width_days(from_t, epoch) * PX_PER_DAY;
-        let to_x = label_w + to_t.start_days(epoch) * PX_PER_DAY;
+        let from_x = axis.x(from_t.start_days(epoch));
+        let from_w = axis.len(task_bar_width_days(from_t, epoch));
+        let to_x = axis.x(to_t.start_days(epoch));
 
         let mut start_x = from_x + from_w / 2.0;
         while to_x < start_x + ROW_PADDING && start_x > from_x + ROW_PADDING {
@@ -427,7 +461,7 @@ pub fn build_display_list_with_rows(
 
     // Today marker
     let today_x = today.and_then(|today| {
-        let x = label_w + (today - epoch).num_days() as f64 * PX_PER_DAY;
+        let x = axis.day_x(epoch, today);
         if x >= label_w && x <= chart_w {
             Some(x)
         } else {
@@ -461,8 +495,8 @@ pub fn build_display_list_with_rows(
         .filter_map(|slot| {
             let t = &graph.tasks[slot.task?];
             Some((
-                label_w + t.start_days(epoch) * PX_PER_DAY,
-                label_w + t.end_days(epoch) * PX_PER_DAY,
+                axis.x(t.start_days(epoch)),
+                axis.x(t.end_days(epoch)),
                 slot.y_top,
                 slot.y_bottom(),
                 t.progress(),
@@ -550,26 +584,53 @@ pub(crate) fn chart_height_of(plan: &RowPlan, legend: LegendMode) -> f64 {
 pub(crate) fn chart_width_for(
     tasks: &[GanttTask],
     epoch: NaiveDate,
-    legend_mode: LegendMode,
-    row_labels: LabelMode,
-    percent_labels: LabelMode,
+    options: &ChartOptions,
 ) -> f64 {
-    let label_w = label_width(row_labels);
+    let axis = XAxis::of(options);
+    let label_w = axis.label_w;
     let total_days = total_days_of(tasks, epoch);
-    let days_w = chart_width_with_label(total_days as f64, label_w);
-    let legend_edge = match legend_mode {
+    let days_w = chart_width_with_label(total_days as f64, label_w, axis.px_per_day);
+    let legend_edge = match options.legend {
         LegendMode::Shown => {
             label_w + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
         }
         LegendMode::Hidden => 0.0,
     };
-    days_w.max(legend_edge).max(labels_right_edge(
-        tasks,
-        epoch,
-        total_days,
-        label_w,
-        percent_labels,
-    ))
+    days_w
+        .max(legend_edge)
+        .max(labels_right_edge(tasks, epoch, total_days, &axis, options))
+}
+
+/// Where a day sits across the chart: after the title column, `px_per_day`
+/// for each day from the epoch. Every x the chart draws is read from here.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct XAxis {
+    pub label_w: f64,
+    pub px_per_day: f64,
+}
+
+impl XAxis {
+    pub fn of(options: &ChartOptions) -> Self {
+        Self {
+            label_w: label_width(options.row_labels),
+            px_per_day: options.px_per_day.unwrap_or(PX_PER_DAY),
+        }
+    }
+
+    /// The x of a point `days` days after the epoch.
+    pub fn x(&self, days: f64) -> f64 {
+        self.label_w + days * self.px_per_day
+    }
+
+    /// The x of the start of `day`.
+    pub fn day_x(&self, epoch: NaiveDate, day: NaiveDate) -> f64 {
+        self.x((day - epoch).num_days() as f64)
+    }
+
+    /// The width of `days` days.
+    pub fn len(&self, days: f64) -> f64 {
+        days * self.px_per_day
+    }
 }
 
 /// How wide the title column is: `LABEL_W` with the row labels shown, nothing
@@ -609,6 +670,111 @@ fn grid_label(day: NaiveDate) -> String {
     format!("{}/{}", day.month(), day.day())
 }
 
+fn month_label(day: NaiveDate) -> String {
+    format!("{}/{}", day.year(), day.month())
+}
+
+/// The days the grid of `scale` draws a line at: the Mondays for `Week`, the
+/// first of each month (and the epoch, so the first month has its label) for
+/// `Month`. `Day` draws the Monday lines and labels every day.
+fn grid_days_of(scale: Scale, epoch: NaiveDate, total_days: i64) -> Vec<NaiveDate> {
+    match scale {
+        Scale::Week | Scale::Day => grid_days(epoch, total_days),
+        Scale::Month => calendar_days(epoch, total_days)
+            .filter(|d| d.day() == 1 || *d == epoch)
+            .collect(),
+    }
+}
+
+/// The label at a grid line of the `Week` or `Month` scale.
+fn grid_text_of(
+    axis: &XAxis,
+    epoch: NaiveDate,
+    day: NaiveDate,
+    scale: Scale,
+    header_h: f64,
+) -> TextPrim {
+    TextPrim {
+        x: axis.day_x(epoch, day),
+        y: header_h / 2.0 + 4.0,
+        content: match scale {
+            Scale::Month => month_label(day),
+            _ => grid_label(day),
+        },
+        fill: Some(ColorId::GridLabel),
+        font_size: Some(GRID_LABEL_FONT_PX),
+        font_weight: None,
+        anchor: None,
+        baseline: TextBaseline::Auto,
+        semantic: TextSemantic::GridLabel,
+    }
+}
+
+/// Every day from the epoch through `total_days` days, the days the chart
+/// spans. Stops instead of panicking at the end of the calendar.
+fn calendar_days(epoch: NaiveDate, total_days: i64) -> impl Iterator<Item = NaiveDate> {
+    (0..total_days.max(0)).map_while(move |i| epoch.checked_add_signed(Duration::days(i)))
+}
+
+/// The labels of the `Day` scale: over each day its number, under it the
+/// weekday, and above the first day of each month (and the first day drawn)
+/// `YYYY/M`. The month sits at the top, the number and weekday at the foot of
+/// the header, so a taller header leaves its room in the middle.
+fn day_texts(
+    axis: &XAxis,
+    epoch: NaiveDate,
+    total_days: i64,
+    header_h: f64,
+    options: &ChartOptions,
+) -> Vec<TextPrim> {
+    let mut out = Vec::new();
+    for day in calendar_days(epoch, total_days) {
+        let x = axis.day_x(epoch, day);
+        let mid = x + axis.px_per_day / 2.0;
+        let weekday = day.weekday().num_days_from_monday() as usize;
+        let weekday_label = match &options.weekday_labels {
+            Some(labels) => labels[weekday].clone(),
+            None => DEFAULT_WEEKDAY_LABELS[weekday].to_string(),
+        };
+        if day == epoch || day.day() == 1 {
+            out.push(TextPrim {
+                x: x + 2.0,
+                y: 12.0,
+                content: month_label(day),
+                fill: Some(ColorId::GridLabel),
+                font_size: Some(GRID_LABEL_FONT_PX),
+                font_weight: None,
+                anchor: None,
+                baseline: TextBaseline::Auto,
+                semantic: TextSemantic::MonthLabel,
+            });
+        }
+        out.push(TextPrim {
+            x: mid,
+            y: header_h - 16.0,
+            content: day.day().to_string(),
+            fill: None,
+            font_size: Some(GRID_LABEL_FONT_PX),
+            font_weight: None,
+            anchor: Some(TextAnchor::Middle),
+            baseline: TextBaseline::Auto,
+            semantic: TextSemantic::DayNumber,
+        });
+        out.push(TextPrim {
+            x: mid,
+            y: header_h - 4.0,
+            content: weekday_label,
+            fill: Some(ColorId::GridLabel),
+            font_size: Some(GRID_LABEL_FONT_PX),
+            font_weight: None,
+            anchor: Some(TextAnchor::Middle),
+            baseline: TextBaseline::Auto,
+            semantic: TextSemantic::Weekday,
+        });
+    }
+    out
+}
+
 /// A task's percent label as it is drawn.
 struct PercentLabel {
     x: f64,
@@ -621,8 +787,8 @@ struct PercentLabel {
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64) -> PercentLabel {
-    let x = label_w + task.start_days(epoch) * PX_PER_DAY;
+fn percent_label(task: &GanttTask, epoch: NaiveDate, axis: &XAxis) -> PercentLabel {
+    let x = axis.x(task.start_days(epoch));
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
         return PercentLabel {
@@ -632,7 +798,7 @@ fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64) -> PercentLab
             content,
         };
     }
-    let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
+    let w = axis.len(task_bar_width_days(task, epoch));
     let (x, anchor, fill) = progress_label_style(x, w, w * task.progress(), &content);
     PercentLabel {
         x,
@@ -666,16 +832,16 @@ fn labels_right_edge(
     tasks: &[GanttTask],
     epoch: NaiveDate,
     total_days: i64,
-    label_w: f64,
-    percent_labels: LabelMode,
+    axis: &XAxis,
+    options: &ChartOptions,
 ) -> f64 {
     // Hidden percent labels hold nothing up.
-    let shown_tasks = match percent_labels {
+    let shown_tasks = match options.percent_labels {
         LabelMode::Shown => tasks,
         LabelMode::Hidden => &[],
     };
     let task_edges = shown_tasks.iter().map(|task| {
-        let label = percent_label(task, epoch, label_w);
+        let label = percent_label(task, epoch, axis);
         text_right_edge(
             label.x,
             label.anchor,
@@ -684,15 +850,18 @@ fn labels_right_edge(
             Some(PROGRESS_LABEL_FONT_WEIGHT),
         )
     });
-    let grid = grid_days(epoch, total_days).into_iter().map(|day| {
-        text_right_edge(
-            label_w + (day - epoch).num_days() as f64 * PX_PER_DAY,
-            None,
-            &grid_label(day),
-            GRID_LABEL_FONT_PX,
-            None,
-        )
-    });
+    // The grid's labels, read from what the grid draws so the two cannot differ.
+    // The header's height moves no label sideways, so the default stands in.
+    let grid_texts: Vec<TextPrim> = match options.scale {
+        Scale::Week | Scale::Month => grid_days_of(options.scale, epoch, total_days)
+            .into_iter()
+            .map(|day| grid_text_of(axis, epoch, day, options.scale, HEADER_H))
+            .collect(),
+        Scale::Day => day_texts(axis, epoch, total_days, HEADER_H, options),
+    };
+    let grid = grid_texts
+        .iter()
+        .map(|t| text_right_edge(t.x, t.anchor, &t.content, GRID_LABEL_FONT_PX, None));
     task_edges.chain(grid).fold(0.0, f64::max)
 }
 

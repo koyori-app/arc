@@ -9,7 +9,7 @@ use crate::display_list::constants::{CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY,
 use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
-    types::{BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette},
+    types::{BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, Scale, WeekendDays},
     DisplayList, ScrollViewport,
 };
 use crate::error::{
@@ -168,12 +168,6 @@ fn canvas_graph_limit_error(
     rows: Option<&[GanttRow]>,
     shape: &ChartOptions,
 ) -> Option<RenderError> {
-    let ChartOptions {
-        legend,
-        row_labels,
-        percent_labels,
-        ..
-    } = *shape;
     if let Some(err) = common_graph_limit_error(tasks, deps) {
         return Some(err);
     }
@@ -200,7 +194,7 @@ fn canvas_graph_limit_error(
     // The days are checked first, so a chart of a plausible length reaches the
     // exact width. A label can run past the days, so the days alone under-count.
     let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
-    let width_px = chart_width_for(tasks, epoch, legend, row_labels, percent_labels);
+    let width_px = chart_width_for(tasks, epoch, shape);
     if width_px > MAX_CANVAS_SIDE_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -266,6 +260,10 @@ struct WireOptions {
     bar_height: Option<f64>,
     bar_align: BarAlign,
     palette: Vec<(ColorId, String)>,
+    px_per_day: Option<f64>,
+    scale: Scale,
+    weekend: WeekendDays,
+    weekday_labels: Option<[String; 7]>,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -282,6 +280,10 @@ const OPTION_KEYS: &[&str] = &[
     "bar_height_px",
     "bar_align",
     "palette",
+    "px_per_day",
+    "scale",
+    "weekend_days",
+    "weekday_labels",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -305,6 +307,10 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         bar_height: None,
         bar_align: BarAlign::Middle,
         palette: Vec::new(),
+        px_per_day: None,
+        scale: Scale::Week,
+        weekend: WeekendDays::default(),
+        weekday_labels: None,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -366,6 +372,21 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
             }
             "bar_height_px" => wire.bar_height = Some(parse_size("bar_height_px", &value)?),
             "palette" => wire.palette = parse_palette(value)?,
+            "px_per_day" => wire.px_per_day = Some(parse_size("px_per_day", &value)?),
+            "scale" => {
+                wire.scale = match value.as_str() {
+                    Some("week") => Scale::Week,
+                    Some("day") => Scale::Day,
+                    Some("month") => Scale::Month,
+                    _ => {
+                        return Err(options_error(
+                            "scale: expected \"week\", \"day\" or \"month\"",
+                        ))
+                    }
+                }
+            }
+            "weekend_days" => wire.weekend = parse_weekend_days(&value)?,
+            "weekday_labels" => wire.weekday_labels = Some(parse_weekday_labels(&value)?),
             "bar_align" => {
                 wire.bar_align = match value.as_str() {
                     Some("middle") => BarAlign::Middle,
@@ -451,6 +472,45 @@ fn is_css_color(c: &str) -> bool {
     false
 }
 
+/// `weekend_days` is an array of weekday numbers, 0 for Monday to 6 for
+/// Sunday, each at most once.
+fn parse_weekend_days(value: &serde_json::Value) -> Result<WeekendDays, RenderError> {
+    let error = || {
+        options_error(
+            "weekend_days: expected an array of distinct numbers from 0 (Monday) to 6 (Sunday)",
+        )
+    };
+    let days = value.as_array().ok_or_else(error)?;
+    let mut mask = 0u8;
+    for d in days {
+        let d = d.as_u64().filter(|d| *d <= 6).ok_or_else(error)?;
+        if mask & (1 << d) != 0 {
+            return Err(error());
+        }
+        mask |= 1 << d;
+    }
+    Ok(WeekendDays(mask))
+}
+
+/// `weekday_labels` is seven strings, Monday first, of 1 to 8 characters.
+fn parse_weekday_labels(value: &serde_json::Value) -> Result<[String; 7], RenderError> {
+    let error =
+        || options_error("weekday_labels: expected 7 strings of 1 to 8 characters, Monday first");
+    let labels = value
+        .as_array()
+        .filter(|a| a.len() == 7)
+        .ok_or_else(error)?;
+    let mut out: [String; 7] = Default::default();
+    for (slot, label) in out.iter_mut().zip(labels) {
+        let label = label
+            .as_str()
+            .filter(|l| (1..=8).contains(&l.chars().count()))
+            .ok_or_else(error)?;
+        *slot = label.to_string();
+    }
+    Ok(out)
+}
+
 /// A height in pixels: a finite number above 0 and at most `MAX_SIZE_PX`.
 fn parse_size(key: &str, value: &serde_json::Value) -> Result<f64, RenderError> {
     match value.as_f64() {
@@ -486,6 +546,10 @@ impl ResolvedOptions {
             header_height: self.wire.header_height,
             bar_height: self.wire.bar_height,
             bar_align: self.wire.bar_align,
+            px_per_day: self.wire.px_per_day,
+            scale: self.wire.scale,
+            weekend: self.wire.weekend,
+            weekday_labels: self.wire.weekday_labels.clone(),
             ..Default::default()
         }
     }

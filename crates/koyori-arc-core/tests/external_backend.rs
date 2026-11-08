@@ -44,7 +44,8 @@ fn count_primitives(primitives: &[Primitive]) -> usize {
                     RectSemantic::HeaderBackground
                     | RectSemantic::BarBackground
                     | RectSemantic::LegendSwatch
-                    | RectSemantic::GroupRow => 1,
+                    | RectSemantic::GroupRow
+                    | RectSemantic::Weekend => 1,
                 }
             }
             Primitive::RoundRect(_) => 1,
