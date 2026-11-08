@@ -87,4 +87,19 @@ describe('buildOptionsJson', () => {
     expect(Object.keys(JSON.parse(json))).not.toContain('row_labels');
     expect(Object.keys(JSON.parse(json))).not.toContain('percent_labels');
   });
+  it('writes the size keys and `bar_align` only when they were given', () => {
+    expect(
+      JSON.parse(
+        buildOptionsJson({
+          rowHeightPx: 32,
+          headerHeightPx: 48,
+          barHeightPx: 12,
+          barAlign: 'bottom',
+        })!,
+      ),
+    ).toEqual({ row_height_px: 32, header_height_px: 48, bar_height_px: 12, bar_align: 'bottom' });
+    expect(
+      buildOptionsJson({ rowHeightPx: null, headerHeightPx: undefined, barAlign: null }),
+    ).toBeUndefined();
+  });
 });

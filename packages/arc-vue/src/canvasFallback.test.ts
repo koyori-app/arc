@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartHeightForTaskCount, resolveCanvasFailure } from './canvasFallback';
+import { chartHeightForRows, chartHeightForTaskCount, resolveCanvasFailure } from './canvasFallback';
 import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES, RUST_LAYOUT } from './wasmContract';
 
 const capacityFailure = (message: string) => ({
@@ -84,5 +84,26 @@ describe('resolveCanvasFailure', () => {
       mode: 'error',
       message: 'canvas row count exceeds limit (407 rows / 16384px)',
     });
+  });
+});
+
+describe('chartHeightForRows', () => {
+  it('is chartHeightForTaskCount when the crate lays out the rows', () => {
+    for (const n of [0, 1, 4, 408]) {
+      expect(chartHeightForRows(undefined, n)).toBe(chartHeightForTaskCount(n));
+      expect(chartHeightForRows(undefined, n, 'hidden')).toBe(chartHeightForTaskCount(n, 'hidden'));
+    }
+  });
+
+  it('adds every row at its own height under the header the caller set', () => {
+    const rows = [
+      { kind: 'group' as const },
+      { kind: 'task' as const, task_id: 'a' },
+      { kind: 'task' as const, task_id: 'b', height: 64 },
+    ];
+    expect(chartHeightForRows(rows, 2, 'hidden', { rowHeight: 32, headerHeight: 48 })).toBe(
+      48 + 32 + 32 + 64 + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX,
+    );
+    expect(chartHeightForRows(rows, 0)).toBe(0);
   });
 });

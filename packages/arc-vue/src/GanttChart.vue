@@ -6,7 +6,7 @@ import init, {
   render_canvas_commands,
   empty_svg_markup,
 } from '@koyori-app/arc';
-import type { GanttTask, GanttDep } from './types.ts';
+import type { GanttTask, GanttDep, GanttRow } from './types.ts';
 import {
   parseCommandBuffer,
   replayCommands,
@@ -17,7 +17,7 @@ import { resetCanvasElement } from './canvasLifecycle';
 import { buildOptionsJson } from './options';
 import { backingSize, cssPointFromClient } from './canvasScale';
 import {
-  chartHeightForTaskCount,
+  chartHeightForRows,
   isCanvasCapacityError,
   resolveCanvasFailure,
 } from './canvasFallback';
@@ -34,7 +34,7 @@ import {
  * these are the same numbers `wasmContract.test.ts` pins to
  * `display_list/constants.rs`, not a second set that happens to match today.
  */
-const skeletonRowH = `${RUST_LAYOUT.ROW_H}px`;
+const skeletonRowH = computed(() => `${props.rowHeight ?? RUST_LAYOUT.ROW_H}px`);
 // A chart without the title column has no label slot in its skeleton either.
 const skeletonLabelW = computed(() =>
   props.rowLabels === 'hidden' ? '0px' : `${RUST_LAYOUT.LABEL_W}px`,
@@ -69,6 +69,21 @@ const props = defineProps<{
   rowLabels?: 'shown' | 'hidden';
   /** `'hidden'` leaves out the `NN%` on every bar and milestone. */
   percentLabels?: 'shown' | 'hidden';
+  /**
+   * The chart's rows, top to bottom, for a caller that lays them out itself
+   * beside a list of its own: task rows and group rows (a band, no bar). A
+   * task left out is not drawn. Left out, one row per task as the crate lays
+   * them out. See `docs/design/external-rows.md`.
+   */
+  rows?: GanttRow[];
+  /** Height of a row in pixels. Left out, the crate's own. */
+  rowHeight?: number;
+  /** Height of the date header in pixels. Left out, the crate's own. */
+  headerHeight?: number;
+  /** Height of a bar in pixels. Left out, the crate's own. */
+  barHeight?: number;
+  /** `'bottom'` sets a bar low in a tall row, leaving the room above it. */
+  barAlign?: 'middle' | 'bottom';
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -157,7 +172,10 @@ watch(requestedVirtualization, async (virtual) => {
 
 const chartHeight = computed(() => {
   if (displayError.value) return 0;
-  return chartHeightForTaskCount(props.tasks.length, props.legend);
+  return chartHeightForRows(props.rows, props.tasks.length, props.legend, {
+    rowHeight: props.rowHeight,
+    headerHeight: props.headerHeight,
+  });
 });
 
 const scrollViewport = computed(() => {
@@ -168,15 +186,31 @@ const scrollViewport = computed(() => {
   };
 });
 
-const optionsJson = computed(() =>
-  buildOptionsJson({
+/** Every option but the scroll window, which the two paths set differently. */
+function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | undefined) {
+  return buildOptionsJson({
     today: props.today,
-    scrollViewport: scrollViewport.value,
+    scrollViewport: scroll,
     tzOffsetMinutes: props.tzOffsetMinutes,
     legend: props.legend,
     rowLabels: props.rowLabels,
     percentLabels: props.percentLabels,
-  }),
+    rowHeightPx: props.rowHeight,
+    headerHeightPx: props.headerHeight,
+    barHeightPx: props.barHeight,
+    barAlign: props.barAlign,
+  });
+}
+
+const optionsJson = computed(() => chartOptionsJson(scrollViewport.value));
+
+/**
+ * The trailing `rows_json` argument, passed only when the caller lays out the
+ * rows. Left out, the entry points are called with the three arguments they
+ * took before rows existed.
+ */
+const rowsArgs = computed<[] | [string]>(() =>
+  props.rows ? [JSON.stringify(props.rows)] : [],
 );
 
 /**
@@ -196,6 +230,7 @@ const svgHtml = computed<string | null>(() => {
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
     optionsJson.value,
+    ...rowsArgs.value,
   );
 });
 
@@ -206,6 +241,7 @@ const canvasCommandsJson = computed(() => {
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
     optionsJson.value,
+    ...rowsArgs.value,
   );
 });
 
@@ -229,6 +265,7 @@ const svgFailure = computed<RenderFailure | null>(() => {
     JSON.stringify(props.tasks),
     JSON.stringify(props.deps ?? []),
     optionsJson.value,
+    ...rowsArgs.value,
   );
   return reported ? parseRenderError(reported) : null;
 });
@@ -251,22 +288,17 @@ function renderCanvasFallback(failure: RenderFailure) {
   let fallbackSvg = '';
   if (isCanvasCapacityError(failure)) {
     try {
+      // Every option goes with it: left out, the SVG the canvas falls back to
+      // would bring the legend back or lay out other rows, and not match the
+      // height reserved for it.
       fallbackSvg = render_svg(
         JSON.stringify(props.tasks),
         JSON.stringify(props.deps ?? []),
-        buildOptionsJson({
-          today: props.today,
-          scrollViewport: {
-            scroll_y: scrollY.value,
-            client_height: Math.min(clientHeight.value, 600),
-          },
-          tzOffsetMinutes: props.tzOffsetMinutes,
-          // Left out here, the SVG the canvas falls back to would bring the
-          // legend back and be taller than the height reserved for it.
-          legend: props.legend,
-          rowLabels: props.rowLabels,
-          percentLabels: props.percentLabels,
+        chartOptionsJson({
+          scroll_y: scrollY.value,
+          client_height: Math.min(clientHeight.value, 600),
         }),
+        ...rowsArgs.value,
       );
     } catch {
       // resolveCanvasFailure turns a failed fallback into a visible error.

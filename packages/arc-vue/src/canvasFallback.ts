@@ -1,4 +1,5 @@
 import type { LegendMode } from './options';
+import type { GanttRow } from './types.ts';
 import {
   CANVAS_CAPACITY_CODE,
   RUST_LAYOUT,
@@ -20,6 +21,35 @@ export function chartHeightForTaskCount(
   if (taskCount === 0) return 0;
   return taskCount * RUST_LAYOUT.ROW_H
     + RUST_LAYOUT.HEADER_H
+    + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
+    + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
+}
+
+/** The sizes a caller may set, in pixels; each left out is the crate's own. */
+export interface RowSizes {
+  rowHeight?: number;
+  headerHeight?: number;
+}
+
+/**
+ * `chartHeightForTaskCount` for a chart that may lay out its own rows: the
+ * header, every row at its own height (or `rowHeight`), and below them the
+ * legend when shown and the bottom padding. Without `rows` it is one row per
+ * task, as the crate lays them out.
+ */
+export function chartHeightForRows(
+  rows: GanttRow[] | undefined,
+  taskCount: number,
+  legend: LegendMode = 'shown',
+  sizes: RowSizes = {},
+): number {
+  if (taskCount === 0) return 0;
+  const rowH = sizes.rowHeight ?? RUST_LAYOUT.ROW_H;
+  const rowsH = rows
+    ? rows.reduce((sum, row) => sum + (row.height ?? rowH), 0)
+    : taskCount * rowH;
+  return rowsH
+    + (sizes.headerHeight ?? RUST_LAYOUT.HEADER_H)
     + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
     + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
 }
