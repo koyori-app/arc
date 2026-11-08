@@ -130,6 +130,10 @@ pub struct ChartOptions {
     pub header_height: Option<f64>, // 既定 HEADER_H
     pub bar_height: Option<f64>,    // 既定 BAR_H
     pub bar_align: BarAlign,        // Middle（既定）か Bottom
+    pub px_per_day: Option<f64>,    // 既定 PX_PER_DAY
+    pub scale: Scale,               // Week（既定）、Day、Month
+    pub weekend: WeekendDays,       // 土日の帯の曜日（既定は無し）
+    pub weekday_labels: Option<[String; 7]>, // Day の段の曜日の字
 }
 
 // 使う側が行を並べる図（docs/design/external-rows.md）
@@ -174,6 +178,10 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
   - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る
   - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる
+  - `scale`: `"week"`（既定。月曜に線と `M/D`）、`"day"`（日ごとに数字と曜日、月の頭に `YYYY/M`。月曜の線は残す）、`"month"`（月の頭に線と `YYYY/M`）
+  - `px_per_day`: 一日の幅（px）。0 を越え 1000 以下。既定は `PX_PER_DAY`
+  - `weekend_days`: 土日の帯を引く曜日の数の配列（0 が月曜、6 が日曜）。既定は無し。帯は行の区画に一日の幅で引く（class `weekend`、色の名 `Weekend`）
+  - `weekday_labels`: `"day"` の段の曜日の字。月曜から七つで、各 1 から 8 字。既定は `Mo`〜`Su`（docs/design/day-scale.md）
   - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
@@ -213,6 +221,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - 型 `GanttRow` と `BarAlign` は `index.ts` から出す
 - `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く
 - 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
+- `pxPerDay`、`scale`（`'week'`、`'day'`、`'month'`）、`weekendDays`、`weekdayLabels`: `options_json` の同じ名の鍵に渡す。型 `Scale` は `index.ts` から出す
 
 ## SVG 出力仕様
 
@@ -300,7 +309,7 @@ Canvas の上限の判定は、実際に描く幅（題の列と進みの字の�
 | ヘッダー背景 | `#f3f4f6` |
 | グリッドラベル | `#6b7280` |
 
-既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）の落ち先は見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
+既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）と土日の帯（`Weekend`）の落ち先は見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
 
 ## レイアウト定数
 
