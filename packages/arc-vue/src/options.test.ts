@@ -102,4 +102,24 @@ describe('buildOptionsJson', () => {
       buildOptionsJson({ rowHeightPx: null, headerHeightPx: undefined, barAlign: null }),
     ).toBeUndefined();
   });
+  it('writes the scale keys only when they were given', () => {
+    expect(
+      JSON.parse(
+        buildOptionsJson({
+          pxPerDay: 32,
+          scale: 'day',
+          weekendDays: [5, 6],
+          weekdayLabels: ['月', '火', '水', '木', '金', '土', '日'],
+        })!,
+      ),
+    ).toEqual({
+      px_per_day: 32,
+      scale: 'day',
+      weekend_days: [5, 6],
+      weekday_labels: ['月', '火', '水', '木', '金', '土', '日'],
+    });
+    expect(
+      buildOptionsJson({ pxPerDay: null, scale: undefined, weekendDays: null, weekdayLabels: null }),
+    ).toBeUndefined();
+  });
 });

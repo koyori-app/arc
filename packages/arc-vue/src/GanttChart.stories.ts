@@ -262,3 +262,29 @@ export const PaletteFromTokensCanvas: Story = {
   args: { ...PaletteFromTokens.args, backend: 'canvas' },
   render: PaletteFromTokens.render,
 };
+
+// The day scale a caller draws beside its own list: every day's number and
+// weekday (in the caller's words), weekend bands, a wider day, and a header
+// tall enough for the month, the number and the weekday.
+export const DayScale: Story = {
+  args: {
+    ...PaletteFromTokens.args,
+    scale: 'day',
+    pxPerDay: 32,
+    headerHeight: 48,
+    weekendDays: [5, 6],
+    weekdayLabels: ['月', '火', '水', '木', '金', '土', '日'],
+    palette: { ...tokenPalette, Weekend: 'var(--demo-surface-hover)' },
+  },
+  render: PaletteFromTokens.render,
+};
+
+export const DayScaleCanvas: Story = {
+  args: { ...DayScale.args, backend: 'canvas' },
+  render: PaletteFromTokens.render,
+};
+
+export const MonthScale: Story = {
+  args: { ...vrtArgs, tasks, deps, today: '2026-06-06', scale: 'month', pxPerDay: 8 },
+  render: Default.render,
+};

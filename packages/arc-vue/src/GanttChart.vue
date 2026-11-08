@@ -90,6 +90,17 @@ const props = defineProps<{
    * `var(--…)` as it is; the canvas path reads it off the canvas's computed style.
    */
   palette?: PaletteOverrides;
+  /** Width of a day in pixels. Left out, the crate's own. */
+  pxPerDay?: number;
+  /**
+   * What the date header marks: `'week'` (the default), `'day'` (every day's
+   * number and weekday, for a header tall enough for both), or `'month'`.
+   */
+  scale?: 'week' | 'day' | 'month';
+  /** Weekday numbers drawn as weekend bands, 0 for Monday to 6 for Sunday. */
+  weekendDays?: number[];
+  /** Seven labels, Monday first, for the `'day'` scale, such as `['月', …, '日']`. */
+  weekdayLabels?: string[];
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -206,6 +217,10 @@ function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | 
     barHeightPx: props.barHeight,
     barAlign: props.barAlign,
     palette: props.palette,
+    pxPerDay: props.pxPerDay,
+    scale: props.scale,
+    weekendDays: props.weekendDays,
+    weekdayLabels: props.weekdayLabels,
   });
 }
 

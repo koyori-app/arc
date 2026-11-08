@@ -14,7 +14,8 @@ export type ColorIdName =
   | 'GridLabel'
   | 'ProgressTextOnFg'
   | 'ProgressTextOnBg'
-  | 'GroupRow';
+  | 'GroupRow'
+  | 'Weekend';
 
 export interface CommandBuffer {
   viewport_width: number;
@@ -80,6 +81,7 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'ProgressTextOnFg',
   'ProgressTextOnBg',
   'GroupRow',
+  'Weekend',
 ];
 
 /**
@@ -89,6 +91,7 @@ const COLOR_ID_NAMES: ColorIdName[] = [
  */
 const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
   GroupRow: 'HeaderBg',
+  Weekend: 'HeaderBg',
 };
 
 function paletteColor(buffer: CommandBuffer, name: ColorIdName): string | undefined {
