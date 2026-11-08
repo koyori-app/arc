@@ -35,7 +35,10 @@ import {
  * `display_list/constants.rs`, not a second set that happens to match today.
  */
 const skeletonRowH = `${RUST_LAYOUT.ROW_H}px`;
-const skeletonLabelW = `${RUST_LAYOUT.LABEL_W}px`;
+// A chart without the title column has no label slot in its skeleton either.
+const skeletonLabelW = computed(() =>
+  props.rowLabels === 'hidden' ? '0px' : `${RUST_LAYOUT.LABEL_W}px`,
+);
 const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
 const props = defineProps<{
@@ -58,6 +61,14 @@ const props = defineProps<{
    * legend of every existing caller.
    */
   legend?: 'shown' | 'hidden';
+  /**
+   * `'hidden'` leaves the title column out: the days start at the left edge,
+   * and a click hits only the bar. For a caller that lays the chart beside a
+   * list of its own. A string for the same reason as `legend`.
+   */
+  rowLabels?: 'shown' | 'hidden';
+  /** `'hidden'` leaves out the `NN%` on every bar and milestone. */
+  percentLabels?: 'shown' | 'hidden';
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -163,6 +174,8 @@ const optionsJson = computed(() =>
     scrollViewport: scrollViewport.value,
     tzOffsetMinutes: props.tzOffsetMinutes,
     legend: props.legend,
+    rowLabels: props.rowLabels,
+    percentLabels: props.percentLabels,
   }),
 );
 
@@ -251,6 +264,8 @@ function renderCanvasFallback(failure: RenderFailure) {
           // Left out here, the SVG the canvas falls back to would bring the
           // legend back and be taller than the height reserved for it.
           legend: props.legend,
+          rowLabels: props.rowLabels,
+          percentLabels: props.percentLabels,
         }),
       );
     } catch {
