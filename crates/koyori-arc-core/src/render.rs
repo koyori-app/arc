@@ -9,8 +9,8 @@ use crate::display_list::constants::{CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY,
 use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
-    types::{BarAlign, ChartOptions, LabelMode, LegendMode, Palette},
-    ScrollViewport,
+    types::{BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette},
+    DisplayList, ScrollViewport,
 };
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
@@ -36,6 +36,8 @@ pub const MAX_ROWS: usize = 2 * MAX_TASKS;
 pub const MAX_ROWS_JSON_BYTES: usize = 4 * 1024 * 1024;
 /// Upper bound on any height a caller sets (a row, the header, a bar), in pixels.
 pub const MAX_SIZE_PX: f64 = 1_000.0;
+/// Upper bound on the characters of one colour in `palette`.
+pub const MAX_COLOR_CHARS: usize = 100;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
@@ -263,6 +265,7 @@ struct WireOptions {
     header_height: Option<f64>,
     bar_height: Option<f64>,
     bar_align: BarAlign,
+    palette: Vec<(ColorId, String)>,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -278,6 +281,7 @@ const OPTION_KEYS: &[&str] = &[
     "header_height_px",
     "bar_height_px",
     "bar_align",
+    "palette",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -300,6 +304,7 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         header_height: None,
         bar_height: None,
         bar_align: BarAlign::Middle,
+        palette: Vec::new(),
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -360,6 +365,7 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
                 wire.header_height = Some(parse_size("header_height_px", &value)?)
             }
             "bar_height_px" => wire.bar_height = Some(parse_size("bar_height_px", &value)?),
+            "palette" => wire.palette = parse_palette(value)?,
             "bar_align" => {
                 wire.bar_align = match value.as_str() {
                     Some("middle") => BarAlign::Middle,
@@ -386,6 +392,63 @@ fn parse_label_mode(key: &str, value: &serde_json::Value) -> Result<LabelMode, R
             "{key}: expected \"shown\" or \"hidden\""
         ))),
     }
+}
+
+/// `palette` is an object from colour names (`ColorId`, as `"HeaderBg"`) to
+/// CSS colours. A name the chart does not know, or a value that is not one of
+/// the colour forms `is_css_color` takes, is refused: the value is written into
+/// SVG attributes and canvas styles, so nothing else may reach them.
+fn parse_palette(value: serde_json::Value) -> Result<Vec<(ColorId, String)>, RenderError> {
+    let serde_json::Value::Object(map) = value else {
+        return Err(options_error(
+            "palette: expected an object of colour names to colours",
+        ));
+    };
+    let mut palette = Vec::with_capacity(map.len());
+    for (name, color) in map {
+        let id: ColorId = serde_json::from_value(serde_json::Value::String(name.clone()))
+            .map_err(|_| options_error(format!("palette: unknown colour name `{name}`")))?;
+        let color = match color.as_str() {
+            Some(c) if is_css_color(c) => c.to_string(),
+            _ => {
+                return Err(options_error(format!(
+                    "palette: `{name}`: expected a CSS colour (#hex, rgb()/hsl()/oklch(), or var(--name))"
+                )))
+            }
+        };
+        palette.push((id, color));
+    }
+    Ok(palette)
+}
+
+/// The colour forms `palette` takes: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`;
+/// `var(--name)` with a name of letters, digits, `-` and `_`; and `rgb()`,
+/// `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` whose arguments are
+/// digits, lower-case letters, `.`, `,`, `%`, `/`, `+`, `-` and spaces. None
+/// of these can close an attribute or open another.
+fn is_css_color(c: &str) -> bool {
+    if c.is_empty() || c.chars().count() > MAX_COLOR_CHARS {
+        return false;
+    }
+    if let Some(hex) = c.strip_prefix('#') {
+        return matches!(hex.len(), 3 | 4 | 6 | 8) && hex.chars().all(|ch| ch.is_ascii_hexdigit());
+    }
+    if let Some(name) = c.strip_prefix("var(--").and_then(|r| r.strip_suffix(')')) {
+        return !name.is_empty()
+            && name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+    }
+    for f in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab("] {
+        if let Some(args) = c.strip_prefix(f).and_then(|r| r.strip_suffix(')')) {
+            return args.chars().all(|ch| {
+                ch.is_ascii_digit()
+                    || ch.is_ascii_lowercase()
+                    || matches!(ch, '.' | ',' | '%' | '/' | '+' | '-' | ' ')
+            });
+        }
+    }
+    false
 }
 
 /// A height in pixels: a finite number above 0 and at most `MAX_SIZE_PX`.
@@ -425,6 +488,10 @@ impl ResolvedOptions {
             bar_align: self.wire.bar_align,
             ..Default::default()
         }
+    }
+
+    fn palette(&self) -> &[(ColorId, String)] {
+        &self.wire.palette
     }
 
     fn chart_options(&self) -> Result<ChartOptions, RenderError> {
@@ -512,6 +579,7 @@ struct PreparedSvgInput {
     deps: Vec<GanttDep>,
     rows: Option<Vec<GanttRow>>,
     options: ChartOptions,
+    palette: Vec<(ColorId, String)>,
 }
 
 /// Every Wasm SVG rejection runs through here — `render_svg` and
@@ -543,6 +611,7 @@ fn prepare_svg_input(
         deps,
         rows,
         options,
+        palette: resolved.palette().to_vec(),
     })
 }
 
@@ -559,18 +628,55 @@ pub fn render_with_rows(
     rows: Option<&[GanttRow]>,
     options: &ChartOptions,
 ) -> String {
-    if tasks.is_empty() {
-        return crate::backend::svg::empty_svg();
-    }
+    svg_of(build_list(tasks, deps, rows, options, &[]))
+}
 
+/// The display list every entry point draws: `None` when there is no task to
+/// draw. `palette` replaces colours of the standard palette after the chart is
+/// laid out, so it moves nothing.
+fn build_list(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    options: &ChartOptions,
+    palette: &[(ColorId, String)],
+) -> Option<DisplayList> {
+    if tasks.is_empty() {
+        return None;
+    }
     let epoch = tasks.iter().map(|t| t.start).min().unwrap();
     let graph = GanttGraph {
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list_with_rows(&graph, rows, epoch, options);
+    let mut list = build_display_list_with_rows(&graph, rows, epoch, options);
+    if !palette.is_empty() {
+        list.palette = list.palette.with_overrides(palette);
+    }
+    Some(list)
+}
+
+fn svg_of(list: Option<DisplayList>) -> String {
+    let Some(list) = list else {
+        return crate::backend::svg::empty_svg();
+    };
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+fn canvas_of(list: Option<DisplayList>) -> CommandBuffer {
+    let Some(list) = list else {
+        return CommandBuffer {
+            viewport_width: 0.0,
+            viewport_height: 0.0,
+            ops: vec![],
+            palette: Palette::standard(),
+        };
+    };
+    match CanvasBackend.render(&list) {
+        BackendOutput::CanvasCommands(b) => b,
         _ => unreachable!(),
     }
 }
@@ -591,25 +697,7 @@ pub fn render_canvas_with_rows(
     rows: Option<&[GanttRow]>,
     options: &ChartOptions,
 ) -> CommandBuffer {
-    if tasks.is_empty() {
-        return CommandBuffer {
-            viewport_width: 0.0,
-            viewport_height: 0.0,
-            ops: vec![],
-            palette: Palette::standard(),
-        };
-    }
-
-    let epoch = tasks.iter().map(|t| t.start).min().unwrap();
-    let graph = GanttGraph {
-        tasks: tasks.to_vec(),
-        deps: deps.to_vec(),
-    };
-    let list = build_display_list_with_rows(&graph, rows, epoch, options);
-    match CanvasBackend.render(&list) {
-        BackendOutput::CanvasCommands(b) => b,
-        _ => unreachable!(),
-    }
+    canvas_of(build_list(tasks, deps, rows, options, &[]))
 }
 
 /// Wasm entry point — accepts JSON strings matching the task project's API response shape.
@@ -644,6 +732,7 @@ pub fn render_svg(
         deps,
         rows,
         options,
+        palette,
     }) = prepare_svg_input(
         tasks_json,
         deps_json,
@@ -653,7 +742,13 @@ pub fn render_svg(
     else {
         return empty_svg();
     };
-    render_with_rows(&tasks, &deps, rows.as_deref(), &options)
+    svg_of(build_list(
+        &tasks,
+        &deps,
+        rows.as_deref(),
+        &options,
+        &palette,
+    ))
 }
 
 /// Wasm entry point — why `render_svg` would refuse this input, as the same
@@ -741,7 +836,13 @@ pub fn render_canvas_commands(
         Ok(options) => options,
         Err(err) => return err.to_json(),
     };
-    let buffer = render_canvas_with_rows(&tasks, &deps, rows.as_deref(), &options);
+    let buffer = canvas_of(build_list(
+        &tasks,
+        &deps,
+        rows.as_deref(),
+        &options,
+        resolved.palette(),
+    ));
     serde_json::to_string(&buffer).unwrap_or_else(|e| {
         RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
     })

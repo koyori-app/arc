@@ -18,6 +18,22 @@ pub enum ColorId {
     GridLabel,
     ProgressTextOnFg,
     ProgressTextOnBg,
+    /// The band of a group row. Not in the standard palette: it falls back to
+    /// `HeaderBg` until a caller sets it (see `ColorId::fallback`).
+    GroupRow,
+}
+
+impl ColorId {
+    /// The colour drawn for an id the palette has no entry for. Ids added after
+    /// the standard palette was pinned are left out of it, so a chart that
+    /// does not use them comes out as it did; each falls back to an id that is
+    /// in it.
+    pub fn fallback(self) -> Option<ColorId> {
+        match self {
+            ColorId::GroupRow => Some(ColorId::HeaderBg),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,11 +63,28 @@ impl Palette {
     }
 
     pub fn resolve(&self, id: ColorId) -> &str {
-        self.colors
-            .iter()
-            .find(|(cid, _)| *cid == id)
-            .map(|(_, hex)| hex.as_str())
-            .expect("palette entry")
+        match self.colors.iter().find(|(cid, _)| *cid == id) {
+            Some((_, color)) => color.as_str(),
+            None => self.resolve(id.fallback().expect("palette entry")),
+        }
+    }
+
+    /// This palette with `overrides` in place of its own colours. An id the
+    /// palette has no entry for is added at the end, in the order of `ColorId`.
+    pub fn with_overrides(mut self, overrides: &[(ColorId, String)]) -> Self {
+        let mut added: Vec<(ColorId, String)> = Vec::new();
+        for (id, color) in overrides {
+            match self.colors.iter_mut().find(|(cid, _)| cid == id) {
+                Some(entry) => entry.1 = color.clone(),
+                None => match added.iter_mut().find(|(cid, _)| cid == id) {
+                    Some(entry) => entry.1 = color.clone(),
+                    None => added.push((*id, color.clone())),
+                },
+            }
+        }
+        added.sort_by_key(|(id, _)| *id as u8);
+        self.colors.extend(added);
+        self
     }
 }
 

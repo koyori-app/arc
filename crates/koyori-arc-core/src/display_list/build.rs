@@ -123,7 +123,7 @@ pub fn build_display_list_with_rows(
                 y: s.y_top,
                 width: chart_w - label_w,
                 height: s.height,
-                fill: ColorId::HeaderBg,
+                fill: ColorId::GroupRow,
                 rx: None,
                 semantic: RectSemantic::GroupRow,
             })
