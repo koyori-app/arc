@@ -7,7 +7,6 @@ use super::types::LegendMode;
 
 pub const ROW_H: f64 = 40.0;
 pub const BAR_H: f64 = 20.0;
-pub const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
 pub const PX_PER_DAY: f64 = 30.0;
 pub const LABEL_W: f64 = 120.0;
 pub const HEADER_H: f64 = 30.0;
@@ -38,6 +37,7 @@ pub const CHART_CHROME_W: f64 = LABEL_W + CHART_RIGHT_PADDING_PX;
 /// `MAX_CANVAS_DATE_SPAN_DAYS` in `render.rs` invert them and are the one place
 /// the terms are named a second time — a new term must be added to the chrome
 /// constants above, not to a call site.
+#[cfg(test)]
 pub const fn chart_height(rows: f64) -> f64 {
     rows * ROW_H + CHART_CHROME_H
 }
@@ -55,6 +55,7 @@ pub const fn chart_chrome_h(legend: LegendMode) -> f64 {
 /// `chart_height` for a given legend mode. The Canvas capacity guard keeps
 /// asking `chart_height`, which is the `Shown` answer, so a hidden legend never
 /// loosens it.
+#[cfg(test)]
 pub const fn chart_height_with(rows: f64, legend: LegendMode) -> f64 {
     rows * ROW_H + chart_chrome_h(legend)
 }

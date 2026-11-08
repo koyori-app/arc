@@ -4,20 +4,18 @@ use wasm_bindgen::prelude::*;
 use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::date_input::{parse_tz_offset, resolve_date};
-use crate::display_list::build::chart_width_for;
-use crate::display_list::constants::{
-    chart_height, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H,
-};
+use crate::display_list::build::{build_display_list_with_rows, chart_height_of, chart_width_for};
+use crate::display_list::constants::{CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H};
 use crate::display_list::legend::legend_spec;
+use crate::display_list::rows::RowPlan;
 use crate::display_list::{
-    build_display_list,
-    types::{ChartOptions, LabelMode, LegendMode, Palette},
+    types::{BarAlign, ChartOptions, LabelMode, LegendMode, Palette},
     ScrollViewport,
 };
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttTask};
+use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttRow, GanttTask};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
@@ -32,6 +30,12 @@ pub const MAX_DATE_SPAN_DAYS: i64 = 3_650;
 /// Upper bound on `options_json`. It holds a handful of scalar keys, so this is
 /// far more than a real value needs; a larger string is refused before it is parsed.
 pub const MAX_OPTIONS_JSON_BYTES: usize = 4 * 1024;
+/// Upper bound on `rows_json`: every task once, a group row before each, and
+/// the same room per entry the tasks have.
+pub const MAX_ROWS: usize = 2 * MAX_TASKS;
+pub const MAX_ROWS_JSON_BYTES: usize = 4 * 1024 * 1024;
+/// Upper bound on any height a caller sets (a row, the header, a bar), in pixels.
+pub const MAX_SIZE_PX: f64 = 1_000.0;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
@@ -159,10 +163,15 @@ fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Rende
 fn canvas_graph_limit_error(
     tasks: &[GanttTask],
     deps: &[GanttDep],
-    legend: LegendMode,
-    row_labels: LabelMode,
-    percent_labels: LabelMode,
+    rows: Option<&[GanttRow]>,
+    shape: &ChartOptions,
 ) -> Option<RenderError> {
+    let ChartOptions {
+        legend,
+        row_labels,
+        percent_labels,
+        ..
+    } = *shape;
     if let Some(err) = common_graph_limit_error(tasks, deps) {
         return Some(err);
     }
@@ -198,7 +207,18 @@ fn canvas_graph_limit_error(
             ),
         ));
     }
-    let height_px = chart_height(tasks.len() as f64);
+    // The height is the one drawn with the legend shown, so a hidden legend
+    // never loosens the guard. Rows of the caller's own heights can be taller
+    // than `ROW_H`, so the side is checked here too and not only by the row count.
+    let height_px = chart_height_of(&RowPlan::new(tasks, deps, rows, shape), LegendMode::Shown);
+    if height_px > MAX_CANVAS_SIDE_PX as f64 {
+        return Some(RenderError::new(
+            CODE_CANVAS_CAPACITY,
+            format!(
+                "canvas row count exceeds limit ({MAX_CANVAS_ROWS} rows / {MAX_CANVAS_SIDE_PX}px)"
+            ),
+        ));
+    }
     if width_px * height_px > MAX_CANVAS_AREA_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -239,6 +259,10 @@ struct WireOptions {
     legend: LegendMode,
     row_labels: LabelMode,
     percent_labels: LabelMode,
+    row_height: Option<f64>,
+    header_height: Option<f64>,
+    bar_height: Option<f64>,
+    bar_align: BarAlign,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -250,6 +274,10 @@ const OPTION_KEYS: &[&str] = &[
     "legend",
     "row_labels",
     "percent_labels",
+    "row_height_px",
+    "header_height_px",
+    "bar_height_px",
+    "bar_align",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -268,6 +296,10 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         legend: LegendMode::Shown,
         row_labels: LabelMode::Shown,
         percent_labels: LabelMode::Shown,
+        row_height: None,
+        header_height: None,
+        bar_height: None,
+        bar_align: BarAlign::Middle,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -323,6 +355,22 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
             }
             "row_labels" => wire.row_labels = parse_label_mode("row_labels", &value)?,
             "percent_labels" => wire.percent_labels = parse_label_mode("percent_labels", &value)?,
+            "row_height_px" => wire.row_height = Some(parse_size("row_height_px", &value)?),
+            "header_height_px" => {
+                wire.header_height = Some(parse_size("header_height_px", &value)?)
+            }
+            "bar_height_px" => wire.bar_height = Some(parse_size("bar_height_px", &value)?),
+            "bar_align" => {
+                wire.bar_align = match value.as_str() {
+                    Some("middle") => BarAlign::Middle,
+                    Some("bottom") => BarAlign::Bottom,
+                    _ => {
+                        return Err(options_error(
+                            "bar_align: expected \"middle\" or \"bottom\"",
+                        ))
+                    }
+                }
+            }
             _ => unreachable!("OPTION_KEYS covers every arm"),
         }
     }
@@ -336,6 +384,16 @@ fn parse_label_mode(key: &str, value: &serde_json::Value) -> Result<LabelMode, R
         Some("hidden") => Ok(LabelMode::Hidden),
         _ => Err(options_error(format!(
             "{key}: expected \"shown\" or \"hidden\""
+        ))),
+    }
+}
+
+/// A height in pixels: a finite number above 0 and at most `MAX_SIZE_PX`.
+fn parse_size(key: &str, value: &serde_json::Value) -> Result<f64, RenderError> {
+    match value.as_f64() {
+        Some(px) if px.is_finite() && px > 0.0 && px <= MAX_SIZE_PX => Ok(px),
+        _ => Err(options_error(format!(
+            "{key}: expected a number above 0 and at most {MAX_SIZE_PX}"
         ))),
     }
 }
@@ -354,33 +412,105 @@ fn resolve_options(options_json: Option<&str>) -> Result<ResolvedOptions, Render
 }
 
 impl ResolvedOptions {
-    fn legend(&self) -> LegendMode {
-        self.wire.legend
-    }
-
-    fn row_labels(&self) -> LabelMode {
-        self.wire.row_labels
-    }
-
-    fn percent_labels(&self) -> LabelMode {
-        self.wire.percent_labels
+    /// Everything about the chart's shape the canvas guard measures, without
+    /// `today` (resolving it can refuse, and the guard's verdict comes first).
+    fn shape(&self) -> ChartOptions {
+        ChartOptions {
+            legend: self.wire.legend,
+            row_labels: self.wire.row_labels,
+            percent_labels: self.wire.percent_labels,
+            row_height: self.wire.row_height,
+            header_height: self.wire.header_height,
+            bar_height: self.wire.bar_height,
+            bar_align: self.wire.bar_align,
+            ..Default::default()
+        }
     }
 
     fn chart_options(&self) -> Result<ChartOptions, RenderError> {
         Ok(ChartOptions {
             today: parse_today(self.wire.today.as_deref(), self.offset)?,
             scroll_viewport: self.wire.scroll_viewport,
-            legend: self.wire.legend,
-            row_labels: self.wire.row_labels,
-            percent_labels: self.wire.percent_labels,
+            ..self.shape()
         })
     }
+}
+
+/// `rows_json` as the entry points take it: absent (or `null`) for a chart that
+/// lays out its own rows, or a JSON array of rows (`GanttRow`). A row list is
+/// refused when it is too large, cannot be read, names a task that is not in
+/// `tasks`, lists a task twice, or asks for a height that is not a number above
+/// 0 and at most `MAX_SIZE_PX`.
+fn parse_rows_json(
+    rows_json: Option<&str>,
+    tasks: &[GanttTask],
+) -> Result<Option<Vec<GanttRow>>, RenderError> {
+    let Some(json) = rows_json else {
+        return Ok(None);
+    };
+    if json.len() > MAX_ROWS_JSON_BYTES {
+        return Err(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("rows JSON byte size exceeds limit ({MAX_ROWS_JSON_BYTES})"),
+        ));
+    }
+    let rows: Vec<GanttRow> = serde_json::from_str(json)
+        .map_err(|e| RenderError::new(CODE_PARSE_ERROR, format!("parse error: rows: {e}")))?;
+    if rows.len() > MAX_ROWS {
+        return Err(RenderError::new(
+            CODE_INPUT_LIMIT,
+            format!("row count exceeds limit ({MAX_ROWS})"),
+        ));
+    }
+    let known: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    let mut listed = std::collections::HashSet::new();
+    let rows_error =
+        |m: String| RenderError::new(CODE_PARSE_ERROR, format!("parse error: rows: {m}"));
+    for row in &rows {
+        if let Some(h) = row.height() {
+            if !(h.is_finite() && h > 0.0 && h <= MAX_SIZE_PX) {
+                return Err(rows_error(format!(
+                    "height: expected a number above 0 and at most {MAX_SIZE_PX}"
+                )));
+            }
+        }
+        if let GanttRow::Task { task_id, .. } = row {
+            if !known.contains(task_id.as_str()) {
+                return Err(rows_error(format!("unknown task_id `{task_id}`")));
+            }
+            if !listed.insert(task_id.as_str()) {
+                return Err(rows_error(format!("task_id `{task_id}` is listed twice")));
+            }
+        }
+    }
+    Ok(Some(rows))
+}
+
+/// A bar taller than the row it is drawn in would cover the rows around it, so
+/// `bar_height_px` may not exceed the height of any task row.
+fn bar_height_error(rows: Option<&[GanttRow]>, shape: &ChartOptions) -> Option<RenderError> {
+    let bar_h = shape.bar_height?;
+    let row_h = shape.row_height.unwrap_or(ROW_H);
+    let shortest = match rows {
+        None => row_h,
+        Some(rows) => rows
+            .iter()
+            .filter(|r| matches!(r, GanttRow::Task { .. }))
+            .map(|r| r.height().unwrap_or(row_h))
+            .fold(f64::INFINITY, f64::min),
+    };
+    (bar_h > shortest).then(|| {
+        options_error(format!(
+            "bar_height_px: {bar_h} is taller than a task row ({shortest})"
+        ))
+    })
 }
 
 /// What `prepare_svg_input` hands on once every refusal has been ruled out.
 struct PreparedSvgInput {
     tasks: Vec<GanttTask>,
     deps: Vec<GanttDep>,
+    rows: Option<Vec<GanttRow>>,
     options: ChartOptions,
 }
 
@@ -390,6 +520,7 @@ fn prepare_svg_input(
     tasks_json: &str,
     deps_json: &str,
     options_json: Option<&str>,
+    rows_json: Option<&str>,
 ) -> Result<PreparedSvgInput, RenderError> {
     let resolved = resolve_options(options_json)?;
     if let Some(err) = raw_json_limit_error(tasks_json, deps_json) {
@@ -402,16 +533,32 @@ fn prepare_svg_input(
     if let Some(err) = svg_graph_limit_error(&tasks, &deps) {
         return Err(err);
     }
+    let rows = parse_rows_json(rows_json, &tasks)?;
+    if let Some(err) = bar_height_error(rows.as_deref(), &resolved.shape()) {
+        return Err(err);
+    }
     let options = resolved.chart_options()?;
     Ok(PreparedSvgInput {
         tasks,
         deps,
+        rows,
         options,
     })
 }
 
 /// Native entry point — accepts typed structs directly.
 pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) -> String {
+    render_with_rows(tasks, deps, None, options)
+}
+
+/// `render` for a caller that lays out the rows itself (see
+/// `build_display_list_with_rows`).
+pub fn render_with_rows(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    options: &ChartOptions,
+) -> String {
     if tasks.is_empty() {
         return crate::backend::svg::empty_svg();
     }
@@ -421,7 +568,7 @@ pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) ->
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list(&graph, epoch, options);
+    let list = build_display_list_with_rows(&graph, rows, epoch, options);
     match SvgBackend.render(&list) {
         BackendOutput::Svg(s) => s,
         _ => unreachable!(),
@@ -432,6 +579,16 @@ pub fn render(tasks: &[GanttTask], deps: &[GanttDep], options: &ChartOptions) ->
 pub fn render_canvas(
     tasks: &[GanttTask],
     deps: &[GanttDep],
+    options: &ChartOptions,
+) -> CommandBuffer {
+    render_canvas_with_rows(tasks, deps, None, options)
+}
+
+/// `render_canvas` for a caller that lays out the rows itself.
+pub fn render_canvas_with_rows(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
     options: &ChartOptions,
 ) -> CommandBuffer {
     if tasks.is_empty() {
@@ -448,7 +605,7 @@ pub fn render_canvas(
         tasks: tasks.to_vec(),
         deps: deps.to_vec(),
     };
-    let list = build_display_list(&graph, epoch, options);
+    let list = build_display_list_with_rows(&graph, rows, epoch, options);
     match CanvasBackend.render(&list) {
         BackendOutput::CanvasCommands(b) => b,
         _ => unreachable!(),
@@ -470,17 +627,33 @@ pub fn render_canvas(
 /// that is not an integer or is beyond ±1439, a `scroll_viewport` of the wrong shape), refuses
 /// the render (see `render_svg_error`). A string longer than `MAX_OPTIONS_JSON_BYTES` is
 /// refused with the `input_limit` code.
+///
+/// `rows_json` is optional and may be left out. Given, it is the chart's rows,
+/// top to bottom, as a JSON array of `{"kind":"task","task_id":…}` and
+/// `{"kind":"group"}` (each may carry `height`); a task it leaves out is not
+/// drawn. See docs/design/external-rows.md.
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String {
+pub fn render_svg(
+    tasks_json: &str,
+    deps_json: &str,
+    options_json: Option<String>,
+    rows_json: Option<String>,
+) -> String {
     let Ok(PreparedSvgInput {
         tasks,
         deps,
+        rows,
         options,
-    }) = prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
+    }) = prepare_svg_input(
+        tasks_json,
+        deps_json,
+        options_json.as_deref(),
+        rows_json.as_deref(),
+    )
     else {
         return empty_svg();
     };
-    render(&tasks, &deps, &options)
+    render_with_rows(&tasks, &deps, rows.as_deref(), &options)
 }
 
 /// Wasm entry point — why `render_svg` would refuse this input, as the same
@@ -492,17 +665,23 @@ pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String
 /// that tells them apart; it shares `prepare_svg_input` with `render_svg`
 /// rather than re-deriving the rules.
 ///
-/// Pass the same `options_json` given to `render_svg`: an options string that
-/// cannot be read is a refusal too.
+/// Pass the same `options_json` and `rows_json` given to `render_svg`: an
+/// options string or a row list that cannot be read is a refusal too.
 #[wasm_bindgen]
 pub fn render_svg_error(
     tasks_json: &str,
     deps_json: &str,
     options_json: Option<String>,
+    rows_json: Option<String>,
 ) -> Option<String> {
-    prepare_svg_input(tasks_json, deps_json, options_json.as_deref())
-        .err()
-        .map(|e| e.to_json())
+    prepare_svg_input(
+        tasks_json,
+        deps_json,
+        options_json.as_deref(),
+        rows_json.as_deref(),
+    )
+    .err()
+    .map(|e| e.to_json())
 }
 
 /// Wasm entry point — what the legend says, as JSON: the five tiers (key, label,
@@ -530,6 +709,7 @@ pub fn render_canvas_commands(
     tasks_json: &str,
     deps_json: &str,
     options_json: Option<String>,
+    rows_json: Option<String>,
 ) -> String {
     let resolved = match resolve_options(options_json.as_deref()) {
         Ok(resolved) => resolved,
@@ -546,20 +726,22 @@ pub fn render_canvas_commands(
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
-    if let Some(err) = canvas_graph_limit_error(
-        &tasks,
-        &deps,
-        resolved.legend(),
-        resolved.row_labels(),
-        resolved.percent_labels(),
-    ) {
+    let rows = match parse_rows_json(rows_json.as_deref(), &tasks) {
+        Ok(rows) => rows,
+        Err(err) => return err.to_json(),
+    };
+    let shape = resolved.shape();
+    if let Some(err) = bar_height_error(rows.as_deref(), &shape) {
+        return err.to_json();
+    }
+    if let Some(err) = canvas_graph_limit_error(&tasks, &deps, rows.as_deref(), &shape) {
         return err.to_json();
     }
     let options = match resolved.chart_options() {
         Ok(options) => options,
         Err(err) => return err.to_json(),
     };
-    let buffer = render_canvas(&tasks, &deps, &options);
+    let buffer = render_canvas_with_rows(&tasks, &deps, rows.as_deref(), &options);
     serde_json::to_string(&buffer).unwrap_or_else(|e| {
         RenderError::new(CODE_SERIALIZE_ERROR, format!("serialize error: {e}")).to_json()
     })
@@ -573,7 +755,10 @@ mod test_common;
 mod tests {
     use super::*;
     #[cfg(test)]
-    use crate::display_list::constants::{chart_width, ARROW_CURVE, ARROW_HEAD, LEGEND_H};
+    use crate::display_list::build_display_list;
+    use crate::display_list::constants::{
+        chart_height, chart_width, ARROW_CURVE, ARROW_HEAD, LEGEND_H,
+    };
     use crate::display_list::types::{ColorId, Palette};
     use crate::render::test_common;
     use chrono::NaiveDate;
@@ -725,6 +910,7 @@ mod tests {
             "not json",
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("parse error"));
@@ -734,7 +920,12 @@ mod tests {
     #[test]
     fn parse_error_comment_injection_does_not_break_markup() {
         let payload = r#"not json --><img onerror=alert(1)><!--"#;
-        let svg = render_svg(payload, "[]", test_common::options_json(None, None, None));
+        let svg = render_svg(
+            payload,
+            "[]",
+            test_common::options_json(None, None, None),
+            None,
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
         assert!(!svg.contains("<img"));
     }
@@ -765,6 +956,7 @@ mod tests {
             tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_ne!(
             svg,
@@ -789,6 +981,7 @@ mod tests {
             "not json",
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
@@ -802,6 +995,7 @@ mod tests {
             &oversized_tasks,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
@@ -809,6 +1003,7 @@ mod tests {
             &oversized_tasks,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
@@ -826,6 +1021,7 @@ mod tests {
             "[]",
             &oversized_deps,
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
 
@@ -833,6 +1029,7 @@ mod tests {
             "[]",
             &oversized_deps,
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
@@ -855,10 +1052,19 @@ mod tests {
         .to_string();
         assert!(tasks.len() > MAX_TASKS_JSON_BYTES);
 
-        let svg = render_svg(&tasks, "[]", test_common::options_json(None, None, None));
+        let svg = render_svg(
+            &tasks,
+            "[]",
+            test_common::options_json(None, None, None),
+            None,
+        );
         assert_eq!(svg, crate::backend::svg::empty_svg());
-        let json =
-            render_canvas_commands(&tasks, "[]", test_common::options_json(None, None, None));
+        let json = render_canvas_commands(
+            &tasks,
+            "[]",
+            test_common::options_json(None, None, None),
+            None,
+        );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"]
             .as_str()
@@ -881,6 +1087,7 @@ mod tests {
             &serde_json::to_string(&tasks).unwrap(),
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
@@ -904,6 +1111,7 @@ mod tests {
             &serde_json::to_string(&tasks).unwrap(),
             &serde_json::to_string(&deps).unwrap(),
             test_common::options_json(None, None, None),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(v.get("error").is_some());
@@ -985,6 +1193,7 @@ mod tests {
             &serde_json::to_string(tasks).unwrap(),
             "[]",
             legend_options(legend),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         value.get("error").is_none()
@@ -1102,9 +1311,11 @@ mod tests {
                     let verdict = canvas_graph_limit_error(
                         &tasks,
                         &[],
-                        legend,
-                        LabelMode::Shown,
-                        LabelMode::Shown,
+                        None,
+                        &ChartOptions {
+                            legend,
+                            ..Default::default()
+                        },
                     );
                     if verdict.is_none() {
                         accepted += 1;
@@ -1141,6 +1352,7 @@ mod tests {
             &serde_json::to_string(&accepted).unwrap(),
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
@@ -1151,6 +1363,7 @@ mod tests {
             &serde_json::to_string(&rejected).unwrap(),
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
@@ -1172,6 +1385,7 @@ mod tests {
             &accepted_tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let accepted_value: serde_json::Value = serde_json::from_str(&accepted_json).unwrap();
         assert!(accepted_value.get("error").is_none());
@@ -1183,6 +1397,7 @@ mod tests {
             &rejected_tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let rejected_value: serde_json::Value = serde_json::from_str(&rejected_json).unwrap();
         assert!(rejected_value["error"]
@@ -1194,6 +1409,7 @@ mod tests {
             &rejected_tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_ne!(svg, crate::backend::svg::empty_svg());
     }
@@ -1211,6 +1427,7 @@ mod tests {
             &serde_json::to_string(&tasks).unwrap(),
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["error"].as_str().unwrap().contains("canvas area"));
@@ -1242,6 +1459,7 @@ mod tests {
             &tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
@@ -1253,6 +1471,7 @@ mod tests {
             &tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
@@ -1270,6 +1489,7 @@ mod tests {
             &tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
@@ -1281,6 +1501,7 @@ mod tests {
             &tasks_json,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(
@@ -1293,7 +1514,12 @@ mod tests {
     fn svg_date_span_boundary_accepts_limit_and_rejects_one_more() {
         let start = date(2026, 1, 1);
         let at_limit = max_date_tasks_json(start, Some(start + Duration::days(MAX_DATE_SPAN_DAYS)));
-        let svg = render_svg(&at_limit, "[]", test_common::options_json(None, None, None));
+        let svg = render_svg(
+            &at_limit,
+            "[]",
+            test_common::options_json(None, None, None),
+            None,
+        );
         assert_ne!(svg, crate::backend::svg::empty_svg());
 
         let over_limit =
@@ -1302,6 +1528,7 @@ mod tests {
             &over_limit,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         assert_eq!(svg, crate::backend::svg::empty_svg());
     }
@@ -1317,6 +1544,7 @@ mod tests {
             &over_limit,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert!(value["error"]
@@ -1334,6 +1562,7 @@ mod tests {
             "not json",
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&parse).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("parse_error"), "got: {parse:.200}");
@@ -1343,6 +1572,7 @@ mod tests {
             &oversized,
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&raw_limit).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
@@ -1352,6 +1582,7 @@ mod tests {
             &serde_json::to_string(&too_many).unwrap(),
             "[]",
             test_common::options_json(None, None, None),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&capacity).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("canvas_capacity"));
@@ -1363,23 +1594,42 @@ mod tests {
         // on its own channel instead of being inferred from the markup.
         let refused = max_date_tasks_json(NaiveDate::MAX, None);
         assert_eq!(
-            render_svg(&refused, "[]", test_common::options_json(None, None, None)),
+            render_svg(
+                &refused,
+                "[]",
+                test_common::options_json(None, None, None),
+                None
+            ),
             crate::backend::svg::empty_svg()
         );
         assert_eq!(
-            render_svg("[]", "[]", test_common::options_json(None, None, None)),
+            render_svg(
+                "[]",
+                "[]",
+                test_common::options_json(None, None, None),
+                None
+            ),
             crate::backend::svg::empty_svg()
         );
 
         assert_eq!(
-            render_svg_error("[]", "[]", test_common::options_json(None, None, None)),
+            render_svg_error(
+                "[]",
+                "[]",
+                test_common::options_json(None, None, None),
+                None
+            ),
             None,
             "nothing to draw is not an error"
         );
 
-        let reported =
-            render_svg_error(&refused, "[]", test_common::options_json(None, None, None))
-                .expect("refusal is reported");
+        let reported = render_svg_error(
+            &refused,
+            "[]",
+            test_common::options_json(None, None, None),
+            None,
+        )
+        .expect("refusal is reported");
         let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
         assert_eq!(v["code"].as_str(), Some("input_limit"));
         assert!(
@@ -1403,7 +1653,8 @@ mod tests {
             render_svg(
                 &tasks_json,
                 "[]",
-                test_common::options_json(None, None, None)
+                test_common::options_json(None, None, None),
+                None
             ),
             crate::backend::svg::empty_svg()
         );

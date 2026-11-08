@@ -59,6 +59,7 @@ fn bench_render_svg_native(c: &mut Criterion) {
                             black_box(tj.as_str()),
                             black_box(dj.as_str()),
                             Some(format!(r#"{{"today":"{}"}}"#, black_box(&td))),
+                            None,
                         ))
                     });
                 },
