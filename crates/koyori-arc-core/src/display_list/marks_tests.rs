@@ -203,7 +203,7 @@ fn a_point_is_a_dot_on_the_last_day_with_a_line_to_its_diamond() {
 }
 
 #[test]
-fn a_note_sits_past_the_bar_and_the_diamond_and_holds_the_width() {
+fn a_note_that_would_run_over_the_diamond_moves_right_of_it_and_holds_the_width() {
     let note = "目安 11/14 が厳守 11/12 を越えた";
     let list = build(vec![TaskRow {
         state: Some(BarState::Warn),
@@ -227,4 +227,69 @@ fn a_note_sits_past_the_bar_and_the_diamond_and_holds_the_width() {
         .map(|(_, r)| r)
         .fold(0.0, f64::max);
     assert!(widest <= list.viewport.width);
+}
+
+fn note_x_of(list: &DisplayList, id: &str) -> f64 {
+    children_of(list, id)
+        .iter()
+        .find_map(|p| match p {
+            Primitive::Text(t) if t.semantic == TextSemantic::BarNote => Some(t.x),
+            _ => None,
+        })
+        .expect("添えの字")
+}
+
+#[test]
+fn a_note_sits_right_of_its_bar_when_the_diamond_is_far_past_it() {
+    // c は 9〜10 日。菱形は 20 日で、短い字の右の端より遠い
+    let list = build(vec![TaskRow {
+        hard_deadline: Some(day(20)),
+        note: Some("目安を過ぎた".to_string()),
+        ..row("c")
+    }]);
+    assert_eq!(
+        note_x_of(&list, "c"),
+        LABEL_W + 10.0 * PX_PER_DAY + NOTE_GAP_PX
+    );
+}
+
+#[test]
+fn a_note_sits_right_of_its_bar_when_the_diamond_is_on_the_bar() {
+    // b は 3〜9 日。菱形は棒の内の 5 日
+    let list = build(vec![TaskRow {
+        hard_deadline: Some(day(5)),
+        note: Some("目安を過ぎた".to_string()),
+        ..row("b")
+    }]);
+    assert_eq!(
+        note_x_of(&list, "b"),
+        LABEL_W + 9.0 * PX_PER_DAY + NOTE_GAP_PX
+    );
+}
+
+#[test]
+fn a_note_without_a_diamond_sits_right_of_its_bar() {
+    let list = build(vec![TaskRow {
+        note: Some("目安を過ぎた".to_string()),
+        ..row("b")
+    }]);
+    assert_eq!(
+        note_x_of(&list, "b"),
+        LABEL_W + 9.0 * PX_PER_DAY + NOTE_GAP_PX
+    );
+}
+
+#[test]
+fn a_note_of_a_dot_moves_past_the_line_to_its_diamond() {
+    // a は点で 3 日目に描き、8 日目の菱形へ線で結ぶ。字は線と菱形を越えた右
+    let list = build(vec![TaskRow {
+        shape: BarShape::Point,
+        hard_deadline: Some(day(8)),
+        note: Some("目安を過ぎた".to_string()),
+        ..row("a")
+    }]);
+    assert_eq!(
+        note_x_of(&list, "a"),
+        LABEL_W + 8.0 * PX_PER_DAY + PX_PER_DAY / 2.0 + HARD_DEADLINE_HALF_PX + NOTE_GAP_PX
+    );
 }

@@ -1050,7 +1050,8 @@ struct MarkGeometry {
     point_cx: Option<f64>,
     /// The centre of the hard deadline's diamond: the middle of its day.
     diamond_cx: Option<f64>,
-    /// Where the note starts: past the bar (or dot) and the diamond.
+    /// Where the note starts: right of the bar (or dot), or right of the
+    /// diamond when the note would run over it.
     note_x: f64,
 }
 
@@ -1086,12 +1087,39 @@ impl MarkGeometry {
             Some(days) => bar_right.min(axis.x(days as f64)),
             None => bar_right,
         };
-        let diamond_right = diamond_cx.map_or(f64::MIN, |c| c + HARD_DEADLINE_HALF_PX);
         Self {
             point_cx,
             diamond_cx,
-            note_x: bar_right.max(diamond_right) + NOTE_GAP_PX,
+            note_x: note_x_beside(bar_right, row.note.as_deref(), diamond_cx, point_cx),
         }
+    }
+}
+
+/// Where a note starts. A note speaks of its bar, so it sits right of the bar
+/// (`bar_right`); only when it would run over the hard deadline's diamond does
+/// it move right of the diamond. For a dot, the line from the dot to a later
+/// diamond is in the way as the diamond is.
+fn note_x_beside(
+    bar_right: f64,
+    note: Option<&str>,
+    diamond_cx: Option<f64>,
+    point_cx: Option<f64>,
+) -> f64 {
+    let x = bar_right + NOTE_GAP_PX;
+    let Some(c) = diamond_cx else {
+        return x;
+    };
+    let half = HARD_DEADLINE_HALF_PX;
+    let left = match point_cx {
+        Some(px) if c > px => px,
+        _ => c - half,
+    };
+    let right = c + half;
+    let width = note.map_or(0.0, |n| text_width_weighted_px(n, GRID_LABEL_FONT_PX, None));
+    if x < right && x + width > left {
+        right + NOTE_GAP_PX
+    } else {
+        x
     }
 }
 
