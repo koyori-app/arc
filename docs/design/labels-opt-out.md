@@ -46,7 +46,8 @@ task のガントは、左に自分の一覧（キー、題、担当、厳守の
 
 - 図を組む時の題の列の幅 `label_w` を、`Shown` なら `LABEL_W`、`Hidden` なら `HIDDEN_LABELS_LEFT_PX`（`BAR_H / 2`、10）とし、`LABEL_W` を足していた全ての x を `label_w` に替える。
   見出しの帯、目盛りの線と字、棒、マイルストーン、依存の矢印、今日の線、進捗の線、凡例が 110 左へ寄る。
-- `Hidden` で 0 にしないのは、最初の日のマイルストーンの菱形が x = `label_w` を中心に左へ `BAR_H / 2` 伸びるため。0 では菱形の左半分が図の外へ切れる（arc PR #58 の review）。
+- `Hidden` で 0 にしないのは、最初の日のマイルストーンの菱形が x = `label_w` を中心に左へ棒の高さの半分だけ伸びるため。0 では菱形の左半分が図の外へ切れる（arc PR #58 の review）。
+- 棒の高さを `bar_height_px` で替えた図（docs/design/external-rows.md）では、余白も菱形の左の端も、その高さの半分で求める。
 - 幅は `chart_width_with_label(days, label_w)`（日数 × 30 + `label_w` + 右の余白）と、凡例の右端、札の右端の大きいほう。どの項も `label_w` を足すので、幅もちょうど 110 詰まる。
 - `Viewport::label_width` は `HIDDEN_LABELS_LEFT_PX` になる。
 - 今日の線は、x が `label_w` 以上で図の幅以内の時だけ描く（今までの `LABEL_W` 以上と同じ決まり）。

@@ -301,3 +301,32 @@ fn hidden_percent_labels_draw_no_percent_and_hold_no_width() {
     let hidden = list(3, LegendMode::Hidden, LabelMode::Hidden, LabelMode::Hidden);
     assert!(hidden.viewport.width < shown.viewport.width);
 }
+
+#[test]
+fn a_taller_bar_takes_a_wider_left_margin_so_its_first_day_milestone_stays_whole() {
+    let graph = GanttGraph {
+        tasks: vec![GanttTask {
+            id: "first".to_string(),
+            title: "first".to_string(),
+            progress_pct: 0,
+            start: epoch(),
+            end: Some(epoch()),
+        }],
+        deps: vec![],
+    };
+    let list = build_display_list(
+        &graph,
+        epoch(),
+        &ChartOptions {
+            row_labels: LabelMode::Hidden,
+            bar_height: Some(30.0),
+            ..Default::default()
+        },
+    );
+    // 棒の高さ 30 の菱形は中心から 15 左へ伸びる
+    assert_eq!(list.viewport.label_width, 15.0);
+    let (left, _) = diamond_span(&list, "first");
+    assert_eq!(left, 0.0);
+    let hit = &list.metadata.task_bboxes[0];
+    assert_eq!(hit.bbox.x, 0.0);
+}

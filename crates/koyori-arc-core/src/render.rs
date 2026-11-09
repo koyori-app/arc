@@ -5,7 +5,7 @@ use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::build::{build_display_list_with_rows, chart_height_of, chart_width_for};
-use crate::display_list::constants::{CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H};
+use crate::display_list::constants::{BAR_H, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H};
 use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
@@ -198,7 +198,8 @@ fn canvas_graph_limit_error(
     // The days are checked first, so a chart of a plausible length reaches the
     // exact width. A label can run past the days, so the days alone under-count.
     let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
-    let width_px = chart_width_for(tasks, epoch, legend, row_labels, percent_labels);
+    let bar_h = shape.bar_height.unwrap_or(BAR_H);
+    let width_px = chart_width_for(tasks, epoch, legend, row_labels, percent_labels, bar_h);
     if width_px > MAX_CANVAS_SIDE_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
