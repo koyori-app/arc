@@ -21,4 +21,5 @@ export type {
   LegendMode,
   PaletteOverrides,
   Scale,
+  ViewRange,
 } from './options';

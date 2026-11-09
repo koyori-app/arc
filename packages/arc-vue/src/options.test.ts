@@ -122,4 +122,14 @@ describe('buildOptionsJson', () => {
       buildOptionsJson({ pxPerDay: null, scale: undefined, weekendDays: null, weekdayLabels: null }),
     ).toBeUndefined();
   });
+  it('writes the view only when it was given, and only its two days', () => {
+    const view = { from: '2026-11-09', to: '2026-11-15', label: 'x' } as {
+      from: string;
+      to: string;
+    };
+    expect(JSON.parse(buildOptionsJson({ view })!)).toEqual({
+      view: { from: '2026-11-09', to: '2026-11-15' },
+    });
+    expect(buildOptionsJson({ view: null })).toBeUndefined();
+  });
 });

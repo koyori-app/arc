@@ -331,6 +331,18 @@ export const BarMarksCanvas: Story = {
   render: PaletteFromTokens.render,
 };
 
+// A view of a week: the bars that run on past it are cut at its edges and
+// marked with the day they run on to.
+export const ViewRange: Story = {
+  args: { ...BarMarks.args, view: { from: '2026-06-03', to: '2026-06-09' } },
+  render: PaletteFromTokens.render,
+};
+
+export const ViewRangeCanvas: Story = {
+  args: { ...ViewRange.args, backend: 'canvas' },
+  render: PaletteFromTokens.render,
+};
+
 export const MonthScale: Story = {
   args: { ...vrtArgs, tasks, deps, today: '2026-06-06', scale: 'month', pxPerDay: 8 },
   render: Default.render,
