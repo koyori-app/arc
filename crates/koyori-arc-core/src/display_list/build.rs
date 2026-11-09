@@ -249,7 +249,7 @@ pub fn build_display_list_with_rows(
                         children.push(hard_deadline_prim(dx, cy, tier));
                     }
                     if let (Placement::Before(_), Some(note)) = (&placement, &m.note) {
-                        let x = outside_note_x(&mark, &g);
+                        let x = outside_note_x(&mark, &g, note);
                         children.push(Primitive::Text(note_prim(x, cy, note, m.state)));
                     }
                 }
@@ -1019,12 +1019,13 @@ fn outside_mark(
     mark
 }
 
-/// Where the note of a task before the view starts: past its mark and past
-/// its diamond.
-fn outside_note_x(mark: &TextPrim, g: &MarkGeometry) -> f64 {
+/// Where the note of a task before the view starts. The mark stands for the
+/// bar the view does not show, so the note sits right of the mark, as a note
+/// sits right of its bar, and moves right of the diamond only when it would run
+/// over it.
+fn outside_note_x(mark: &TextPrim, g: &MarkGeometry, note: &str) -> f64 {
     let mark_right = text_right_edge(mark.x, mark.anchor, &mark.content, GRID_LABEL_FONT_PX, None);
-    let diamond_right = g.diamond_cx.map_or(f64::MIN, |c| c + HARD_DEADLINE_HALF_PX);
-    mark_right.max(diamond_right) + NOTE_GAP_PX
+    note_x_beside(mark_right, Some(note), g.diamond_cx, None)
 }
 
 /// The diamond of a hard deadline centred on `dx`.
@@ -1127,7 +1128,8 @@ struct MarkGeometry {
     point_cx: Option<f64>,
     /// The centre of the hard deadline's diamond: the middle of its day.
     diamond_cx: Option<f64>,
-    /// Where the note starts: past the bar (or dot) and the diamond.
+    /// Where the note starts: right of the bar (or dot), or right of the
+    /// diamond when the note would run over it.
     note_x: f64,
 }
 
@@ -1163,12 +1165,39 @@ impl MarkGeometry {
             Some(days) => bar_right.min(axis.x(days as f64)),
             None => bar_right,
         };
-        let diamond_right = diamond_cx.map_or(f64::MIN, |c| c + HARD_DEADLINE_HALF_PX);
         Self {
             point_cx,
             diamond_cx,
-            note_x: bar_right.max(diamond_right) + NOTE_GAP_PX,
+            note_x: note_x_beside(bar_right, row.note.as_deref(), diamond_cx, point_cx),
         }
+    }
+}
+
+/// Where a note starts. A note speaks of its bar, so it sits right of the bar
+/// (`bar_right`); only when it would run over the hard deadline's diamond does
+/// it move right of the diamond. For a dot, the line from the dot to a later
+/// diamond is in the way as the diamond is.
+fn note_x_beside(
+    bar_right: f64,
+    note: Option<&str>,
+    diamond_cx: Option<f64>,
+    point_cx: Option<f64>,
+) -> f64 {
+    let x = bar_right + NOTE_GAP_PX;
+    let Some(c) = diamond_cx else {
+        return x;
+    };
+    let half = HARD_DEADLINE_HALF_PX;
+    let left = match point_cx {
+        Some(px) if c > px => px,
+        _ => c - half,
+    };
+    let right = c + half;
+    let width = note.map_or(0.0, |n| text_width_weighted_px(n, GRID_LABEL_FONT_PX, None));
+    if x < right && x + width > left {
+        right + NOTE_GAP_PX
+    } else {
+        x
     }
 }
 
@@ -1202,7 +1231,7 @@ fn marks_right_edge(
                 Placement::Shown(_) => Some(g.note_x),
                 placement @ Placement::Before(day) => view_days.map(|days| {
                     let mark = outside_mark(&placement, day, axis, days, 0.0, Some(row));
-                    outside_note_x(&mark, &g)
+                    outside_note_x(&mark, &g, row.note.as_deref().unwrap_or(""))
                 }),
                 Placement::After(_) => None,
             };

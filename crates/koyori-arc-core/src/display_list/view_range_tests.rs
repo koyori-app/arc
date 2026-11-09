@@ -401,3 +401,22 @@ fn a_group_band_stops_at_the_view_s_last_day() {
     // 図の右の余白（字の延びる場所）は帯の外
     assert!(list.viewport.width > days_right());
 }
+
+#[test]
+fn a_note_before_the_view_sits_right_of_its_mark_when_the_diamond_is_far() {
+    // 範囲の最後の日（11/15）の菱形は、印の右の短い字より遠い
+    let rows = vec![GanttRow::Task(TaskRow {
+        state: Some(BarState::Warn),
+        hard_deadline: Some(d(11, 15)),
+        note: Some("過ぎた".to_string()),
+        ..TaskRow::new("earlier")
+    })];
+    let list =
+        build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
+    let c = children_of(&list, "earlier");
+    let mark = &texts(c, TextSemantic::Overflow)[0];
+    let note = &texts(c, TextSemantic::BarNote)[0];
+    let diamond_left = LABEL_W + 6.5 * PX_PER_DAY - HARD_DEADLINE_HALF_PX;
+    assert!(note.x > mark.x, "字は印の右");
+    assert!(note.x < diamond_left, "字は菱形の左（菱形の右へ逃がさぬ）");
+}
