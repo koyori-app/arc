@@ -379,3 +379,25 @@ fn a_long_note_before_the_view_widens_the_chart_to_hold_it() {
         .fold(0.0, f64::max);
     assert!(widest <= list.viewport.width);
 }
+
+#[test]
+fn a_group_band_stops_at_the_view_s_last_day() {
+    let rows = vec![
+        GanttRow::Group { height: None },
+        GanttRow::Task(TaskRow::new("inside")),
+    ];
+    let list =
+        build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
+    let band = list
+        .layers
+        .iter()
+        .flat_map(|l| &l.primitives)
+        .find_map(|p| match p {
+            Primitive::Rect(r) if r.semantic == RectSemantic::GroupRow => Some(r.clone()),
+            _ => None,
+        })
+        .expect("群れの帯");
+    assert_eq!(band.x + band.width, days_right());
+    // 図の右の余白（字の延びる場所）は帯の外
+    assert!(list.viewport.width > days_right());
+}
