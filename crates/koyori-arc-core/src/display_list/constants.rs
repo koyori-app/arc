@@ -7,6 +7,11 @@ use super::types::LegendMode;
 
 pub const ROW_H: f64 = 40.0;
 pub const BAR_H: f64 = 20.0;
+/// The left margin of a chart without its title column, for the default bar:
+/// half a bar, so a milestone on the first day draws the left half of its
+/// diamond inside the chart. `label_width` takes half of the bar it is given.
+#[cfg(test)]
+pub const HIDDEN_LABELS_LEFT_PX: f64 = BAR_H / 2.0;
 pub const PX_PER_DAY: f64 = 30.0;
 pub const LABEL_W: f64 = 120.0;
 pub const HEADER_H: f64 = 30.0;

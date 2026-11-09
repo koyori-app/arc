@@ -1,7 +1,8 @@
 /**
  * The mocked tests pin what arc-vue sends; this one runs the real Wasm to check
  * what comes back. Hidden row labels must narrow the SVG and the canvas by the
- * title column `RUST_LAYOUT.LABEL_W`, and leave the titles out; hidden percent
+ * title column `RUST_LAYOUT.LABEL_W` less the left margin a milestone on the
+ * first day needs (`RUST_LAYOUT.BAR_H / 2`), and leave the titles out; hidden percent
  * labels must leave the `NN%` out.
  *
  * Needs `scripts/build-npm.sh` to have produced `crates/koyori-arc-core/pkg`,
@@ -45,7 +46,7 @@ describe('hidden labels, drawn by the real Wasm', () => {
       expect(gone).not.toContain(`>${t.title}</text>`);
     }
     expect(gone).toContain('>40%</text>');
-    expect(svgWidth(shown) - svgWidth(gone)).toBe(RUST_LAYOUT.LABEL_W);
+    expect(svgWidth(shown) - svgWidth(gone)).toBe(RUST_LAYOUT.LABEL_W - RUST_LAYOUT.BAR_H / 2);
   });
 
   it('narrows the canvas by the same width', () => {
@@ -53,7 +54,7 @@ describe('hidden labels, drawn by the real Wasm', () => {
     const gone = parseCommandBuffer(
       render_canvas_commands(tasksJson, '[]', buildOptionsJson({ rowLabels: 'hidden' })),
     );
-    expect(shown.viewport_width - gone.viewport_width).toBe(RUST_LAYOUT.LABEL_W);
+    expect(shown.viewport_width - gone.viewport_width).toBe(RUST_LAYOUT.LABEL_W - RUST_LAYOUT.BAR_H / 2);
     expect(gone.viewport_height).toBe(shown.viewport_height);
   });
 

@@ -74,14 +74,21 @@ pub fn build_display_list_with_rows(
     let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
     let header_h = plan.header_h;
     let bar_h = plan.bar_h;
-    let label_w = label_width(row_labels);
+    let label_w = label_width(row_labels, bar_h);
 
     let total_days = total_days_of(&graph.tasks, epoch);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode, row_labels, percent_labels);
+    let chart_w = chart_width_for(
+        &graph.tasks,
+        epoch,
+        legend_mode,
+        row_labels,
+        percent_labels,
+        bar_h,
+    );
     let chart_h = chart_height_of(&plan, legend_mode);
 
     let viewport = Viewport {
@@ -277,8 +284,16 @@ pub fn build_display_list_with_rows(
             }
         }
 
-        // Without the title column the row has nothing left of the bar to hit,
-        // so the hit area is the bar's own.
+        // The left of what the row draws: a milestone's diamond reaches half a
+        // bar left of its day.
+        let shape_left = if is_zero_duration(task) {
+            x - bar_h / 2.0
+        } else {
+            x
+        };
+        // Without the title column the row has nothing left of the shape to
+        // hit, so the hit area starts where the shape does. With it, the area
+        // starts left of the title, which is left of any shape.
         let hit_left = match row_labels {
             LabelMode::Shown => {
                 let display_title =
@@ -295,9 +310,9 @@ pub fn build_display_list_with_rows(
                     baseline: TextBaseline::Middle,
                     semantic: TextSemantic::RowLabel,
                 }));
-                label_x - LABEL_HIT_W
+                (label_x - LABEL_HIT_W).min(shape_left)
             }
-            LabelMode::Hidden => x,
+            LabelMode::Hidden => shape_left,
         };
 
         let bar_bbox = BBox {
@@ -553,8 +568,9 @@ pub(crate) fn chart_width_for(
     legend_mode: LegendMode,
     row_labels: LabelMode,
     percent_labels: LabelMode,
+    bar_h: f64,
 ) -> f64 {
-    let label_w = label_width(row_labels);
+    let label_w = label_width(row_labels, bar_h);
     let total_days = total_days_of(tasks, epoch);
     let days_w = chart_width_with_label(total_days as f64, label_w);
     let legend_edge = match legend_mode {
@@ -572,12 +588,14 @@ pub(crate) fn chart_width_for(
     ))
 }
 
-/// How wide the title column is: `LABEL_W` with the row labels shown, nothing
-/// with them hidden. Every x the chart draws starts from this.
-pub(crate) fn label_width(row_labels: LabelMode) -> f64 {
+/// How wide the title column is: `LABEL_W` with the row labels shown, and with
+/// them hidden only the room a milestone on the first day needs for the left
+/// half of its diamond: half the bar's height (`HIDDEN_LABELS_LEFT_PX` for the
+/// default bar). Every x the chart draws starts from this.
+pub(crate) fn label_width(row_labels: LabelMode, bar_h: f64) -> f64 {
     match row_labels {
         LabelMode::Shown => LABEL_W,
-        LabelMode::Hidden => 0.0,
+        LabelMode::Hidden => bar_h / 2.0,
     }
 }
 
