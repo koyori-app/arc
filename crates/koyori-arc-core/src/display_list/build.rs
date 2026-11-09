@@ -118,6 +118,13 @@ pub fn build_display_list_with_rows(
     });
 
     // Group rows: a band across the days. Only a caller's row list has them.
+    // In a view the band stops at the view's last day, as the weekend bands
+    // do; past it is only the room a mark or a note runs into.
+    let band_right = if view_days.is_some() {
+        days_right
+    } else {
+        chart_w
+    };
     let group_bands: Vec<Primitive> = plan
         .slots
         .iter()
@@ -127,7 +134,7 @@ pub fn build_display_list_with_rows(
             Primitive::Rect(RectPrim {
                 x: label_w,
                 y: s.y_top,
-                width: chart_w - label_w,
+                width: band_right - label_w,
                 height: s.height,
                 fill: ColorId::GroupRow,
                 rx: None,
