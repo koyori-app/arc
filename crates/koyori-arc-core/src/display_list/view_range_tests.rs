@@ -297,3 +297,19 @@ fn a_bar_ending_on_the_view_s_last_day_is_not_cut() {
     assert_eq!(texts(c, TextSemantic::ProgressPercent).len(), 1);
     assert_eq!(bar(c).unwrap().x + bar(c).unwrap().width, days_right());
 }
+
+#[test]
+fn a_bar_ending_the_day_after_the_view_s_last_day_is_cut_and_marked() {
+    // 最後の日は 11/16、範囲の最後の日（11/15）の翌日
+    let g = GanttGraph {
+        tasks: vec![task("over", d(11, 12), d(11, 17), 30)],
+        deps: vec![],
+    };
+    let list = build(&g, Some(view()));
+    let c = children_of(&list, "over");
+    let marks = texts(c, TextSemantic::Overflow);
+    let contents: Vec<&str> = marks.iter().map(|t| t.content.as_str()).collect();
+    assert_eq!(contents, ["→ 11/16"]);
+    assert!(texts(c, TextSemantic::ProgressPercent).is_empty());
+    assert_eq!(bar(c).unwrap().x + bar(c).unwrap().width, days_right());
+}
