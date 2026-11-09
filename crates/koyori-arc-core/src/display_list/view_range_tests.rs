@@ -81,6 +81,19 @@ fn texts(children: &[Primitive], semantic: TextSemantic) -> Vec<TextPrim> {
         .collect()
 }
 
+/// 添えの字の層の字（範囲の内の棒の字は、行の束でなく今日の線の上の層に入る）。
+fn notes_of(list: &DisplayList) -> Vec<TextPrim> {
+    list.layers
+        .iter()
+        .filter(|l| l.kind == LayerKind::Notes)
+        .flat_map(|l| &l.primitives)
+        .filter_map(|p| match p {
+            Primitive::Text(t) if t.semantic == TextSemantic::BarNote => Some(t.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn bar(children: &[Primitive]) -> Option<RectPrim> {
     children.iter().find_map(|p| match p {
         Primitive::Rect(r) if r.semantic == RectSemantic::BarBackground => Some(r.clone()),
@@ -252,7 +265,7 @@ fn a_deadline_outside_the_view_draws_no_diamond_and_a_note_follows_the_cut_bar()
         p,
         Primitive::Polygon(p) if p.semantic == PolygonSemantic::HardDeadline
     )));
-    let note = &texts(c, TextSemantic::BarNote)[0];
+    let note = &notes_of(&list)[0];
     assert_eq!(note.x, days_right() + NOTE_GAP_PX);
     // 字の右端まで図が広がる
     let widest = right_edges(&list)

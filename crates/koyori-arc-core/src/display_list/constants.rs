@@ -19,6 +19,8 @@ pub const HARD_DEADLINE_HALF_PX: f64 = 5.0;
 pub const NOTE_GAP_PX: f64 = 6.0;
 /// How far inside the view's edge the mark of a task running past it sits.
 pub const OVERFLOW_INSET_PX: f64 = 4.0;
+/// How far the band under a note reaches past the note's text, each side.
+pub const NOTE_BAND_PAD_PX: f64 = 2.0;
 /// The weekday labels of the `Day` scale when the caller gives none.
 pub const DEFAULT_WEEKDAY_LABELS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 pub const LABEL_W: f64 = 120.0;

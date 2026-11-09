@@ -45,6 +45,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 RectSemantic::BarBackground => Some("bar-bg"),
                 RectSemantic::GroupRow => Some("group-row"),
                 RectSemantic::Weekend => Some("weekend"),
+                RectSemantic::NoteBackground => Some("note-bg"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(

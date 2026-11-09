@@ -218,6 +218,7 @@ pub fn build_display_list_with_rows(
 
     // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
+    let mut note_prims = Vec::new();
     // In the order the tasks came in, as before row lists existed, so the
     // output of a chart without one keeps its order.
     for (task_index, task) in graph.tasks.iter().enumerate() {
@@ -430,7 +431,10 @@ pub fn build_display_list_with_rows(
                 children.push(hard_deadline_prim(dx, cy, tier));
             }
             if let Some(note) = &m.note {
-                children.push(Primitive::Text(note_prim(g.note_x, cy, note, m.state)));
+                // The note goes on its own layer over the today line, with a
+                // band of the ground's colour under it; where it sits is the
+                // same as before.
+                note_prims.extend(note_with_band(g.note_x, cy, note, m.state));
             }
         }
 
@@ -624,6 +628,15 @@ pub fn build_display_list_with_rows(
                 stroke_dash: Some("4,3".to_string()),
                 semantic: LineSemantic::TodayMarker,
             })],
+        });
+    }
+
+    // Notes over the today line and the grid. No note, no layer: a chart
+    // without notes is the chart drawn before them.
+    if !note_prims.is_empty() {
+        layers.push(Layer {
+            kind: LayerKind::Notes,
+            primitives: note_prims,
         });
     }
 
@@ -1122,6 +1135,38 @@ fn note_x_beside(
     } else {
         x
     }
+}
+
+/// A row's note at `x` and the band under it. The band takes the note's width
+/// from the same estimate the chart's width does, so it adds no width.
+fn note_with_band(x: f64, cy: f64, note: &str, state: Option<BarState>) -> [Primitive; 2] {
+    let width = text_width_weighted_px(note, GRID_LABEL_FONT_PX, None);
+    let height = GRID_LABEL_FONT_PX + 2.0 * NOTE_BAND_PAD_PX;
+    [
+        Primitive::Rect(RectPrim {
+            x: x - NOTE_BAND_PAD_PX,
+            y: cy - height / 2.0,
+            width: width + 2.0 * NOTE_BAND_PAD_PX,
+            height,
+            fill: ColorId::NoteBg,
+            rx: Some(NOTE_BAND_PAD_PX),
+            semantic: RectSemantic::NoteBackground,
+        }),
+        Primitive::Text(TextPrim {
+            x,
+            y: cy,
+            content: note.to_string(),
+            fill: Some(match state {
+                Some(BarState::Warn) => ColorId::WarnStroke,
+                _ => ColorId::Note,
+            }),
+            font_size: Some(GRID_LABEL_FONT_PX),
+            font_weight: None,
+            anchor: None,
+            baseline: TextBaseline::Middle,
+            semantic: TextSemantic::BarNote,
+        }),
+    ]
 }
 
 /// The furthest right a task row's diamond or note reaches, with the right
