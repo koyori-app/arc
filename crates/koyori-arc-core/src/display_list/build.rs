@@ -251,7 +251,7 @@ pub fn build_display_list_with_rows(
                     }
                     if let (Placement::Before(_), Some(note)) = (&placement, &m.note) {
                         let x = outside_note_x(&mark, &g, note);
-                        children.push(Primitive::Text(note_prim(x, cy, note, m.state)));
+                        note_prims.extend(note_with_band(x, cy, note, m.state));
                     }
                 }
                 children.insert(0, Primitive::Text(mark));
@@ -980,24 +980,6 @@ fn hard_deadline_prim(dx: f64, cy: f64, tier: ProgressTier) -> Primitive {
         tier,
         semantic: PolygonSemantic::HardDeadline,
     })
-}
-
-/// A row's note at `x`, in the warn colour when its row is in the warn state.
-fn note_prim(x: f64, cy: f64, note: &str, state: Option<BarState>) -> TextPrim {
-    TextPrim {
-        x,
-        y: cy,
-        content: note.to_string(),
-        fill: Some(match state {
-            Some(BarState::Warn) => ColorId::WarnStroke,
-            _ => ColorId::Note,
-        }),
-        font_size: Some(GRID_LABEL_FONT_PX),
-        font_weight: None,
-        anchor: None,
-        baseline: TextBaseline::Middle,
-        semantic: TextSemantic::BarNote,
-    }
 }
 
 /// The hit area of a task drawn as its mark alone.

@@ -351,7 +351,7 @@ fn a_task_before_the_view_keeps_its_diamond_and_its_note_past_the_mark() {
         .expect("範囲の内の厳守の菱形");
     // 11/12 は範囲の 4 日目
     assert_eq!(diamond.points[0].0, LABEL_W + 3.5 * PX_PER_DAY);
-    let note = &texts(c, TextSemantic::BarNote)[0];
+    let note = &notes_of(&list)[0];
     assert_eq!(note.fill, Some(ColorId::WarnStroke));
     // 字は印と菱形の右
     assert_eq!(
@@ -373,7 +373,7 @@ fn a_task_after_the_view_draws_no_note() {
     })];
     let list =
         build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
-    assert!(texts(children_of(&list, "later"), TextSemantic::BarNote).is_empty());
+    assert!(notes_of(&list).is_empty());
 }
 
 #[test]
@@ -428,8 +428,28 @@ fn a_note_before_the_view_sits_right_of_its_mark_when_the_diamond_is_far() {
         build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
     let c = children_of(&list, "earlier");
     let mark = &texts(c, TextSemantic::Overflow)[0];
-    let note = &texts(c, TextSemantic::BarNote)[0];
+    let note = &notes_of(&list)[0];
     let diamond_left = LABEL_W + 6.5 * PX_PER_DAY - HARD_DEADLINE_HALF_PX;
     assert!(note.x > mark.x, "字は印の右");
     assert!(note.x < diamond_left, "字は菱形の左（菱形の右へ逃がさぬ）");
+}
+
+#[test]
+fn the_note_of_a_task_before_the_view_has_its_band_over_the_today_line() {
+    let rows = vec![GanttRow::Task(TaskRow {
+        state: Some(BarState::Warn),
+        note: Some("目安 11/3 を過ぎた".to_string()),
+        ..TaskRow::new("earlier")
+    })];
+    let opts = ChartOptions {
+        today: Some(d(11, 10)),
+        ..options(Some(view()))
+    };
+    let list = build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &opts);
+    let at = |kind: LayerKind| list.layers.iter().position(|l| l.kind == kind).unwrap();
+    assert!(at(LayerKind::TodayMarker) < at(LayerKind::Notes));
+    let layer = &list.layers[at(LayerKind::Notes)].primitives;
+    assert!(matches!(&layer[0], Primitive::Rect(r) if r.semantic == RectSemantic::NoteBackground));
+    // 範囲の前の課題の束には、印だけが残る
+    assert!(texts(children_of(&list, "earlier"), TextSemantic::BarNote).is_empty());
 }
