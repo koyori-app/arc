@@ -41,6 +41,9 @@ pub enum ColorId {
     HardDeadline,
     /// The note right of a bar.
     Note,
+    /// The band under a note, so the today line and the grid do not run
+    /// through it: the colour of the chart's ground.
+    NoteBg,
 }
 
 impl ColorId {
@@ -55,6 +58,7 @@ impl ColorId {
             ColorId::DoneBg | ColorId::WarnBg => Some(ColorId::BarBg),
             ColorId::WarnStroke | ColorId::HardDeadline => Some(ColorId::Progress),
             ColorId::Note => Some(ColorId::GridLabel),
+            ColorId::NoteBg => Some(ColorId::HeaderBg),
             _ => None,
         }
     }
@@ -297,6 +301,9 @@ pub enum LayerKind {
     TodayMarker,
     Legend,
     OverlayHints,
+    /// The notes of task rows with their bands, over the today line and the
+    /// grid. Only a chart with a note has this layer.
+    Notes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -332,6 +339,8 @@ pub enum RectSemantic {
     GroupRow,
     /// The band of a weekend day.
     Weekend,
+    /// The band under a note.
+    NoteBackground,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
