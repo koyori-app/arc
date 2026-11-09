@@ -47,7 +47,7 @@ describe('the day scale, drawn by the real Wasm', () => {
   it('draws the canvas as wide as the days at the width given', () => {
     const buffer = parseCommandBuffer(render_canvas_commands(tasksJson, '[]', options));
     expect(buffer.error).toBeUndefined();
-    // 14 日 × 48px と右の余白 20px
-    expect(buffer.viewport_width).toBe(14 * 48 + 20);
+    // 題の列を消した左の余白（棒の高さの半分の 10px）、14 日 × 48px、右の余白 20px
+    expect(buffer.viewport_width).toBe(10 + 14 * 48 + 20);
   });
 });

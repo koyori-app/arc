@@ -434,8 +434,16 @@ pub fn build_display_list_with_rows(
             }
         }
 
-        // Without the title column the row has nothing left of the bar to hit,
-        // so the hit area is the bar's own.
+        // The left of what the row draws: a milestone's diamond reaches half a
+        // bar left of its day.
+        let shape_left = if is_zero_duration(task) {
+            x - bar_h / 2.0
+        } else {
+            x
+        };
+        // Without the title column the row has nothing left of the shape to
+        // hit, so the hit area starts where the shape does. With it, the area
+        // starts left of the title, which is left of any shape.
         let hit_left = match options.row_labels {
             LabelMode::Shown => {
                 let display_title =
@@ -452,9 +460,9 @@ pub fn build_display_list_with_rows(
                     baseline: TextBaseline::Middle,
                     semantic: TextSemantic::RowLabel,
                 }));
-                label_x - LABEL_HIT_W
+                (label_x - LABEL_HIT_W).min(shape_left)
             }
-            LabelMode::Hidden => x,
+            LabelMode::Hidden => shape_left,
         };
 
         let bar_bbox = BBox {
@@ -1172,7 +1180,7 @@ pub(crate) struct XAxis {
 impl XAxis {
     pub fn of(options: &ChartOptions) -> Self {
         Self {
-            label_w: label_width(options.row_labels),
+            label_w: label_width(options.row_labels, options.bar_height.unwrap_or(BAR_H)),
             px_per_day: options.px_per_day.unwrap_or(PX_PER_DAY),
         }
     }
@@ -1193,12 +1201,14 @@ impl XAxis {
     }
 }
 
-/// How wide the title column is: `LABEL_W` with the row labels shown, nothing
-/// with them hidden. Every x the chart draws starts from this.
-pub(crate) fn label_width(row_labels: LabelMode) -> f64 {
+/// How wide the title column is: `LABEL_W` with the row labels shown, and with
+/// them hidden only the room a milestone on the first day needs for the left
+/// half of its diamond: half the bar's height (`HIDDEN_LABELS_LEFT_PX` for the
+/// default bar). Every x the chart draws starts from this.
+pub(crate) fn label_width(row_labels: LabelMode, bar_h: f64) -> f64 {
     match row_labels {
         LabelMode::Shown => LABEL_W,
-        LabelMode::Hidden => 0.0,
+        LabelMode::Hidden => bar_h / 2.0,
     }
 }
 
