@@ -388,7 +388,8 @@ fn hidden_row_labels_leave_the_titles_out_and_take_their_width_back() {
     assert!(!hidden.contains(">A</text>") && !hidden.contains(">B</text>"));
     // 進みの字は残る
     assert!(hidden.contains(">50%</text>"));
-    assert_eq!(width_of(&shown) - width_of(&hidden), 120.0);
+    // 題の列（120）を外し、先頭の菱形の左半分の余白（10）を残す
+    assert_eq!(width_of(&shown) - width_of(&hidden), 110.0);
 
     let shown_canvas: serde_json::Value =
         serde_json::from_str(&render_canvas_commands(TASKS, "[]", None)).unwrap();
@@ -401,7 +402,7 @@ fn hidden_row_labels_leave_the_titles_out_and_take_their_width_back() {
     assert_eq!(
         shown_canvas["viewport_width"].as_f64().unwrap()
             - hidden_canvas["viewport_width"].as_f64().unwrap(),
-        120.0
+        110.0
     );
 }
 

@@ -141,21 +141,23 @@ fn hidden_row_labels_draw_no_titles() {
 }
 
 #[test]
-fn hidden_row_labels_move_every_shape_left_by_the_title_column() {
+fn hidden_row_labels_move_every_shape_left_by_the_title_column_less_the_left_margin() {
+    // 題の列（LABEL_W）を外し、先頭の菱形の左半分の余白（BAR_H / 2）だけを残す
+    let shift = LABEL_W - HIDDEN_LABELS_LEFT_PX;
     for days in [1, 3, 14, 40] {
         for legend in LEGENDS {
             for percent in LABELS {
                 let shown = list(days, legend, LabelMode::Shown, percent);
                 let hidden = list(days, legend, LabelMode::Hidden, percent);
-                assert_eq!(hidden.viewport.label_width, 0.0);
+                assert_eq!(hidden.viewport.label_width, HIDDEN_LABELS_LEFT_PX);
                 assert_eq!(shown.viewport.label_width, LABEL_W);
                 let what = format!("{days} 日 {legend:?} {percent:?}");
                 let (a, b) = (shape_xs(&shown), shape_xs(&hidden));
                 assert_eq!(a.len(), b.len(), "{what}");
                 for (x_shown, x_hidden) in a.iter().zip(&b) {
-                    assert_close(x_shown - LABEL_W, *x_hidden, &what);
+                    assert_close(x_shown - shift, *x_hidden, &what);
                 }
-                assert_close(shown.viewport.width - LABEL_W, hidden.viewport.width, &what);
+                assert_close(shown.viewport.width - shift, hidden.viewport.width, &what);
                 assert_eq!(shown.viewport.height, hidden.viewport.height);
             }
         }
@@ -163,7 +165,7 @@ fn hidden_row_labels_move_every_shape_left_by_the_title_column() {
 }
 
 #[test]
-fn hidden_row_labels_leave_only_the_bar_to_hit() {
+fn hidden_row_labels_leave_only_the_drawn_shape_to_hit() {
     let shown = list(14, LegendMode::Hidden, LabelMode::Shown, LabelMode::Shown);
     let hidden = list(14, LegendMode::Hidden, LabelMode::Hidden, LabelMode::Shown);
     for t in &shown.metadata.task_bboxes {
@@ -174,8 +176,92 @@ fn hidden_row_labels_leave_only_the_bar_to_hit() {
         );
     }
     for t in &hidden.metadata.task_bboxes {
-        assert_eq!(t.bbox.x, t.bar_bbox.x, "{}", t.task_id);
-        assert_eq!(t.bbox.width, t.bar_bbox.width, "{}", t.task_id);
+        // 棒は棒の範囲。マイルストーンは菱形の左半分（BAR_H / 2）を足した範囲
+        let left = if t.task_id == "milestone" {
+            t.bar_bbox.x - BAR_H / 2.0
+        } else {
+            t.bar_bbox.x
+        };
+        assert_eq!(t.bbox.x, left, "{}", t.task_id);
+        assert_eq!(
+            t.bbox.x + t.bbox.width,
+            t.bar_bbox.x + t.bar_bbox.width,
+            "{}",
+            t.task_id
+        );
+    }
+}
+
+/// マイルストーンの菱形の x の範囲。
+fn diamond_span(list: &DisplayList, id: &str) -> (f64, f64) {
+    let points = list
+        .layers
+        .iter()
+        .flat_map(|l| &l.primitives)
+        .find_map(|p| match p {
+            Primitive::Group(g) if g.task_id.as_deref() == Some(id) => {
+                g.children.iter().find_map(|c| match c {
+                    Primitive::Polygon(p) if p.semantic == PolygonSemantic::Milestone => {
+                        Some(p.points.clone())
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .expect("菱形");
+    let xs = points.iter().map(|p| p.0);
+    (
+        xs.clone().fold(f64::MAX, f64::min),
+        xs.fold(f64::MIN, f64::max),
+    )
+}
+
+#[test]
+fn a_milestone_on_the_first_day_draws_its_whole_diamond_without_the_title_column() {
+    let graph = GanttGraph {
+        tasks: vec![GanttTask {
+            id: "first".to_string(),
+            title: "first".to_string(),
+            progress_pct: 0,
+            start: epoch(),
+            end: Some(epoch()),
+        }],
+        deps: vec![],
+    };
+    let list = build_display_list(
+        &graph,
+        epoch(),
+        &ChartOptions {
+            row_labels: LabelMode::Hidden,
+            ..Default::default()
+        },
+    );
+    let (left, right) = diamond_span(&list, "first");
+    assert_eq!(left, 0.0, "菱形の左の端が図の左の端に収まる");
+    assert!(right <= list.viewport.width);
+}
+
+#[test]
+fn pressing_the_left_half_of_a_milestone_hits_its_task() {
+    for row_labels in [LabelMode::Shown, LabelMode::Hidden] {
+        let list = list(14, LegendMode::Hidden, row_labels, LabelMode::Shown);
+        let (left, right) = diamond_span(&list, "milestone");
+        let centre = (left + right) / 2.0;
+        // 菱形の左半分の真ん中を押す
+        let x = (left + centre) / 2.0;
+        let hit = list
+            .metadata
+            .task_bboxes
+            .iter()
+            .find(|t| t.task_id == "milestone")
+            .unwrap();
+        assert!(
+            hit.bbox.x <= x && x <= hit.bbox.x + hit.bbox.width,
+            "{row_labels:?}: {x} が当たりの範囲 {} 〜 {} の外",
+            hit.bbox.x,
+            hit.bbox.x + hit.bbox.width
+        );
     }
 }
 
