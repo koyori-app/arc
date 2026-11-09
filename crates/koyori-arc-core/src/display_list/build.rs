@@ -228,8 +228,25 @@ pub fn build_display_list_with_rows(
             // A task wholly outside the view: its mark alone, at the edge it
             // lies past, so the row says where the task is.
             Placement::Before(day) | Placement::After(day) => {
-                let mark = overflow_mark(&placement, day, &axis, total_days, y + bar_h / 2.0);
+                let cy = y + bar_h / 2.0;
+                let mark = outside_mark(&placement, day, &axis, total_days, cy, marks);
                 let bbox = overflow_bbox(&mark, y, bar_h);
+                let mut children = Vec::new();
+                // A hard deadline inside the view still shows, and so does the
+                // note of a task that ended before it: a task late against its
+                // dates is mostly one whose bar is already behind the view.
+                if let Some(m) = marks {
+                    let g = MarkGeometry::of(task, m, &axis, epoch, view_days);
+                    if let Some(dx) = g.diamond_cx {
+                        let tier = ProgressTier::from_pct(task.progress_pct.clamp(0, 100));
+                        children.push(hard_deadline_prim(dx, cy, tier));
+                    }
+                    if let (Placement::Before(_), Some(note)) = (&placement, &m.note) {
+                        let x = outside_note_x(&mark, &g);
+                        children.push(Primitive::Text(note_prim(x, cy, note, m.state)));
+                    }
+                }
+                children.insert(0, Primitive::Text(mark));
                 task_bboxes.push(TaskBBox {
                     task_id: task.id.clone(),
                     row: slot_index as u32,
@@ -240,7 +257,7 @@ pub fn build_display_list_with_rows(
                     task_id: Some(task.id.clone()),
                     tooltip: Some(task_tooltip(task)),
                     bbox,
-                    children: vec![Primitive::Text(mark)],
+                    children,
                 }));
                 continue;
             }
@@ -403,36 +420,10 @@ pub fn build_display_list_with_rows(
                 }
             }
             if let Some(dx) = g.diamond_cx {
-                let half = HARD_DEADLINE_HALF_PX;
-                children.push(Primitive::Polygon(PolygonPrim {
-                    points: vec![
-                        (dx, cy - half),
-                        (dx + half, cy),
-                        (dx, cy + half),
-                        (dx - half, cy),
-                    ],
-                    fill: ColorId::HardDeadline,
-                    stroke: ColorId::HardDeadline,
-                    stroke_width: 1.0,
-                    tier,
-                    semantic: PolygonSemantic::HardDeadline,
-                }));
+                children.push(hard_deadline_prim(dx, cy, tier));
             }
             if let Some(note) = &m.note {
-                children.push(Primitive::Text(TextPrim {
-                    x: g.note_x,
-                    y: cy,
-                    content: note.clone(),
-                    fill: Some(match m.state {
-                        Some(BarState::Warn) => ColorId::WarnStroke,
-                        _ => ColorId::Note,
-                    }),
-                    font_size: Some(GRID_LABEL_FONT_PX),
-                    font_weight: None,
-                    anchor: None,
-                    baseline: TextBaseline::Middle,
-                    semantic: TextSemantic::BarNote,
-                }));
+                children.push(Primitive::Text(note_prim(g.note_x, cy, note, m.state)));
             }
         }
 
@@ -996,6 +987,67 @@ fn overflow_mark(
     }
 }
 
+/// The mark of a task wholly outside the view, in the warn colour when its
+/// row is in the warn state.
+fn outside_mark(
+    placement: &Placement,
+    day: NaiveDate,
+    axis: &XAxis,
+    total_days: i64,
+    cy: f64,
+    row: Option<&TaskRow>,
+) -> TextPrim {
+    let mut mark = overflow_mark(placement, day, axis, total_days, cy);
+    if row.and_then(|r| r.state) == Some(BarState::Warn) {
+        mark.fill = Some(ColorId::WarnStroke);
+    }
+    mark
+}
+
+/// Where the note of a task before the view starts: past its mark and past
+/// its diamond.
+fn outside_note_x(mark: &TextPrim, g: &MarkGeometry) -> f64 {
+    let mark_right = text_right_edge(mark.x, mark.anchor, &mark.content, GRID_LABEL_FONT_PX, None);
+    let diamond_right = g.diamond_cx.map_or(f64::MIN, |c| c + HARD_DEADLINE_HALF_PX);
+    mark_right.max(diamond_right) + NOTE_GAP_PX
+}
+
+/// The diamond of a hard deadline centred on `dx`.
+fn hard_deadline_prim(dx: f64, cy: f64, tier: ProgressTier) -> Primitive {
+    let half = HARD_DEADLINE_HALF_PX;
+    Primitive::Polygon(PolygonPrim {
+        points: vec![
+            (dx, cy - half),
+            (dx + half, cy),
+            (dx, cy + half),
+            (dx - half, cy),
+        ],
+        fill: ColorId::HardDeadline,
+        stroke: ColorId::HardDeadline,
+        stroke_width: 1.0,
+        tier,
+        semantic: PolygonSemantic::HardDeadline,
+    })
+}
+
+/// A row's note at `x`, in the warn colour when its row is in the warn state.
+fn note_prim(x: f64, cy: f64, note: &str, state: Option<BarState>) -> TextPrim {
+    TextPrim {
+        x,
+        y: cy,
+        content: note.to_string(),
+        fill: Some(match state {
+            Some(BarState::Warn) => ColorId::WarnStroke,
+            _ => ColorId::Note,
+        }),
+        font_size: Some(GRID_LABEL_FONT_PX),
+        font_weight: None,
+        anchor: None,
+        baseline: TextBaseline::Middle,
+        semantic: TextSemantic::BarNote,
+    }
+}
+
 /// The hit area of a task drawn as its mark alone.
 fn overflow_bbox(mark: &TextPrim, y: f64, bar_h: f64) -> BBox {
     let w = text_width_weighted_px(&mark.content, GRID_LABEL_FONT_PX, None);
@@ -1126,19 +1178,23 @@ fn marks_right_edge(
             GanttRow::Task(row) => Some((row, *by_id.get(row.task_id.as_str())?)),
             GanttRow::Group { .. } => None,
         })
-        // A task wholly outside a view draws its mark alone, inside the days.
-        .filter(|(row, task)| {
-            matches!(
-                Placement::of(task, Some(*row), epoch, view_days),
-                Placement::Shown(_)
-            )
-        })
         .map(|(row, task)| {
             let g = MarkGeometry::of(task, row, axis, epoch, view_days);
             let diamond = g.diamond_cx.map_or(0.0, |c| c + HARD_DEADLINE_HALF_PX);
-            let note = row.note.as_deref().map_or(0.0, |n| {
-                text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None)
-            });
+            // A task wholly outside a view: its note only before it, right of
+            // the mark at the view's first day.
+            let note_x = match Placement::of(task, Some(row), epoch, view_days) {
+                Placement::Shown(_) => Some(g.note_x),
+                placement @ Placement::Before(day) => view_days.map(|days| {
+                    let mark = outside_mark(&placement, day, axis, days, 0.0, Some(row));
+                    outside_note_x(&mark, &g)
+                }),
+                Placement::After(_) => None,
+            };
+            let note = match (note_x, row.note.as_deref()) {
+                (Some(x), Some(n)) => text_right_edge(x, None, n, GRID_LABEL_FONT_PX, None),
+                _ => 0.0,
+            };
             diamond.max(note) + CHART_RIGHT_PADDING_PX
         })
         .fold(0.0, f64::max)

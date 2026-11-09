@@ -7,7 +7,7 @@ use super::build::{build_display_list, build_display_list_with_rows};
 use super::constants::*;
 use super::right_edge_tests::right_edges;
 use super::types::*;
-use crate::graph::{GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
+use crate::graph::{BarState, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 
 fn d(m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, m, day).unwrap()
@@ -312,4 +312,70 @@ fn a_bar_ending_the_day_after_the_view_s_last_day_is_cut_and_marked() {
     assert_eq!(contents, ["→ 11/16"]);
     assert!(texts(c, TextSemantic::ProgressPercent).is_empty());
     assert_eq!(bar(c).unwrap().x + bar(c).unwrap().width, days_right());
+}
+
+#[test]
+fn a_task_before_the_view_keeps_its_diamond_and_its_note_past_the_mark() {
+    // 11/1〜11/3 の課題。目安を過ぎた（warn）行で、厳守の期限 11/12 は範囲の内
+    let rows = vec![GanttRow::Task(TaskRow {
+        state: Some(BarState::Warn),
+        hard_deadline: Some(d(11, 12)),
+        note: Some("目安 11/3 を過ぎた".to_string()),
+        ..TaskRow::new("earlier")
+    })];
+    let list =
+        build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
+    let c = children_of(&list, "earlier");
+    let mark = &texts(c, TextSemantic::Overflow)[0];
+    assert_eq!(mark.content, "← 11/3");
+    assert_eq!(mark.fill, Some(ColorId::WarnStroke));
+    let diamond = c
+        .iter()
+        .find_map(|p| match p {
+            Primitive::Polygon(p) if p.semantic == PolygonSemantic::HardDeadline => Some(p.clone()),
+            _ => None,
+        })
+        .expect("範囲の内の厳守の菱形");
+    // 11/12 は範囲の 4 日目
+    assert_eq!(diamond.points[0].0, LABEL_W + 3.5 * PX_PER_DAY);
+    let note = &texts(c, TextSemantic::BarNote)[0];
+    assert_eq!(note.fill, Some(ColorId::WarnStroke));
+    // 字は印と菱形の右
+    assert_eq!(
+        note.x,
+        LABEL_W + 3.5 * PX_PER_DAY + HARD_DEADLINE_HALF_PX + NOTE_GAP_PX
+    );
+    let widest = right_edges(&list)
+        .into_iter()
+        .map(|(_, r)| r)
+        .fold(0.0, f64::max);
+    assert!(widest <= list.viewport.width);
+}
+
+#[test]
+fn a_task_after_the_view_draws_no_note() {
+    let rows = vec![GanttRow::Task(TaskRow {
+        note: Some("添え".to_string()),
+        ..TaskRow::new("later")
+    })];
+    let list =
+        build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
+    assert!(texts(children_of(&list, "later"), TextSemantic::BarNote).is_empty());
+}
+
+#[test]
+fn a_long_note_before_the_view_widens_the_chart_to_hold_it() {
+    let note = "目安を過ぎた行の、図の幅を越える長さの添えの字".repeat(3);
+    let rows = vec![GanttRow::Task(TaskRow {
+        note: Some(note),
+        ..TaskRow::new("earlier")
+    })];
+    let list =
+        build_display_list_with_rows(&graph(), Some(&rows), d(11, 1), &options(Some(view())));
+    assert!(list.viewport.width > chart_width(7.0));
+    let widest = right_edges(&list)
+        .into_iter()
+        .map(|(_, r)| r)
+        .fold(0.0, f64::max);
+    assert!(widest <= list.viewport.width);
 }
