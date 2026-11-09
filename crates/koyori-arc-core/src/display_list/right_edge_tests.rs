@@ -37,7 +37,7 @@ pub(super) fn graph_of(spans: &[Span]) -> GanttGraph {
     }
 }
 
-/// SVG パスの右端。`build.rs` が出す命令（M V H L の絶対、a v m l の相対）だけを読む。
+/// SVG パスの右端。`build.rs` が出す命令（M V H L の絶対、a v m l の相対、閉じる Z）だけを読む。
 fn path_right(d: &str) -> f64 {
     let toks = d.split_whitespace();
     let (mut x, mut y) = (0.0_f64, 0.0_f64);
@@ -52,7 +52,7 @@ fn path_right(d: &str) -> f64 {
             ('v', [b]) => *y += *b,
             ('m', [a, b]) | ('l', [a, b]) => (*x, *y) = (*x + *a, *y + *b),
             ('a', [_, _, _, _, _, a, b]) => (*x, *y) = (*x + *a, *y + *b),
-            (' ', []) => {}
+            (' ', []) | ('Z', []) => {}
             other => panic!("path command the scan does not read: {other:?} in {d}"),
         }
         if cmd != ' ' {

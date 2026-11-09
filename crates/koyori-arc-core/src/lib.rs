@@ -31,7 +31,7 @@ pub use display_list::{
 pub use error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-pub use graph::{GanttDep, GanttGraph, GanttRow, GanttTask};
+pub use graph::{BarShape, BarState, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 pub use render::{
     empty_svg_markup, legend_spec_json, render, render_canvas, render_canvas_commands,
     render_canvas_with_rows, render_svg, render_svg_error, render_with_rows,

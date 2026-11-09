@@ -40,21 +40,72 @@ pub struct GanttDep {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum GanttRow {
-    Task {
-        task_id: String,
-        #[serde(default)]
-        height: Option<f64>,
-    },
+    Task(TaskRow),
     Group {
         #[serde(default)]
         height: Option<f64>,
     },
 }
 
+/// A task row of a caller's row list, and the marks drawn on its bar
+/// (docs/design/bar-marks.md). Every mark is optional; a row with none draws
+/// the bar as a chart without row lists draws it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskRow {
+    pub task_id: String,
+    #[serde(default)]
+    pub height: Option<f64>,
+    /// A deadline that may not move, drawn as a diamond in the middle of its
+    /// day. A date-only string, the day as written.
+    #[serde(
+        default,
+        deserialize_with = "crate::date_input::deserialize_optional_date"
+    )]
+    pub hard_deadline: Option<NaiveDate>,
+    /// How the bar is drawn: given at all, the bar gets an outline, and its
+    /// fill and outline follow the state.
+    #[serde(default)]
+    pub state: Option<BarState>,
+    /// Text drawn right of the bar and its diamond, such as why it is in warning.
+    #[serde(default)]
+    pub note: Option<String>,
+    /// `Point` draws a dot at the task's end day in place of a bar, for a task
+    /// with only a deadline.
+    #[serde(default)]
+    pub shape: BarShape,
+}
+
+impl TaskRow {
+    pub fn new(task_id: impl Into<String>) -> Self {
+        Self {
+            task_id: task_id.into(),
+            ..Default::default()
+        }
+    }
+}
+
+/// The state a task row's bar is drawn in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarState {
+    Normal,
+    Done,
+    Warn,
+}
+
+/// What a task row draws for its task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarShape {
+    #[default]
+    Bar,
+    Point,
+}
+
 impl GanttRow {
     pub fn height(&self) -> Option<f64> {
         match self {
-            GanttRow::Task { height, .. } | GanttRow::Group { height } => *height,
+            GanttRow::Task(TaskRow { height, .. }) | GanttRow::Group { height } => *height,
         }
     }
 }

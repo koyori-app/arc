@@ -15,7 +15,7 @@ use crate::display_list::{
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttRow, GanttTask};
+use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
@@ -38,6 +38,8 @@ pub const MAX_ROWS_JSON_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_SIZE_PX: f64 = 1_000.0;
 /// Upper bound on the characters of one colour in `palette`.
 pub const MAX_COLOR_CHARS: usize = 100;
+/// Upper bound on the characters of a task row's note.
+pub const MAX_NOTE_CHARS: usize = 200;
 
 /// Conservative cross-browser Canvas2D backing-store edge limit. Browser and
 /// GPU limits vary, but 16,384px is the lowest commonly supported maximum edge;
@@ -194,7 +196,7 @@ fn canvas_graph_limit_error(
     // The days are checked first, so a chart of a plausible length reaches the
     // exact width. A label can run past the days, so the days alone under-count.
     let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
-    let width_px = chart_width_for(tasks, epoch, shape);
+    let width_px = chart_width_for(tasks, rows, epoch, shape);
     if width_px > MAX_CANVAS_SIDE_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -605,7 +607,30 @@ fn parse_rows_json(
                 )));
             }
         }
-        if let GanttRow::Task { task_id, .. } = row {
+        if let GanttRow::Task(TaskRow {
+            task_id,
+            note,
+            hard_deadline,
+            ..
+        }) = row
+        {
+            if note
+                .as_ref()
+                .is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS)
+            {
+                return Err(rows_error(format!(
+                    "note of `{task_id}`: more than {MAX_NOTE_CHARS} characters"
+                )));
+            }
+            // A deadline far from every task would stretch the chart past any
+            // span the task dates are held to.
+            if let (Some(d), Some(first)) = (hard_deadline, tasks.iter().map(|t| t.start).min()) {
+                if (*d - first).num_days().abs() > MAX_DATE_SPAN_DAYS {
+                    return Err(rows_error(format!(
+                        "hard_deadline of `{task_id}`: more than {MAX_DATE_SPAN_DAYS} days from the first task"
+                    )));
+                }
+            }
             if !known.contains(task_id.as_str()) {
                 return Err(rows_error(format!("unknown task_id `{task_id}`")));
             }
@@ -626,7 +651,7 @@ fn bar_height_error(rows: Option<&[GanttRow]>, shape: &ChartOptions) -> Option<R
         None => row_h,
         Some(rows) => rows
             .iter()
-            .filter(|r| matches!(r, GanttRow::Task { .. }))
+            .filter(|r| matches!(r, GanttRow::Task(_)))
             .map(|r| r.height().unwrap_or(row_h))
             .fold(f64::INFINITY, f64::min),
     };
