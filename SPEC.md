@@ -134,6 +134,13 @@ pub struct ChartOptions {
     pub scale: Scale,               // Week（既定）、Day、Month
     pub weekend: WeekendDays,       // 土日の帯の曜日（既定は無し）
     pub weekday_labels: Option<[String; 7]>, // Day の段の曜日の字
+    pub view: Option<ViewRange>,    // 表示の範囲（既定は全ての課題の日）
+}
+
+// 表示の範囲。from から to まで、両端の日を含む（docs/design/view-range.md）
+pub struct ViewRange {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
 }
 
 // 使う側が行を並べる図（docs/design/external-rows.md）
@@ -192,6 +199,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `px_per_day`: 一日の幅（px）。0 を越え 1000 以下。既定は `PX_PER_DAY`
   - `weekend_days`: 土日の帯を引く曜日の数の配列（0 が月曜、6 が日曜）。既定は無し。帯は行の区画に一日の幅で引く（class `weekend`、色の名 `Weekend`）
   - `weekday_labels`: `"day"` の段の曜日の字。月曜から七つで、各 1 から 8 字。既定は `Mo`〜`Su`（docs/design/day-scale.md）
+  - `view`: `{"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}`。図に描く日の範囲で、両端の日を含む。図の最初の日は `from`、幅は範囲の日数で決まる。範囲を越える棒は端で切り、端の内側に `← M/D`（始まりの日）か `→ M/D`（最後の日）を描く。範囲の外の課題は外れた側の端に印だけを描く。依存の矢印、今日の線、進捗の線、厳守の菱形は範囲の内に留める。鍵の過不足、読めない日付、`to` が `from` より前、3,650 日を越える範囲は `parse_error` で断る。canvas の上限の日数は範囲の日数で数える（docs/design/view-range.md）
   - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
   - 課題の行は印を持てる。`hard_deadline`（`YYYY-MM-DD`。その日の真ん中に菱形、class `hard-deadline`）、`state`（`"normal"`、`"done"`、`"warn"`。棒の地と縁の色）、`note`（棒と菱形の右に一行。200 字まで）、`shape`（`"bar"` が既定。`"point"` は期間の最後の日に点を描き、class `bar-point`。後ろの菱形と線で結ぶ）。図の幅と日数は菱形と字まで延びる。知らぬ値、200 字を越える字、最初の課題から 3,650 日より離れた期日は `parse_error` で断る。印の無い行は印の無かった頃と同じ図になる（docs/design/bar-marks.md）
@@ -233,6 +241,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く
 - 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
 - `pxPerDay`、`scale`（`'week'`、`'day'`、`'month'`）、`weekendDays`、`weekdayLabels`: `options_json` の同じ名の鍵に渡す。型 `Scale` は `index.ts` から出す
+- `view`（`{ from, to }`）: `options_json` の `view` に渡す。型 `ViewRange` は `index.ts` から出す
 
 ## SVG 出力仕様
 
