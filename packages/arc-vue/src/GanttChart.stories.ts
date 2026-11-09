@@ -236,6 +236,8 @@ const tokenStyle = [
   '--demo-accent: #7c5cbf',
   '--demo-border: #e4dfe9',
   '--demo-text-muted: #8a8296',
+  '--demo-danger: #c2413a',
+  '--demo-warn-bg: #fbe9d9',
 ].join('; ');
 
 const tokenPalette = {
@@ -281,6 +283,51 @@ export const DayScale: Story = {
 
 export const DayScaleCanvas: Story = {
   args: { ...DayScale.args, backend: 'canvas' },
+  render: PaletteFromTokens.render,
+};
+
+// The marks a caller's rows carry: a hard deadline's diamond, a bar outlined in
+// its state, a note past a bar whose target runs past its deadline, and a task
+// with only a deadline drawn as a dot with a line to its diamond.
+const markedRows = [
+  { kind: 'group' as const },
+  { kind: 'task' as const, task_id: 't1', state: 'done' as const },
+  { kind: 'task' as const, task_id: 't2', state: 'normal' as const, hard_deadline: '2026-06-09' },
+  { kind: 'group' as const },
+  {
+    kind: 'task' as const,
+    task_id: 't3',
+    state: 'warn' as const,
+    hard_deadline: '2026-06-08',
+    note: '目安 6/10 が厳守 6/8 を越えた',
+  },
+  {
+    kind: 'task' as const,
+    task_id: 't4',
+    shape: 'point' as const,
+    state: 'normal' as const,
+    hard_deadline: '2026-06-14',
+  },
+];
+
+export const BarMarks: Story = {
+  args: {
+    ...DayScale.args,
+    rows: markedRows,
+    palette: {
+      ...tokenPalette,
+      Weekend: 'var(--demo-surface-hover)',
+      BarStroke: 'var(--demo-accent)',
+      HardDeadline: 'var(--demo-danger)',
+      WarnBg: 'var(--demo-warn-bg)',
+      WarnStroke: 'var(--demo-danger)',
+    },
+  },
+  render: PaletteFromTokens.render,
+};
+
+export const BarMarksCanvas: Story = {
+  args: { ...BarMarks.args, backend: 'canvas' },
   render: PaletteFromTokens.render,
 };
 

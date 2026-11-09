@@ -1,5 +1,5 @@
 export { default as GanttChart } from './GanttChart.vue';
-export type { GanttTask, GanttDep, GanttRow } from './types.ts';
+export type { GanttTask, GanttDep, GanttRow, BarState, BarShape } from './types.ts';
 export {
   replayCommands,
   parseCommandBuffer,
