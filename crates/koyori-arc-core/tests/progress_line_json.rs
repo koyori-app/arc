@@ -37,8 +37,17 @@ fn hidden_and_by_row_are_read() {
         None,
     );
     assert!(by_row.contains("<polyline"));
-    // 遅れの a の折れ目に点が一つ。済みの b は今日の線のまま
-    assert_eq!(by_row.matches(r#"class="progress-point""#).count(), 1);
+    // 遅れの a と、100% でも済みでない b の折れ目に点が一つずつ
+    assert_eq!(by_row.matches(r#"class="progress-point""#).count(), 2);
+    // b の行を done にすれば、b は今日の線のまま
+    let rows = r#"[{"kind":"task","task_id":"a"},{"kind":"task","task_id":"b","state":"done"}]"#;
+    let done = render_svg(
+        TASKS,
+        "[]",
+        s(r#"{"today":"2026-11-07","progress_line":"by_row"}"#),
+        s(rows),
+    );
+    assert_eq!(done.matches(r#"class="progress-point""#).count(), 1);
 }
 
 #[test]

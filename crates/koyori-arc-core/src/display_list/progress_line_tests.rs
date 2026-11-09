@@ -34,7 +34,7 @@ fn graph() -> GanttGraph {
         tasks: vec![
             // 遅れ: 0〜10 日の 20%、進みは 2 日目
             task("late", 0, 10, 20),
-            // 済み: 今日の線のまま
+            // 済み（行の state が done）: 今日の線のまま
             task("done", 0, 4, 100),
             // 0% で予定開始の 2 日目を過ぎた: 予定開始へ
             task("stalled", 2, 9, 0),
@@ -82,8 +82,18 @@ fn task_rows(ids: &[&str]) -> Vec<GanttRow> {
         .collect()
 }
 
+/// `done` の行だけ state を done にした一覧。
 fn all_rows() -> Vec<GanttRow> {
-    task_rows(&["late", "done", "stalled", "future", "ahead"])
+    let mut rows = task_rows(&["late", "done", "stalled", "future", "ahead"]);
+    rows[1] = done_row("done");
+    rows
+}
+
+fn done_row(id: &str) -> GanttRow {
+    GanttRow::Task(TaskRow {
+        state: Some(BarState::Done),
+        ..TaskRow::new(id)
+    })
 }
 
 fn line_layer(list: &DisplayList) -> Option<&Layer> {
@@ -238,4 +248,21 @@ fn by_row_keeps_its_bends_on_the_days_a_view_shows() {
     assert_eq!(pts[1], (left, mid(0)));
     assert!(pts.iter().all(|p| p.0 >= left));
     assert_eq!(pts[0], (t, top(0)));
+}
+
+#[test]
+fn a_row_at_100_percent_that_is_not_done_bends_to_its_end() {
+    // 閉じ忘れ: 0〜4 日の 100% で state は無い。目安の期限（4 日目の境）へ左に尖る
+    let rows = task_rows(&["done"]);
+    let list = build_rows(&graph(), &rows, &options(ProgressLineMode::ByRow));
+    assert_eq!(dots(&list), vec![(x(4.0), mid(0))]);
+}
+
+#[test]
+fn a_row_at_0_percent_in_the_done_state_stays_on_the_today_line() {
+    // 0% で予定開始を過ぎておっても、done なら尖らぬ
+    let rows = vec![done_row("stalled")];
+    let list = build_rows(&graph(), &rows, &options(ProgressLineMode::ByRow));
+    assert!(line(&list).points.iter().all(|p| p.0 == today_x()));
+    assert!(dots(&list).is_empty());
 }

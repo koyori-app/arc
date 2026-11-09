@@ -816,7 +816,8 @@ fn grid_days_in(
 }
 
 /// The progress line drawn `by_row` over every row of the plan. A task is done
-/// when its row's state is `done` or its progress is 100%.
+/// only when its row's state is `done`: one at 100% that is not done bends to its
+/// end, so a task left open shows.
 fn by_row_progress_line(
     graph: &GanttGraph,
     rows: Option<&[GanttRow]>,
@@ -832,7 +833,7 @@ fn by_row_progress_line(
             let bend = slot.task.and_then(|i| {
                 let t = &graph.tasks[i];
                 let state = task_row_of(rows, slot).and_then(|m| m.state);
-                let done = state == Some(BarState::Done) || t.progress_pct >= 100;
+                let done = state == Some(BarState::Done);
                 by_row_bend(
                     axis.x(t.start_days(epoch)),
                     axis.x(t.end_days(epoch)),
