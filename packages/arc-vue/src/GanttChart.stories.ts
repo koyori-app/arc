@@ -343,6 +343,19 @@ export const ViewRangeCanvas: Story = {
   render: PaletteFromTokens.render,
 };
 
+// The progress line by row, the rules a caller turns on: out from the today
+// line to each row that is late or ahead, back at its bottom edge, and on the
+// today line for a done row, a row not yet started and a group row.
+export const ProgressLineByRow: Story = {
+  args: { ...BarMarks.args, progressLine: 'by_row' },
+  render: PaletteFromTokens.render,
+};
+
+export const ProgressLineByRowCanvas: Story = {
+  args: { ...ProgressLineByRow.args, backend: 'canvas' },
+  render: PaletteFromTokens.render,
+};
+
 export const MonthScale: Story = {
   args: { ...vrtArgs, tasks, deps, today: '2026-06-06', scale: 'month', pxPerDay: 8 },
   render: Default.render,

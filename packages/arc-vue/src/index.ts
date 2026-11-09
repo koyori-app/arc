@@ -20,6 +20,7 @@ export type {
   LabelMode,
   LegendMode,
   PaletteOverrides,
+  ProgressLineMode,
   Scale,
   ViewRange,
 } from './options';

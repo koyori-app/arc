@@ -45,6 +45,13 @@ export type Scale = 'week' | 'day' | 'month';
  * bar running past either end is cut there and marked `← M/D` or `→ M/D`; a
  * task wholly outside is drawn as its mark alone.
  */
+/**
+ * How the chart draws the progress line: `'shown'` (the default) is the line as
+ * before, `'hidden'` draws none, and `'by_row'` bends out from the today line to
+ * each row that is late or ahead and back at its bottom edge.
+ */
+export type ProgressLineMode = 'shown' | 'hidden' | 'by_row';
+
 export interface ViewRange {
   from: string;
   to: string;
@@ -69,6 +76,7 @@ export interface ChartOptionsInput {
   /** Seven labels, Monday first, for the `'day'` scale. */
   weekdayLabels?: string[] | null;
   view?: ViewRange | null;
+  progressLine?: ProgressLineMode | null;
 }
 
 /**
@@ -92,6 +100,7 @@ export interface ChartOptions {
   weekend_days?: number[];
   weekday_labels?: string[];
   view?: ViewRange;
+  progress_line?: ProgressLineMode;
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -121,5 +130,6 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   if (input.weekendDays != null) options.weekend_days = input.weekendDays;
   if (input.weekdayLabels != null) options.weekday_labels = input.weekdayLabels;
   if (input.view != null) options.view = { from: input.view.from, to: input.view.to };
+  if (input.progressLine != null) options.progress_line = input.progressLine;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

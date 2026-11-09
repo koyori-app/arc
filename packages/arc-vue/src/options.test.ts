@@ -132,4 +132,10 @@ describe('buildOptionsJson', () => {
     });
     expect(buildOptionsJson({ view: null })).toBeUndefined();
   });
+  it('writes the progress line mode only when it was given', () => {
+    expect(JSON.parse(buildOptionsJson({ progressLine: 'by_row' })!)).toEqual({
+      progress_line: 'by_row',
+    });
+    expect(buildOptionsJson({ progressLine: null })).toBeUndefined();
+  });
 });
