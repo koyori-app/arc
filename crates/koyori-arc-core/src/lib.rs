@@ -22,7 +22,7 @@ pub use display_list::types::{
     LayerKind, LegendMode, LinePrim, LineSemantic, Palette, PathPrim, PathSemantic, PolygonPrim,
     PolygonSemantic, PolylinePrim, PolylineSemantic, Primitive, ProgressTier, RectPrim,
     RectSemantic, RoundRectPrim, RoundRectSemantic, Scale, TaskBBox, TextAnchor, TextBaseline,
-    TextPrim, TextSemantic, Viewport, WeekendDays,
+    TextPrim, TextSemantic, ViewRange, Viewport, WeekendDays,
 };
 pub use display_list::{
     build_display_list, build_display_list_with_rows, compute_row_window, DisplayList,

@@ -260,6 +260,25 @@ pub struct ChartOptions {
     /// The weekday labels of the `Day` scale, Monday first; `None` is
     /// `DEFAULT_WEEKDAY_LABELS`.
     pub weekday_labels: Option<[String; 7]>,
+    /// The days the chart shows; `None` shows every task's days. See
+    /// docs/design/view-range.md.
+    pub view: Option<ViewRange>,
+}
+
+/// The days a chart shows, `from` through `to`, both included. A bar that runs
+/// past either end is cut there and marked; a task wholly outside is drawn as
+/// its mark alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewRange {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+}
+
+impl ViewRange {
+    /// How many days the view shows.
+    pub fn days(&self) -> i64 {
+        (self.to - self.from).num_days() + 1
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -448,6 +467,8 @@ pub enum TextSemantic {
     MonthLabel,
     /// The note right of a bar.
     BarNote,
+    /// The mark of a task that runs on past the days a view shows.
+    Overflow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
