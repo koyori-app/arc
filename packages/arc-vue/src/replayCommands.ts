@@ -23,6 +23,7 @@ export type ColorIdName =
   | 'WarnStroke'
   | 'HardDeadline'
   | 'Note'
+  | 'NoteBg'
   | 'ProgressLine';
 
 export interface CommandBuffer {
@@ -97,6 +98,7 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'WarnStroke',
   'HardDeadline',
   'Note',
+  'NoteBg',
   'ProgressLine',
 ];
 
@@ -115,6 +117,7 @@ const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
   WarnStroke: 'Progress',
   HardDeadline: 'Progress',
   Note: 'GridLabel',
+  NoteBg: 'HeaderBg',
   ProgressLine: 'Progress',
 };
 

@@ -60,7 +60,7 @@ task のガントは、稲妻線を既定で消し、使う人が点けられる
 
 - 実線で、幅は 2px（`BY_ROW_LINE_STROKE_W`）。
 - 尖った先（今日の線の上に無い折れ目）ごとに、径 2.5px（`BY_ROW_POINT_RADIUS_PX`）の点を描く（`RoundRectSemantic::ProgressPoint`、class `progress-point`）。
-- 線と点の色は、色の名 `ProgressLine`。既定の色の表には入れず、落ち先は `Progress`（今の線の色）。canvas の色の番号は 22。
+- 線と点の色は、色の名 `ProgressLine`。既定の色の表には入れず、落ち先は `Progress`（今の線の色）。canvas の色の番号は 23（22 は添えの字の帯の `NoteBg` が先に取った）。
 - 凡例の線の見本は今のまま変えない。task は凡例を隠して自前の凡例を描く。
 
 ## 4. 描き方

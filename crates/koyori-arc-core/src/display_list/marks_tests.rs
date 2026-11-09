@@ -211,13 +211,7 @@ fn a_note_that_would_run_over_the_diamond_moves_right_of_it_and_holds_the_width(
         note: Some(note.to_string()),
         ..row("c")
     }]);
-    let text = children_of(&list, "c")
-        .iter()
-        .find_map(|p| match p {
-            Primitive::Text(t) if t.semantic == TextSemantic::BarNote => Some(t.clone()),
-            _ => None,
-        })
-        .expect("添えの字");
+    let text = notes_of(&list).remove(0);
     assert_eq!(text.content, note);
     assert_eq!(text.fill, Some(ColorId::WarnStroke));
     let diamond_right = LABEL_W + 10.0 * PX_PER_DAY + PX_PER_DAY / 2.0 + HARD_DEADLINE_HALF_PX;
@@ -229,14 +223,22 @@ fn a_note_that_would_run_over_the_diamond_moves_right_of_it_and_holds_the_width(
     assert!(widest <= list.viewport.width);
 }
 
-fn note_x_of(list: &DisplayList, id: &str) -> f64 {
-    children_of(list, id)
+/// 添えの字の層の字。添えの字は棒の束でなく、今日の線の上の層に入る。
+fn notes_of(list: &DisplayList) -> Vec<TextPrim> {
+    list.layers
         .iter()
-        .find_map(|p| match p {
-            Primitive::Text(t) if t.semantic == TextSemantic::BarNote => Some(t.x),
+        .filter(|l| l.kind == LayerKind::Notes)
+        .flat_map(|l| &l.primitives)
+        .filter_map(|p| match p {
+            Primitive::Text(t) if t.semantic == TextSemantic::BarNote => Some(t.clone()),
             _ => None,
         })
-        .expect("添えの字")
+        .collect()
+}
+
+/// 試料は添えの字を一つだけ持つ行で組むので、層の字は `id` の行の字。
+fn note_x_of(list: &DisplayList, _id: &str) -> f64 {
+    notes_of(list).first().expect("添えの字").x
 }
 
 #[test]
@@ -292,4 +294,50 @@ fn a_note_of_a_dot_moves_past_the_line_to_its_diamond() {
         note_x_of(&list, "a"),
         LABEL_W + 8.0 * PX_PER_DAY + PX_PER_DAY / 2.0 + HARD_DEADLINE_HALF_PX + NOTE_GAP_PX
     );
+}
+
+#[test]
+fn a_note_and_its_band_are_drawn_after_the_today_line() {
+    let options = ChartOptions {
+        // 今日の線は c の棒の右（添えの字の所）
+        today: Some(day(11)),
+        ..Default::default()
+    };
+    let rows = vec![GanttRow::Task(TaskRow {
+        note: Some("目安を過ぎた".to_string()),
+        ..row("c")
+    })];
+    let list = build_display_list_with_rows(&graph(), Some(&rows), epoch(), &options);
+    let at = |kind: LayerKind| list.layers.iter().position(|l| l.kind == kind).unwrap();
+    assert!(at(LayerKind::TodayMarker) < at(LayerKind::Notes));
+    assert!(at(LayerKind::Grid) < at(LayerKind::Notes));
+    let notes = &list.layers[at(LayerKind::Notes)].primitives;
+    // 帯が先、字が後
+    let band = match &notes[0] {
+        Primitive::Rect(r) if r.semantic == RectSemantic::NoteBackground => r.clone(),
+        other => panic!("{other:?}"),
+    };
+    let text = match &notes[1] {
+        Primitive::Text(t) => t.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(band.fill, ColorId::NoteBg);
+    assert_eq!(band.x, text.x - NOTE_BAND_PAD_PX);
+    // 帯は字の幅の見積もりと同じ幾何で、図の幅を広げぬ
+    assert!(band.x + band.width <= list.viewport.width);
+    // 新しい色の名は既定の表に無く、見出しの帯の色に落ちる
+    assert_eq!(
+        list.palette.resolve(ColorId::NoteBg),
+        list.palette.resolve(ColorId::HeaderBg)
+    );
+}
+
+#[test]
+fn a_chart_without_notes_has_no_note_layer() {
+    let list = build(vec![TaskRow {
+        state: Some(BarState::Warn),
+        hard_deadline: Some(day(6)),
+        ..row("a")
+    }]);
+    assert!(list.layers.iter().all(|l| l.kind != LayerKind::Notes));
 }

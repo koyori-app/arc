@@ -204,7 +204,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `progress_line`: `"shown"`（既定。今の線）、`"hidden"`（描かない）、`"by_row"`（遅れか先行の行だけ今日の線から進みの位置へ尖り、その行の下の境で戻る。0% で予定開始を過ぎた行は予定開始へ。済み（`state` が `done` の行。100% でも `done` でない行は棒の終わりへ尖る）、まだ始まらぬ 0%、群れの行は今日の線のまま。今日が図に無ければ描かない。実線 2px と折れ目の点 `progress-point`、色の名 `ProgressLine`）（docs/design/progress-line.md）
   - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
-  - 課題の行は印を持てる。`hard_deadline`（`YYYY-MM-DD`。その日の真ん中に菱形、class `hard-deadline`）、`state`（`"normal"`、`"done"`、`"warn"`。棒の地と縁の色）、`note`（棒の右に一行。字が厳守の菱形と重なる時だけ菱形の右へ逃がす。200 字まで）、`shape`（`"bar"` が既定。`"point"` は期間の最後の日に点を描き、class `bar-point`。後ろの菱形と線で結ぶ）。図の幅と日数は菱形と字まで延びる。知らぬ値、200 字を越える字、最初の課題から 3,650 日より離れた期日は `parse_error` で断る。印の無い行は印の無かった頃と同じ図になる（docs/design/bar-marks.md）
+  - 課題の行は印を持てる。`hard_deadline`（`YYYY-MM-DD`。その日の真ん中に菱形、class `hard-deadline`）、`state`（`"normal"`、`"done"`、`"warn"`。棒の地と縁の色）、`note`（棒の右に一行。字が厳守の菱形と重なる時だけ菱形の右へ逃がす。字の下に地の色の帯 `note-bg`（色の名 `NoteBg`）を敷き、今日の線の後に描く。200 字まで）、`shape`（`"bar"` が既定。`"point"` は期間の最後の日に点を描き、class `bar-point`。後ろの菱形と線で結ぶ）。図の幅と日数は菱形と字まで延びる。知らぬ値、200 字を越える字、最初の課題から 3,650 日より離れた期日は `parse_error` で断る。印の無い行は印の無かった頃と同じ図になる（docs/design/bar-marks.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
   - 4 KiB を超える字は `input_limit` で断る
@@ -333,7 +333,7 @@ Canvas の上限の判定は、実際に描く幅（題の列と進みの字の�
 | ヘッダー背景 | `#f3f4f6` |
 | グリッドラベル | `#6b7280` |
 
-既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）と土日の帯（`Weekend`）の落ち先は見出しの帯（`HeaderBg`）。棒の印と行ごとの稲妻線の色の落ち先は、`BarStroke`、`DoneStroke`、`Note` がグリッドラベル（`GridLabel`）、`DoneBg`、`WarnBg` が棒の地（`BarBg`）、`WarnStroke`、`HardDeadline`、`ProgressLine` が進捗の線（`Progress`）。使う側が `palette` で渡した時だけ、その色で描く。
+既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）と土日の帯（`Weekend`）の落ち先は見出しの帯（`HeaderBg`）。棒の印と行ごとの稲妻線の色の落ち先は、`BarStroke`、`DoneStroke`、`Note` がグリッドラベル（`GridLabel`）、`DoneBg`、`WarnBg` が棒の地（`BarBg`）、`WarnStroke`、`HardDeadline`、`ProgressLine` が進捗の線（`Progress`）、添えの字の帯（`NoteBg`）が見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
 
 ## レイアウト定数
 

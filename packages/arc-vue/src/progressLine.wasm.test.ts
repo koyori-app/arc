@@ -49,8 +49,8 @@ describe('the progress line modes, drawn by the real Wasm', () => {
     const buffer = parseCommandBuffer(render_canvas_commands(tasksJson, '[]', options, rowsJson));
     expect(buffer.error).toBeUndefined();
     const lines = buffer.ops.filter((op) => typeof op === 'object' && 'StrokePolyline' in op);
-    // ProgressLine の tag は 22。実線で幅 2
-    const line = lines.find((op) => op.StrokePolyline.color_id === 22);
+    // ProgressLine の tag は 23（22 は添えの字の帯の NoteBg）。実線で幅 2
+    const line = lines.find((op) => op.StrokePolyline.color_id === 23);
     expect(line?.StrokePolyline.dash).toBeNull();
     expect(line?.StrokePolyline.width).toBe(2);
   });

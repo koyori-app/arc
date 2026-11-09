@@ -57,7 +57,8 @@ fn color_id_tag(id: ColorId) -> u8 {
         ColorId::WarnStroke => 19,
         ColorId::HardDeadline => 20,
         ColorId::Note => 21,
-        ColorId::ProgressLine => 22,
+        ColorId::NoteBg => 22,
+        ColorId::ProgressLine => 23,
     }
 }
 
