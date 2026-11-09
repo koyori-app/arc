@@ -14,6 +14,8 @@ mod hidden_legend_tests;
 #[cfg(test)]
 mod marks_tests;
 #[cfg(test)]
+mod progress_line_tests;
+#[cfg(test)]
 mod right_edge_tests;
 #[cfg(test)]
 mod scale_tests;

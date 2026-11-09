@@ -61,6 +61,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                     format!("bar-progress bar-tier-{}", r.tier.css_suffix())
                 }
                 RoundRectSemantic::Point => "bar-point".to_string(),
+                RoundRectSemantic::ProgressPoint => "progress-point".to_string(),
             };
             push_rect(
                 svg,

@@ -20,9 +20,9 @@ pub use display_list::legend::{legend_spec, LegendProgressLine, LegendSpec, Lege
 pub use display_list::types::{
     BBox, BarAlign, ChartMetadata, ChartOptions, ColorId, Coord, GroupPrim, LabelMode, Layer,
     LayerKind, LegendMode, LinePrim, LineSemantic, Palette, PathPrim, PathSemantic, PolygonPrim,
-    PolygonSemantic, PolylinePrim, PolylineSemantic, Primitive, ProgressTier, RectPrim,
-    RectSemantic, RoundRectPrim, RoundRectSemantic, Scale, TaskBBox, TextAnchor, TextBaseline,
-    TextPrim, TextSemantic, ViewRange, Viewport, WeekendDays,
+    PolygonSemantic, PolylinePrim, PolylineSemantic, Primitive, ProgressLineMode, ProgressTier,
+    RectPrim, RectSemantic, RoundRectPrim, RoundRectSemantic, Scale, TaskBBox, TextAnchor,
+    TextBaseline, TextPrim, TextSemantic, ViewRange, Viewport, WeekendDays,
 };
 pub use display_list::{
     build_display_list, build_display_list_with_rows, compute_row_window, DisplayList,

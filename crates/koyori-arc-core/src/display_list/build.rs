@@ -2,7 +2,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashMap;
 
 use crate::graph::{BarShape, BarState, GanttGraph, GanttRow, GanttTask, TaskRow};
-use crate::progress::progress_line;
+use crate::progress::{by_row_bend, progress_line, progress_line_by_row};
 
 use super::constants::*;
 use super::legend::{tier_fill_color, PROGRESS_LABEL, TIER_ITEMS};
@@ -641,23 +641,67 @@ pub fn build_display_list_with_rows(
         })
         .collect();
 
-    let mut pts = progress_line(&prog_input, today_x);
-    if view_days.is_some() {
-        for p in &mut pts {
-            p.0 = p.0.clamp(label_w, days_right);
+    match options.progress_line {
+        ProgressLineMode::Hidden => {}
+        ProgressLineMode::ByRow => {
+            // Without a today line on the chart there is nothing to measure
+            // against, so no line.
+            if let Some(today_x) = today_x {
+                let line = by_row_progress_line(graph, rows, &plan, &axis, epoch, today_x);
+                let in_view = |x: f64| match view_days {
+                    Some(_) => x.clamp(label_w, days_right),
+                    None => x,
+                };
+                let pts: Vec<(f64, f64)> = line.iter().map(|&(x, y)| (in_view(x), y)).collect();
+                if pts.len() >= 2 {
+                    let mut primitives = vec![Primitive::Polyline(PolylinePrim {
+                        points: pts.clone(),
+                        stroke: ColorId::ProgressLine,
+                        stroke_width: BY_ROW_LINE_STROKE_W,
+                        stroke_dash: None,
+                        semantic: PolylineSemantic::ProgressStatusLine,
+                    })];
+                    // A dot at each bend off the today line.
+                    let r = BY_ROW_POINT_RADIUS_PX;
+                    primitives.extend(pts.iter().filter(|p| p.0 != today_x).map(|&(x, y)| {
+                        Primitive::RoundRect(RoundRectPrim {
+                            x: x - r,
+                            y: y - r,
+                            width: 2.0 * r,
+                            height: 2.0 * r,
+                            fill: ColorId::ProgressLine,
+                            rx: r,
+                            tier: ProgressTier::Low,
+                            semantic: RoundRectSemantic::ProgressPoint,
+                        })
+                    }));
+                    layers.push(Layer {
+                        kind: LayerKind::ProgressLine,
+                        primitives,
+                    });
+                }
+            }
         }
-    }
-    if pts.len() >= 2 {
-        layers.push(Layer {
-            kind: LayerKind::ProgressLine,
-            primitives: vec![Primitive::Polyline(PolylinePrim {
-                points: pts,
-                stroke: ColorId::Progress,
-                stroke_width: PROGRESS_LINE_STROKE_W,
-                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
-                semantic: PolylineSemantic::ProgressStatusLine,
-            })],
-        });
+        ProgressLineMode::Shown => {
+            let mut pts = progress_line(&prog_input, today_x);
+            if view_days.is_some() {
+                for p in &mut pts {
+                    p.0 = p.0.clamp(label_w, days_right);
+                }
+            }
+            if pts.len() >= 2 {
+                layers.push(Layer {
+                    kind: LayerKind::ProgressLine,
+                    primitives: vec![Primitive::Polyline(PolylinePrim {
+                        points: pts,
+                        stroke: ColorId::Progress,
+                        stroke_width: PROGRESS_LINE_STROKE_W,
+                        stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
+                        semantic: PolylineSemantic::ProgressStatusLine,
+                    })],
+                });
+            }
+        }
     }
 
     if let Some(legend) = &legend {
@@ -769,6 +813,38 @@ fn grid_days_in(
             .collect(),
         None => days,
     }
+}
+
+/// The progress line drawn `by_row` over every row of the plan. A task is done
+/// when its row's state is `done` or its progress is 100%.
+fn by_row_progress_line(
+    graph: &GanttGraph,
+    rows: Option<&[GanttRow]>,
+    plan: &RowPlan,
+    axis: &XAxis,
+    epoch: NaiveDate,
+    today_x: f64,
+) -> Vec<(f64, f64)> {
+    let line_rows: Vec<(f64, f64, Option<f64>)> = plan
+        .slots
+        .iter()
+        .map(|slot| {
+            let bend = slot.task.and_then(|i| {
+                let t = &graph.tasks[i];
+                let state = task_row_of(rows, slot).and_then(|m| m.state);
+                let done = state == Some(BarState::Done) || t.progress_pct >= 100;
+                by_row_bend(
+                    axis.x(t.start_days(epoch)),
+                    axis.x(t.end_days(epoch)),
+                    t.progress(),
+                    done,
+                    today_x,
+                )
+            });
+            (slot.y_top, slot.y_bottom(), bend)
+        })
+        .collect();
+    progress_line_by_row(&line_rows, today_x)
 }
 
 /// The chart's first day: the view's, or the one the caller passed.

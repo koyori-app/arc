@@ -41,6 +41,8 @@ pub enum ColorId {
     HardDeadline,
     /// The note right of a bar.
     Note,
+    /// The progress line drawn `by_row`, and the dots at its bends.
+    ProgressLine,
 }
 
 impl ColorId {
@@ -55,6 +57,7 @@ impl ColorId {
             ColorId::DoneBg | ColorId::WarnBg => Some(ColorId::BarBg),
             ColorId::WarnStroke | ColorId::HardDeadline => Some(ColorId::Progress),
             ColorId::Note => Some(ColorId::GridLabel),
+            ColorId::ProgressLine => Some(ColorId::Progress),
             _ => None,
         }
     }
@@ -162,6 +165,19 @@ pub struct ScrollViewport {
 /// Whether the chart draws its legend (the tier swatches and the progress-line
 /// sample under the rows). A caller that draws its own legend asks for `Hidden`
 /// and reads the contents from `legend_spec`.
+/// How the chart draws the progress line. See docs/design/progress-line.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgressLineMode {
+    /// The line as drawn before the modes: through every task's progress.
+    #[default]
+    Shown,
+    /// No line.
+    Hidden,
+    /// Out from the today line to each row that is late or ahead, and back to
+    /// it at the row's bottom edge; on the today line for every other row.
+    ByRow,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LegendMode {
@@ -263,6 +279,8 @@ pub struct ChartOptions {
     /// The days the chart shows; `None` shows every task's days. See
     /// docs/design/view-range.md.
     pub view: Option<ViewRange>,
+    /// How the progress line is drawn; `Shown` is the line as before.
+    pub progress_line: ProgressLineMode,
 }
 
 /// The days a chart shows, `from` through `to`, both included. A bar that runs
@@ -370,6 +388,8 @@ pub enum RoundRectSemantic {
     BarProgress,
     /// The dot of a task row whose shape is `point`.
     Point,
+    /// A dot at a bend of the progress line drawn `by_row`.
+    ProgressPoint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -14,6 +14,10 @@ pub const HARD_DEADLINE_HALF_PX: f64 = 5.0;
 pub const NOTE_GAP_PX: f64 = 6.0;
 /// How far inside the view's edge the mark of a task running past it sits.
 pub const OVERFLOW_INSET_PX: f64 = 4.0;
+/// The width of the progress line drawn `by_row`: solid, unlike the line before.
+pub const BY_ROW_LINE_STROKE_W: f64 = 2.0;
+/// The radius of the dots at the bends of the progress line drawn `by_row`.
+pub const BY_ROW_POINT_RADIUS_PX: f64 = 2.5;
 /// The weekday labels of the `Day` scale when the caller gives none.
 pub const DEFAULT_WEEKDAY_LABELS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 pub const LABEL_W: f64 = 120.0;

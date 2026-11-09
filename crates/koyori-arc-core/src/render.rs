@@ -10,8 +10,8 @@ use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
     types::{
-        BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, Scale, ViewRange,
-        WeekendDays,
+        BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, ProgressLineMode, Scale,
+        ViewRange, WeekendDays,
     },
     DisplayList, ScrollViewport,
 };
@@ -272,6 +272,7 @@ struct WireOptions {
     weekend: WeekendDays,
     weekday_labels: Option<[String; 7]>,
     view: Option<ViewRange>,
+    progress_line: ProgressLineMode,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -293,6 +294,7 @@ const OPTION_KEYS: &[&str] = &[
     "weekend_days",
     "weekday_labels",
     "view",
+    "progress_line",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -321,6 +323,7 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         weekend: WeekendDays::default(),
         weekday_labels: None,
         view: None,
+        progress_line: ProgressLineMode::Shown,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -398,6 +401,18 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
             "weekend_days" => wire.weekend = parse_weekend_days(&value)?,
             "weekday_labels" => wire.weekday_labels = Some(parse_weekday_labels(&value)?),
             "view" => wire.view = Some(parse_view(&value)?),
+            "progress_line" => {
+                wire.progress_line = match value.as_str() {
+                    Some("shown") => ProgressLineMode::Shown,
+                    Some("hidden") => ProgressLineMode::Hidden,
+                    Some("by_row") => ProgressLineMode::ByRow,
+                    _ => {
+                        return Err(options_error(
+                            "progress_line: expected \"shown\", \"hidden\" or \"by_row\"",
+                        ))
+                    }
+                }
+            }
             "bar_align" => {
                 wire.bar_align = match value.as_str() {
                     Some("middle") => BarAlign::Middle,
@@ -591,6 +606,7 @@ impl ResolvedOptions {
             weekend: self.wire.weekend,
             weekday_labels: self.wire.weekday_labels.clone(),
             view: self.wire.view,
+            progress_line: self.wire.progress_line,
             ..Default::default()
         }
     }
