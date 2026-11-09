@@ -42,8 +42,8 @@ describe('a view, drawn by the real Wasm', () => {
   it('draws the canvas as wide as the view', () => {
     const buffer = parseCommandBuffer(render_canvas_commands(tasksJson, '[]', options));
     expect(buffer.error).toBeUndefined();
-    // 7 日 × 30px と右の余白 20px
-    expect(buffer.viewport_width).toBe(7 * 30 + 20);
+    // 題の列を消した左の余白（棒の高さの半分の 10px）、7 日 × 30px、右の余白 20px
+    expect(buffer.viewport_width).toBe(10 + 7 * 30 + 20);
   });
 
   it('refuses a view that ends before it starts', () => {
