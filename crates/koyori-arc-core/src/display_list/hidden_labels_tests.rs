@@ -1,7 +1,7 @@
 //! 題の列と進みの字を消した時（`row_labels` / `percent_labels` が `Hidden`）の図が、
 //! `Shown` の図とどう違うか。設計書 docs/design/labels-opt-out.md の 3 と 4 にあたる。
 //!
-//! 題の列を消すと、図の全ての x が `LABEL_W` だけ左へ寄り、幅も `LABEL_W` だけ詰まる。
+//! 題の列を消すと、図の全ての x が `LABEL_W - HIDDEN_LABELS_LEFT_PX` だけ左へ寄り、幅も同じだけ詰まる。
 //! この試験は寄る量を数で書かず、`Shown` の図から引いて比べる。
 
 use chrono::{Duration, NaiveDate};
