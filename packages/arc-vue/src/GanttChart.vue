@@ -68,9 +68,10 @@ const props = defineProps<{
    */
   legend?: 'shown' | 'hidden';
   /**
-   * `'hidden'` leaves the title column out: the days start at the left edge,
-   * and a click hits only the bar. For a caller that lays the chart beside a
-   * list of its own. A string for the same reason as `legend`.
+   * `'hidden'` leaves the title column out: the days start half a bar
+   * (`HIDDEN_LABELS_LEFT_PX`) in from the left edge, and a click hits only the
+   * bars and the milestones' diamonds. For a caller that lays the chart beside
+   * a list of its own. A string for the same reason as `legend`.
    */
   rowLabels?: 'shown' | 'hidden';
   /** `'hidden'` leaves out the `NN%` on every bar and milestone. */

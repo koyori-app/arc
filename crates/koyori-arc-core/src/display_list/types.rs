@@ -152,8 +152,9 @@ pub struct ChartOptions {
     /// `Hidden` leaves the legend out and takes its height back; see
     /// `docs/design/legend-opt-out.md` (4) for what else moves.
     pub legend: LegendMode,
-    /// `Hidden` leaves the title column out: the days start at x = 0 and the
-    /// rows have no title text and no hit area left of the bar. See
+    /// `Hidden` leaves the title column out: the days start at
+    /// x = `HIDDEN_LABELS_LEFT_PX` (half a bar) and the rows have no title text
+    /// and no hit area left of the bar or the milestone's diamond. See
     /// `docs/design/labels-opt-out.md`.
     pub row_labels: LabelMode,
     /// `Hidden` leaves out the `NN%` on every bar and milestone, and the width
