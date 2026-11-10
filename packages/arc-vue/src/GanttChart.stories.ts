@@ -147,8 +147,8 @@ export const LegendHiddenCanvas: Story = {
 };
 
 // A caller that lays the chart beside its own list hides the title column and
-// the percent labels, and usually the legend too. The days start at the left
-// edge of the chart.
+// the percent labels, and usually the legend too. The days start half a bar
+// in from the left edge of the chart.
 export const LabelsHidden: Story = {
   args: {
     ...vrtArgs,
