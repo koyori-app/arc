@@ -121,4 +121,10 @@ describe('skeletonLabelWidthPx', () => {
     expect(skeletonLabelWidthPx('hidden')).toBe(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX);
     expect(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX).toBe(RUST_LAYOUT.BAR_H / 2);
   });
+
+  it('follows the bar height the caller set, as the chart does', () => {
+    // 棒の高さ 30 の図は、左に 15 の余白を残す（core の label_width と同じ）
+    expect(skeletonLabelWidthPx('hidden', 30)).toBe(15);
+    expect(skeletonLabelWidthPx('shown', 30)).toBe(RUST_LAYOUT.LABEL_W);
+  });
 });

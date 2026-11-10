@@ -38,7 +38,9 @@ import {
 const skeletonRowH = computed(() => `${props.rowHeight ?? RUST_LAYOUT.ROW_H}px`);
 // A chart without the title column has no label slot in its skeleton either,
 // only the left margin the chart keeps for a first-day milestone.
-const skeletonLabelW = computed(() => `${skeletonLabelWidthPx(props.rowLabels)}px`);
+const skeletonLabelW = computed(
+  () => `${skeletonLabelWidthPx(props.rowLabels, props.barHeight)}px`,
+);
 const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
 const props = defineProps<{
