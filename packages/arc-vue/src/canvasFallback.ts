@@ -84,3 +84,13 @@ export function resolveCanvasFailure(
   }
   return { mode: 'error', message: failure.message };
 }
+
+/**
+ * The width of the loading skeleton's label column, which stands in for the
+ * chart's title column: `LABEL_W` with the titles shown, and with them hidden
+ * the left margin the chart keeps for a first-day milestone, so the skeleton's
+ * bars start where the drawn chart's do.
+ */
+export function skeletonLabelWidthPx(rowLabels?: 'shown' | 'hidden'): number {
+  return rowLabels === 'hidden' ? RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX : RUST_LAYOUT.LABEL_W;
+}

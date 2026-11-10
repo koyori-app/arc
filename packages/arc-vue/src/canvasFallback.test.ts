@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { chartHeightForRows, chartHeightForTaskCount, resolveCanvasFailure } from './canvasFallback';
+import {
+  chartHeightForRows,
+  chartHeightForTaskCount,
+  resolveCanvasFailure,
+  skeletonLabelWidthPx,
+} from './canvasFallback';
 import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES, RUST_LAYOUT } from './wasmContract';
 
 const capacityFailure = (message: string) => ({
@@ -105,5 +110,15 @@ describe('chartHeightForRows', () => {
       48 + 32 + 32 + 64 + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX,
     );
     expect(chartHeightForRows(rows, 0)).toBe(0);
+  });
+});
+
+describe('skeletonLabelWidthPx', () => {
+  it('is the title column with titles, and the chart\'s left margin without them', () => {
+    expect(skeletonLabelWidthPx()).toBe(RUST_LAYOUT.LABEL_W);
+    expect(skeletonLabelWidthPx('shown')).toBe(RUST_LAYOUT.LABEL_W);
+    // 図は題の列を消すと、左に最初の日の菱形のための余白を残す
+    expect(skeletonLabelWidthPx('hidden')).toBe(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX);
+    expect(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX).toBe(RUST_LAYOUT.BAR_H / 2);
   });
 });
