@@ -80,8 +80,10 @@ pub const fn chart_height_with(rows: f64, legend: LegendMode) -> f64 {
 }
 
 /// The width of `days` days of `px_per_day` for a chart whose title column is `label_w` wide:
-/// `LABEL_W` with the row labels shown, 0 with them hidden. With `LABEL_W` it
-/// is `days * PX_PER_DAY + CHART_CHROME_W`, the width the Canvas guard inverts.
+/// `LABEL_W` with the row labels shown, `HIDDEN_LABELS_LEFT_PX` (half a bar)
+/// with them hidden, or half of `bar_height` when the caller sets one. With
+/// `LABEL_W` it is `days * PX_PER_DAY + CHART_CHROME_W`, the width the Canvas
+/// guard inverts.
 pub const fn chart_width_with_label(days: f64, label_w: f64, px_per_day: f64) -> f64 {
     days * px_per_day + label_w + CHART_RIGHT_PADDING_PX
 }
