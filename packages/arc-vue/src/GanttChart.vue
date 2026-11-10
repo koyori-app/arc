@@ -37,7 +37,11 @@ import {
  */
 const skeletonRowH = computed(() => `${props.rowHeight ?? RUST_LAYOUT.ROW_H}px`);
 // A chart without the title column has no label slot in its skeleton either,
-// only the left margin the chart keeps for a first-day milestone.
+// only the left margin the chart keeps for a first-day milestone. This width
+// is the one the tests pin, so it is set inline on the skeleton as a custom
+// property instead of through `v-bind` in `<style>`: the Node build of Vue
+// that the tests load makes `useCssVars` a no-op, and a value the tests
+// cannot read is a value they cannot pin (GanttChart.skeleton.test.ts).
 const skeletonLabelW = computed(
   () => `${skeletonLabelWidthPx(props.rowLabels, props.barHeight)}px`,
 );
@@ -471,7 +475,12 @@ function onCanvasClick(e: MouseEvent) {
 
 <template>
   <div class="koyori-gantt" @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)">
-    <div v-if="!ready" class="koyori-gantt-skeleton" aria-hidden="true">
+    <div
+      v-if="!ready"
+      class="koyori-gantt-skeleton"
+      :style="{ '--koyori-skeleton-label-w': skeletonLabelW }"
+      aria-hidden="true"
+    >
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
         <div class="koyori-gantt-skeleton-label" />
         <div class="koyori-gantt-skeleton-bar" :style="{ width: `${task.progress_pct}%` }" />
@@ -553,7 +562,7 @@ function onCanvasClick(e: MouseEvent) {
   gap: var(--koyori-skeleton-gap);
 }
 .koyori-gantt-skeleton-label {
-  width: v-bind(skeletonLabelW);
+  width: var(--koyori-skeleton-label-w);
   height: 12px;
   border-radius: 4px;
   background: #e5e7eb;
@@ -563,7 +572,7 @@ function onCanvasClick(e: MouseEvent) {
   height: v-bind(skeletonBarH);
   min-width: var(--koyori-skeleton-bar-min-w);
   max-width: calc(
-    100% - v-bind(skeletonLabelW) - var(--koyori-skeleton-gap)
+    100% - var(--koyori-skeleton-label-w) - var(--koyori-skeleton-gap)
       - var(--koyori-skeleton-bar-min-w)
   );
   border-radius: 4px;
