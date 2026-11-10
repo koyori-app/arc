@@ -48,6 +48,8 @@ export const EMPTY_SVG_MARKUP =
  *   height `chartHeightForTaskCount()` reserves before Wasm answers.
  * - `ROW_H`, `LABEL_W`, `BAR_H` — the loading skeleton's row metrics, which
  *   stand in for real rows and must line up with them.
+ * - `HIDDEN_LABELS_LEFT_PX` — the skeleton's left margin with the title column
+ *   hidden: the chart keeps half a bar there for a first-day milestone.
  */
 export const RUST_LAYOUT = {
   ROW_H: 40,
@@ -56,6 +58,7 @@ export const RUST_LAYOUT = {
   CHART_BOTTOM_PADDING_PX: 10,
   LABEL_W: 120,
   BAR_H: 20,
+  HIDDEN_LABELS_LEFT_PX: 10,
 } as const;
 
 /**

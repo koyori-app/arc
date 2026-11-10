@@ -50,6 +50,12 @@ function rustLayoutConstants(): Record<string, number> {
   )) {
     values[name] = Number(value);
   }
+  // `HIDDEN_LABELS_LEFT_PX: f64 = BAR_H / 2.0;` の形（他の定数を数で割る）も読む
+  for (const [, name, base, divisor] of source.matchAll(
+    /pub const ([A-Z_]+): f64 = ([A-Z_]+) \/ ([0-9]+(?:\.[0-9]+)?);/g,
+  )) {
+    if (base in values) values[name] = values[base] / Number(divisor);
+  }
   return values;
 }
 

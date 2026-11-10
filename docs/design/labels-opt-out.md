@@ -18,7 +18,7 @@ task のガントは、左に自分の一覧（キー、題、担当、厳守の
 | 問い | 採る答え |
 |------|---------|
 | 一、旗の形 | `options_json` に `row_labels` と `percent_labels` を足す。値は `legend` と同じ `"shown"` と `"hidden"`。Rust は `ChartOptions` の二つの欄（型 `LabelMode`）、arc-vue は prop `rowLabels` と `percentLabels`（3） |
-| 二、題の列を消した跡 | 詰める。図の全ての x を 120 左へ寄せ、幅も 120 詰める。高さは変えない（4.1） |
+| 二、題の列を消した跡 | 詰める。左に最初の日のマイルストーンの菱形が収まる余白（`HIDDEN_LABELS_LEFT_PX`、10）だけを残し、図の全ての x を 110（`LABEL_W - HIDDEN_LABELS_LEFT_PX`）左へ寄せ、幅も 110 詰める。高さは変えない（4.1） |
 | 三、当たりの範囲 | 題の左へ伸びていた範囲（`LABEL_HIT_W`）も消し、棒の範囲だけにする（4.2） |
 | 四、`NN%` を消した跡 | はみ出す `NN%` が広げていた幅も戻す（4.3） |
 
@@ -67,7 +67,7 @@ task のガントは、左に自分の一覧（キー、題、担当、厳守の
 ### 4.4 Canvas の上限の判定
 
 - 幅は、旗を見て実際に描く幅で測る（`chart_width_for` に旗を渡す）。
-- 日数の上限（`MAX_CANVAS_DATE_SPAN_DAYS`）は題の列を出す図から逆算したままにする。題の列を消した図は 120 狭いので、判定が緩むことは無い。
+- 日数の上限（`MAX_CANVAS_DATE_SPAN_DAYS`）は題の列を出す図から逆算したままにする。題の列を消した図は 110（`LABEL_W - HIDDEN_LABELS_LEFT_PX`）狭いので、判定が緩むことは無い。
 
 ## 5. 試験
 
