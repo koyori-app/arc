@@ -20,6 +20,7 @@ import {
   chartHeightForRows,
   isCanvasCapacityError,
   resolveCanvasFailure,
+  skeletonLabelWidthPx,
 } from './canvasFallback';
 import {
   EMPTY_SVG_MARKUP,
@@ -35,9 +36,10 @@ import {
  * `display_list/constants.rs`, not a second set that happens to match today.
  */
 const skeletonRowH = computed(() => `${props.rowHeight ?? RUST_LAYOUT.ROW_H}px`);
-// A chart without the title column has no label slot in its skeleton either.
-const skeletonLabelW = computed(() =>
-  props.rowLabels === 'hidden' ? '0px' : `${RUST_LAYOUT.LABEL_W}px`,
+// A chart without the title column has no label slot in its skeleton either,
+// only the left margin the chart keeps for a first-day milestone.
+const skeletonLabelW = computed(
+  () => `${skeletonLabelWidthPx(props.rowLabels, props.barHeight)}px`,
 );
 const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
