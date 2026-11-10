@@ -184,7 +184,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
   - `scroll_viewport`: 仮想スクロール用の `{"scroll_y": f64, "client_height": f64}`
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
-  - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W`（120）だけ詰める（下の「題と進みの字を消す」）
+  - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W - HIDDEN_LABELS_LEFT_PX`（110）だけ詰める。左には最初の日のマイルストーンの菱形が収まる余白（10）を残す（下の「題と進みの字を消す」）
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
   - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る
   - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる
@@ -223,7 +223,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - 値は arc-vue に書き写さず、読み込んだ `@koyori-app/arc` に問う。arc と arc-vue は別の版で入り得るため
   - 型 `LegendSpec`、`LegendTier`、`LegendProgressLine` は `index.ts` から出す。形は core の `LegendSpec` を JSON にした物と同じ
 - `chartHeightForTaskCount` は内部の関数で、`legend` の指定に応じて入れ物の高さを求める。`wasmContract.ts` の `RUST_LAYOUT` は変えない
-- `rowLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で題の列を描かず、図の幅を `LABEL_W` だけ詰める。押した時に当たるのは棒だけになる。読み込み中の骨組みも題の列を持たない
+- `rowLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で題の列を描かず、図の幅を `LABEL_W - HIDDEN_LABELS_LEFT_PX`（110）だけ詰める。押した時に当たるのは棒とマイルストーンの菱形だけになる。読み込み中の骨組みも題の列を持たず、左に同じ余白（`HIDDEN_LABELS_LEFT_PX`、10）を取る
 - `percentLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で `NN%` を描かない
   - どちらも、省略した時に wasm へ渡す `options_json` は、その鍵を持たない。真偽値にしない訳は `legend` と同じ
 - 型 `LabelMode` は `index.ts` から出す
