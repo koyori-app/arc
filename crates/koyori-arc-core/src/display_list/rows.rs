@@ -41,7 +41,8 @@ pub(crate) struct RowPlan {
     pub bar_h: f64,
     pub bar_align: BarAlign,
     /// Whether the rows are the caller's list. The scroll window of a chart
-    /// without one keeps the arithmetic it was pinned with.
+    /// without one, at the standard row and header heights, keeps the
+    /// arithmetic it was pinned with.
     pub external: bool,
 }
 
@@ -138,11 +139,13 @@ impl RowPlan {
     }
 
     /// The rows drawn when the chart scrolls to `scroll`, as an inclusive slot
-    /// range. A chart without a row list answers with `compute_row_window`,
-    /// whose arithmetic is pinned; a row list may have rows of any height, so
-    /// its window is found from the rows' own edges.
+    /// range. A chart without a row list, at the standard `ROW_H` and
+    /// `HEADER_H`, answers with `compute_row_window`, whose arithmetic is
+    /// pinned. Any other chart, a row list or a chart that sets
+    /// `row_height_px` or `header_height_px`, has rows that arithmetic would
+    /// divide wrongly, so its window is found from the rows' own edges.
     pub fn window(&self, scroll: Option<super::types::ScrollViewport>) -> Option<(usize, usize)> {
-        if !self.external {
+        if !self.external && self.row_h == ROW_H && self.header_h == HEADER_H {
             return super::build::compute_row_window(scroll, self.slots.len());
         }
         let scroll = scroll?;
