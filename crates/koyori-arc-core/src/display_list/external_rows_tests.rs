@@ -224,6 +224,35 @@ fn a_bottom_bar_keeps_the_standard_gap_under_it() {
 }
 
 #[test]
+fn a_bottom_bar_stays_inside_a_row_shorter_than_the_standard() {
+    // 標準の行 40・棒 20 の下寄せは、下に 10 の隙を取る。高さ 20 の行にはその隙の場所が無い。
+    let g = graph();
+    let (row, bar, short) = (40.0, 20.0, 20.0);
+    let options = ChartOptions {
+        row_height: Some(row),
+        bar_height: Some(bar),
+        bar_align: BarAlign::Bottom,
+        ..Default::default()
+    };
+    let rows = [
+        t("a"),
+        GanttRow::Task {
+            task_id: "b".to_string(),
+            height: Some(short),
+        },
+    ];
+    let list = build_display_list_with_rows(&g, Some(&rows), epoch(), &options);
+    let b = &bar_of(&list, "b").bar_bbox;
+    let (top, bottom) = (HEADER_H + row, HEADER_H + row + short);
+    assert!(b.y >= top, "bar top {} is above the row top {top}", b.y);
+    assert!(
+        b.y + b.height <= bottom,
+        "bar bottom {} is below the row bottom {bottom}",
+        b.y + b.height
+    );
+}
+
+#[test]
 fn a_dependency_on_a_task_left_out_draws_no_arrow() {
     let mut g = graph();
     g.deps = vec![

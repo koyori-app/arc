@@ -128,11 +128,15 @@ impl RowPlan {
     /// The top of the bar drawn on `slot`. A middle bar is centred in its row.
     /// A bottom bar keeps under it the gap a middle bar has in a row of the
     /// standard height, so in a tall row it sits low and leaves room above it.
+    /// A row too short for that gap gets only the room it has, so the bar stays
+    /// inside the row.
     pub fn bar_top(&self, slot: &Slot) -> f64 {
         match self.bar_align {
             BarAlign::Middle => slot.y_top + (slot.height - self.bar_h) / 2.0,
             BarAlign::Bottom => {
-                let gap = ((self.row_h - self.bar_h) / 2.0).max(0.0);
+                let gap = ((self.row_h - self.bar_h) / 2.0)
+                    .min(slot.height - self.bar_h)
+                    .max(0.0);
                 slot.y_bottom() - gap - self.bar_h
             }
         }
