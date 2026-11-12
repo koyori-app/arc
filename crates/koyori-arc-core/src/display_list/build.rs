@@ -231,7 +231,7 @@ pub fn build_display_list_with_rows(
                 semantic: PolygonSemantic::Milestone,
             }));
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, label_w, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: cy,
@@ -269,7 +269,7 @@ pub fn build_display_list_with_rows(
                 }
             }
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, label_w, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: y + bar_h / 2.0,
@@ -585,6 +585,7 @@ pub(crate) fn chart_width_for(
         total_days,
         label_w,
         percent_labels,
+        bar_h,
     ))
 }
 
@@ -639,12 +640,13 @@ struct PercentLabel {
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64) -> PercentLabel {
+fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64, bar_h: f64) -> PercentLabel {
     let x = label_w + task.start_days(epoch) * PX_PER_DAY;
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
+        // Clear of the diamond, whose half-width is half the bar drawn.
         return PercentLabel {
-            x: x + BAR_H / 2.0 + 6.0,
+            x: x + bar_h / 2.0 + 6.0,
             anchor: None,
             fill: ColorId::ProgressTextOnBg,
             content,
@@ -686,6 +688,7 @@ fn labels_right_edge(
     total_days: i64,
     label_w: f64,
     percent_labels: LabelMode,
+    bar_h: f64,
 ) -> f64 {
     // Hidden percent labels hold nothing up.
     let shown_tasks = match percent_labels {
@@ -693,7 +696,7 @@ fn labels_right_edge(
         LabelMode::Hidden => &[],
     };
     let task_edges = shown_tasks.iter().map(|task| {
-        let label = percent_label(task, epoch, label_w);
+        let label = percent_label(task, epoch, label_w, bar_h);
         text_right_edge(
             label.x,
             label.anchor,
