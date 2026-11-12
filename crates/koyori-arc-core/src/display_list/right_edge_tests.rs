@@ -255,6 +255,48 @@ fn a_milestone_alone_on_day_zero_keeps_its_whole_label_inside_when_hidden() {
 }
 
 #[test]
+fn a_milestone_label_clears_a_diamond_taller_than_the_default_bar() {
+    // 棒の高さを 40 にした図の菱形は、半幅が 20 で、既定の棒（BAR_H）の菱形より右へ張る。
+    // 字はその右に置き、図の幅もその字を覆う。
+    let bar = 40.0;
+    let list = build_display_list(
+        &graph_of(&[(0, 0, 100)]),
+        epoch(),
+        &ChartOptions {
+            bar_height: Some(bar),
+            row_height: Some(64.0),
+            legend: LegendMode::Hidden,
+            ..Default::default()
+        },
+    );
+    let diamond_right = list
+        .layers
+        .iter()
+        .flat_map(|l| l.primitives.iter())
+        .flat_map(|p| match p {
+            Primitive::Group(g) => g.children.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .find_map(|p| match p {
+            Primitive::Polygon(d) if d.semantic == PolygonSemantic::Milestone => {
+                Some(d.points.iter().map(|&(x, _)| x).fold(f64::MIN, f64::max))
+            }
+            _ => None,
+        })
+        .expect("a milestone diamond");
+    let (x, right) = percent_label(&list);
+    assert!(
+        x > diamond_right,
+        "the label starts at {x}, inside the diamond that ends at {diamond_right}"
+    );
+    assert!(
+        right <= list.viewport.width,
+        "label ends at {right}, the viewBox is {}",
+        list.viewport.width
+    );
+}
+
+#[test]
 fn a_bar_narrower_than_its_label_keeps_the_label_inside_when_hidden() {
     // 一日の棒は 30px で、100% の札が棒の中に入らず、棒の右に出る。
     for legend in [LegendMode::Shown, LegendMode::Hidden] {

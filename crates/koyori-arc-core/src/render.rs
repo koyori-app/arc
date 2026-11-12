@@ -5,7 +5,7 @@ use crate::backend::svg::empty_svg;
 use crate::backend::{BackendOutput, CanvasBackend, CommandBuffer, RenderBackend, SvgBackend};
 use crate::date_input::{parse_tz_offset, resolve_date};
 use crate::display_list::build::{build_display_list_with_rows, chart_height_of, chart_width_for};
-use crate::display_list::constants::{CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H};
+use crate::display_list::constants::{BAR_H, CHART_CHROME_H, CHART_CHROME_W, PX_PER_DAY, ROW_H};
 use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
@@ -698,9 +698,10 @@ fn parse_rows_json(
 }
 
 /// A bar taller than the row it is drawn in would cover the rows around it, so
-/// `bar_height_px` may not exceed the height of any task row.
+/// the bar, `bar_height_px` or `BAR_H` when that is left out, may not exceed the
+/// height of any task row.
 fn bar_height_error(rows: Option<&[GanttRow]>, shape: &ChartOptions) -> Option<RenderError> {
-    let bar_h = shape.bar_height?;
+    let bar_h = shape.bar_height.unwrap_or(BAR_H);
     let row_h = shape.row_height.unwrap_or(ROW_H);
     let shortest = match rows {
         None => row_h,
@@ -710,9 +711,14 @@ fn bar_height_error(rows: Option<&[GanttRow]>, shape: &ChartOptions) -> Option<R
             .map(|r| r.height().unwrap_or(row_h))
             .fold(f64::INFINITY, f64::min),
     };
+    let default = if shape.bar_height.is_none() {
+        " (the default)"
+    } else {
+        ""
+    };
     (bar_h > shortest).then(|| {
         options_error(format!(
-            "bar_height_px: {bar_h} is taller than a task row ({shortest})"
+            "bar_height_px: {bar_h}{default} is taller than a task row ({shortest})"
         ))
     })
 }
