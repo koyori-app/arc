@@ -804,8 +804,24 @@ pub(crate) fn chart_width_for(
         }
         LegendMode::Hidden => 0.0,
     };
+    // A milestone's diamond reaches half a bar past its day. The right padding
+    // holds that for the default bar, not for a much taller one.
+    let bar_h = options.bar_height.unwrap_or(BAR_H);
+    // Only a milestone the view shows draws its diamond.
+    let diamond_edge = tasks
+        .iter()
+        .filter(|t| is_zero_duration(t))
+        .filter(|t| {
+            matches!(
+                Placement::of(t, None, epoch, view_days),
+                Placement::Shown(_)
+            )
+        })
+        .map(|t| axis.x(t.start_days(epoch)) + bar_h / 2.0)
+        .fold(0.0, f64::max);
     days_w
         .max(legend_edge)
+        .max(diamond_edge)
         .max(labels_right_edge(
             &whole_in_view(tasks, epoch, view_days),
             epoch,
@@ -1338,9 +1354,14 @@ impl XAxis {
 /// them hidden only the room a milestone on the first day needs for the left
 /// half of its diamond: half the bar's height (`HIDDEN_LABELS_LEFT_PX` for the
 /// default bar). Every x the chart draws starts from this.
+///
+/// With the labels shown the column is `LABEL_W` unless half the bar is wider,
+/// so a first-day diamond of a bar taller than `2 * LABEL_W` is not cut at the
+/// left either. The larger of the two, not their sum: the column only grows
+/// for a bar that would otherwise be cut, and every other chart keeps its x.
 pub(crate) fn label_width(row_labels: LabelMode, bar_h: f64) -> f64 {
     match row_labels {
-        LabelMode::Shown => LABEL_W,
+        LabelMode::Shown => LABEL_W.max(bar_h / 2.0),
         LabelMode::Hidden => bar_h / 2.0,
     }
 }

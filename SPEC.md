@@ -194,8 +194,8 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
   - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W - HIDDEN_LABELS_LEFT_PX`（110）だけ詰める。左には最初の日のマイルストーンの菱形が収まる余白（10）を残す（下の「題と進みの字を消す」）
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
-  - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る
-  - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる
+  - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る（`bar_height_px` を省いた時も `BAR_H` で検める）。棒を高くした図は、マイルストーンの菱形が欠けぬよう、左の余白を少なくとも棒の高さの半分にし（題を出す時は `LABEL_W` と棒の半分の大きい方）、図の幅を菱形の右端まで広げる。既定の棒では今の余白で足り、出力は変わらない（docs/design/external-rows.md の 3.3）
+  - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる。標準より低い行では、その行に収まる分までしか隙を取らない
   - `scale`: `"week"`（既定。月曜に線と `M/D`）、`"day"`（日ごとに数字と曜日、月の頭に `YYYY/M`。月曜の線は残す）、`"month"`（月の頭に線と `YYYY/M`）
   - `px_per_day`: 一日の幅（px）。0 を越え 1000 以下。既定は `PX_PER_DAY`
   - `weekend_days`: 土日の帯を引く曜日の数の配列（0 が月曜、6 が日曜）。既定は無し。帯は行の区画に一日の幅で引く（class `weekend`、色の名 `Weekend`）
