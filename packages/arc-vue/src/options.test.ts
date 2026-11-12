@@ -62,4 +62,29 @@ describe('buildOptionsJson', () => {
     expect(buildOptionsJson({ scrollViewport: { scroll_y: 0, client_height: 600 } }))
       .toBe('{"scroll_viewport":{"scroll_y":0,"client_height":600}}');
   });
+  it('writes `row_labels` and `percent_labels` only when they were given', () => {
+    expect(JSON.parse(buildOptionsJson({ rowLabels: 'hidden' })!)).toEqual({ row_labels: 'hidden' });
+    expect(JSON.parse(buildOptionsJson({ percentLabels: 'hidden' })!)).toEqual({
+      percent_labels: 'hidden',
+    });
+    expect(buildOptionsJson({ rowLabels: null, percentLabels: undefined })).toBeUndefined();
+    expect(
+      JSON.parse(
+        buildOptionsJson({
+          today: '2026-06-16',
+          legend: 'hidden',
+          rowLabels: 'hidden',
+          percentLabels: 'shown',
+        })!,
+      ),
+    ).toEqual({
+      today: '2026-06-16',
+      legend: 'hidden',
+      row_labels: 'hidden',
+      percent_labels: 'shown',
+    });
+    const json = buildOptionsJson({ today: '2026-06-16', legend: 'hidden' })!;
+    expect(Object.keys(JSON.parse(json))).not.toContain('row_labels');
+    expect(Object.keys(JSON.parse(json))).not.toContain('percent_labels');
+  });
 });

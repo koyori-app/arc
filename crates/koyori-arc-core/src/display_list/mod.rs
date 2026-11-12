@@ -5,6 +5,8 @@ pub mod text_metrics;
 pub mod types;
 
 #[cfg(test)]
+mod hidden_labels_tests;
+#[cfg(test)]
 mod hidden_legend_tests;
 #[cfg(test)]
 mod right_edge_tests;

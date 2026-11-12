@@ -15,11 +15,19 @@ export interface ScrollViewportOption {
 /** Whether the chart draws its own legend. Left out, the legend is drawn. */
 export type LegendMode = 'shown' | 'hidden';
 
+/**
+ * Whether the chart draws one kind of its own text: `rowLabels` the task titles
+ * left of the days, `percentLabels` the `NN%` on each bar. Left out, it is drawn.
+ */
+export type LabelMode = 'shown' | 'hidden';
+
 export interface ChartOptionsInput {
   today?: string | null;
   scrollViewport?: ScrollViewportOption | null;
   tzOffsetMinutes?: number | null;
   legend?: LegendMode | null;
+  rowLabels?: LabelMode | null;
+  percentLabels?: LabelMode | null;
 }
 
 /**
@@ -31,6 +39,8 @@ export interface ChartOptions {
   scroll_viewport?: ScrollViewportOption;
   tz_offset_minutes?: number | string;
   legend?: LegendMode;
+  row_labels?: LabelMode;
+  percent_labels?: LabelMode;
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -48,5 +58,7 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   // Only a given value is written. A key that is always present would turn
   // "left out" into a choice, and an old reader of the options would refuse it.
   if (input.legend != null) options.legend = input.legend;
+  if (input.rowLabels != null) options.row_labels = input.rowLabels;
+  if (input.percentLabels != null) options.percent_labels = input.percentLabels;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

@@ -97,6 +97,31 @@ describe('what reaches the Wasm entry points', () => {
     }
   });
 
+  it('adds `row_labels` and `percent_labels` to the options of both paths when they are hidden', async () => {
+    mount(GanttChart, {
+      props: { tasks, rowLabels: 'hidden', percentLabels: 'hidden', deviceTier: 'high' },
+    });
+    mount(GanttChart, {
+      props: {
+        tasks,
+        backend: 'canvas',
+        rowLabels: 'hidden',
+        percentLabels: 'hidden',
+        deviceTier: 'high',
+      },
+    });
+    await flushPromises();
+
+    expect(renderSvgMock).toHaveBeenCalled();
+    expect(renderCanvasMock).toHaveBeenCalled();
+    for (const call of [...renderSvgMock.mock.calls, ...renderCanvasMock.mock.calls]) {
+      expect(JSON.parse(call[2] as string)).toEqual({
+        row_labels: 'hidden',
+        percent_labels: 'hidden',
+      });
+    }
+  });
+
   it('reserves the shorter height for a hidden legend, and the old one otherwise', async () => {
     const hidden = mount(GanttChart, { props: { tasks, legend: 'hidden', deviceTier: 'high' } });
     const shown = mount(GanttChart, { props: { tasks, deviceTier: 'high' } });

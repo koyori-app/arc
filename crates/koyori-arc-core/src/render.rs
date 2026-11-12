@@ -11,7 +11,7 @@ use crate::display_list::constants::{
 use crate::display_list::legend::legend_spec;
 use crate::display_list::{
     build_display_list,
-    types::{ChartOptions, LegendMode, Palette},
+    types::{ChartOptions, LabelMode, LegendMode, Palette},
     ScrollViewport,
 };
 use crate::error::{
@@ -153,12 +153,15 @@ fn svg_graph_limit_error(tasks: &[GanttTask], deps: &[GanttDep]) -> Option<Rende
 
 /// Refuses a chart the canvas cannot hold. It never accepts a chart that is
 /// larger than the one drawn: the width is the width `build_display_list` draws
-/// for this `legend`, and the height is the taller of the two (the one with the
-/// legend), so a chart without a legend, which is shorter, is not under-counted.
+/// for this `legend` and these labels, and the height is the taller of the two
+/// (the one with the legend), so a chart without a legend, which is shorter, is
+/// not under-counted.
 fn canvas_graph_limit_error(
     tasks: &[GanttTask],
     deps: &[GanttDep],
     legend: LegendMode,
+    row_labels: LabelMode,
+    percent_labels: LabelMode,
 ) -> Option<RenderError> {
     if let Some(err) = common_graph_limit_error(tasks, deps) {
         return Some(err);
@@ -186,7 +189,7 @@ fn canvas_graph_limit_error(
     // The days are checked first, so a chart of a plausible length reaches the
     // exact width. A label can run past the days, so the days alone under-count.
     let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
-    let width_px = chart_width_for(tasks, epoch, legend);
+    let width_px = chart_width_for(tasks, epoch, legend, row_labels, percent_labels);
     if width_px > MAX_CANVAS_SIDE_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -234,11 +237,20 @@ struct WireOptions {
     scroll_viewport: Option<ScrollViewport>,
     tz_offset_minutes: Option<f64>,
     legend: LegendMode,
+    row_labels: LabelMode,
+    percent_labels: LabelMode,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
 /// that a misspelt one cannot silently do nothing.
-const OPTION_KEYS: &[&str] = &["today", "scroll_viewport", "tz_offset_minutes", "legend"];
+const OPTION_KEYS: &[&str] = &[
+    "today",
+    "scroll_viewport",
+    "tz_offset_minutes",
+    "legend",
+    "row_labels",
+    "percent_labels",
+];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
     RenderError::new(CODE_PARSE_ERROR, format!("parse error: options: {message}"))
@@ -254,6 +266,8 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         scroll_viewport: None,
         tz_offset_minutes: None,
         legend: LegendMode::Shown,
+        row_labels: LabelMode::Shown,
+        percent_labels: LabelMode::Shown,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -307,10 +321,23 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
                     _ => return Err(options_error("legend: expected \"shown\" or \"hidden\"")),
                 }
             }
+            "row_labels" => wire.row_labels = parse_label_mode("row_labels", &value)?,
+            "percent_labels" => wire.percent_labels = parse_label_mode("percent_labels", &value)?,
             _ => unreachable!("OPTION_KEYS covers every arm"),
         }
     }
     Ok(wire)
+}
+
+/// `row_labels` and `percent_labels` take the same two words as `legend`.
+fn parse_label_mode(key: &str, value: &serde_json::Value) -> Result<LabelMode, RenderError> {
+    match value.as_str() {
+        Some("shown") => Ok(LabelMode::Shown),
+        Some("hidden") => Ok(LabelMode::Hidden),
+        _ => Err(options_error(format!(
+            "{key}: expected \"shown\" or \"hidden\""
+        ))),
+    }
 }
 
 /// What a Wasm entry point has once every refusal about the inputs but the
@@ -331,11 +358,21 @@ impl ResolvedOptions {
         self.wire.legend
     }
 
+    fn row_labels(&self) -> LabelMode {
+        self.wire.row_labels
+    }
+
+    fn percent_labels(&self) -> LabelMode {
+        self.wire.percent_labels
+    }
+
     fn chart_options(&self) -> Result<ChartOptions, RenderError> {
         Ok(ChartOptions {
             today: parse_today(self.wire.today.as_deref(), self.offset)?,
             scroll_viewport: self.wire.scroll_viewport,
             legend: self.wire.legend,
+            row_labels: self.wire.row_labels,
+            percent_labels: self.wire.percent_labels,
         })
     }
 }
@@ -509,7 +546,13 @@ pub fn render_canvas_commands(
         Ok(v) => v,
         Err(e) => return RenderError::new(CODE_PARSE_ERROR, format!("parse error: {e}")).to_json(),
     };
-    if let Some(err) = canvas_graph_limit_error(&tasks, &deps, resolved.legend()) {
+    if let Some(err) = canvas_graph_limit_error(
+        &tasks,
+        &deps,
+        resolved.legend(),
+        resolved.row_labels(),
+        resolved.percent_labels(),
+    ) {
         return err.to_json();
     }
     let options = match resolved.chart_options() {
@@ -1056,7 +1099,13 @@ mod tests {
                 {
                     let tasks = tasks_with_tail(rows, span, tail);
                     let (w, h) = drawn_size(&tasks, legend);
-                    let verdict = canvas_graph_limit_error(&tasks, &[], legend);
+                    let verdict = canvas_graph_limit_error(
+                        &tasks,
+                        &[],
+                        legend,
+                        LabelMode::Shown,
+                        LabelMode::Shown,
+                    );
                     if verdict.is_none() {
                         accepted += 1;
                         assert!(

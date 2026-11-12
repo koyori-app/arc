@@ -54,21 +54,24 @@ pub fn build_display_list(
         today,
         scroll_viewport,
         legend: legend_mode,
+        row_labels,
+        percent_labels,
     } = *options;
     let rows = assign_rows(&graph.tasks, &graph.deps);
+    let label_w = label_width(row_labels);
 
     let total_days = total_days_of(&graph.tasks, epoch);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode);
+    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode, row_labels, percent_labels);
     let chart_h = chart_height_with(rows.len() as f64, legend_mode);
 
     let viewport = Viewport {
         width: chart_w,
         height: chart_h,
-        label_width: LABEL_W,
+        label_width: label_w,
         header_height: HEADER_H,
         row_height: ROW_H,
     };
@@ -82,9 +85,9 @@ pub fn build_display_list(
     layers.push(Layer {
         kind: LayerKind::Background,
         primitives: vec![Primitive::Rect(RectPrim {
-            x: LABEL_W,
+            x: label_w,
             y: 0.0,
-            width: chart_w - LABEL_W,
+            width: chart_w - label_w,
             height: HEADER_H,
             fill: ColorId::HeaderBg,
             rx: None,
@@ -98,7 +101,7 @@ pub fn build_display_list(
     // but the native entry points have no such guard, so every step here is
     // checked: an overflow stops the grid instead of panicking.
     for grid_day in grid_days(epoch, total_days) {
-        let x = LABEL_W + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
+        let x = label_w + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
         grid_prims.push(Primitive::Line(LinePrim {
             x1: x,
             y1: HEADER_H,
@@ -134,7 +137,7 @@ pub fn build_display_list(
             continue;
         }
         let y = HEADER_H + row.row as f64 * ROW_H + BAR_PAD;
-        let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
+        let x = label_w + task.start_days(epoch) * PX_PER_DAY;
         let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
         let prog = task.progress();
         let prog_w = w * prog;
@@ -174,18 +177,20 @@ pub fn build_display_list(
                 tier,
                 semantic: PolygonSemantic::Milestone,
             }));
-            let label = percent_label(task, epoch);
-            children.push(Primitive::Text(TextPrim {
-                x: label.x,
-                y: cy,
-                content: label.content,
-                fill: Some(label.fill),
-                font_size: Some(PROGRESS_LABEL_FONT_PX),
-                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: label.anchor,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::ProgressPercent,
-            }));
+            if percent_labels == LabelMode::Shown {
+                let label = percent_label(task, epoch, label_w);
+                children.push(Primitive::Text(TextPrim {
+                    x: label.x,
+                    y: cy,
+                    content: label.content,
+                    fill: Some(label.fill),
+                    font_size: Some(PROGRESS_LABEL_FONT_PX),
+                    font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
+                    anchor: label.anchor,
+                    baseline: TextBaseline::Middle,
+                    semantic: TextSemantic::ProgressPercent,
+                }));
+            }
         } else {
             if w > 0.0 {
                 children.push(Primitive::Rect(RectPrim {
@@ -210,35 +215,52 @@ pub fn build_display_list(
                     }));
                 }
             }
-            let label = percent_label(task, epoch);
-            children.push(Primitive::Text(TextPrim {
-                x: label.x,
-                y: y + BAR_H / 2.0,
-                content: label.content,
-                fill: Some(label.fill),
-                font_size: Some(PROGRESS_LABEL_FONT_PX),
-                font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
-                anchor: label.anchor,
-                baseline: TextBaseline::Middle,
-                semantic: TextSemantic::ProgressPercent,
-            }));
+            if percent_labels == LabelMode::Shown {
+                let label = percent_label(task, epoch, label_w);
+                children.push(Primitive::Text(TextPrim {
+                    x: label.x,
+                    y: y + BAR_H / 2.0,
+                    content: label.content,
+                    fill: Some(label.fill),
+                    font_size: Some(PROGRESS_LABEL_FONT_PX),
+                    font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
+                    anchor: label.anchor,
+                    baseline: TextBaseline::Middle,
+                    semantic: TextSemantic::ProgressPercent,
+                }));
+            }
         }
 
-        let display_title =
-            truncate_to_width(&task.title, DEFAULT_FONT_SIZE_PX, ROW_LABEL_MAX_W_PX);
-        let label_x = LABEL_W - LABEL_GAP_PX;
-        let hit_left = label_x - LABEL_HIT_W;
-        children.push(Primitive::Text(TextPrim {
-            x: label_x,
-            y: y + BAR_H / 2.0,
-            content: display_title,
-            fill: None,
-            font_size: None,
-            font_weight: None,
-            anchor: Some(TextAnchor::End),
-            baseline: TextBaseline::Middle,
-            semantic: TextSemantic::RowLabel,
-        }));
+        // The left of what the row draws: a milestone's diamond reaches half a
+        // bar left of its day.
+        let shape_left = if is_zero_duration(task) {
+            x - BAR_H / 2.0
+        } else {
+            x
+        };
+        // Without the title column the row has nothing left of the shape to
+        // hit, so the hit area starts where the shape does. With it, the area
+        // starts left of the title, which is left of any shape.
+        let hit_left = match row_labels {
+            LabelMode::Shown => {
+                let display_title =
+                    truncate_to_width(&task.title, DEFAULT_FONT_SIZE_PX, ROW_LABEL_MAX_W_PX);
+                let label_x = LABEL_W - LABEL_GAP_PX;
+                children.push(Primitive::Text(TextPrim {
+                    x: label_x,
+                    y: y + BAR_H / 2.0,
+                    content: display_title,
+                    fill: None,
+                    font_size: None,
+                    font_weight: None,
+                    anchor: Some(TextAnchor::End),
+                    baseline: TextBaseline::Middle,
+                    semantic: TextSemantic::RowLabel,
+                }));
+                (label_x - LABEL_HIT_W).min(shape_left)
+            }
+            LabelMode::Hidden => shape_left,
+        };
 
         let bar_bbox = BBox {
             x,
@@ -303,9 +325,9 @@ pub fn build_display_list(
             continue;
         }
 
-        let from_x = LABEL_W + from_t.start_days(epoch) * PX_PER_DAY;
+        let from_x = label_w + from_t.start_days(epoch) * PX_PER_DAY;
         let from_w = task_bar_width_days(from_t, epoch) * PX_PER_DAY;
-        let to_x = LABEL_W + to_t.start_days(epoch) * PX_PER_DAY;
+        let to_x = label_w + to_t.start_days(epoch) * PX_PER_DAY;
 
         let mut start_x = from_x + from_w / 2.0;
         while to_x < start_x + ROW_PADDING && start_x > from_x + ROW_PADDING {
@@ -363,8 +385,8 @@ pub fn build_display_list(
 
     // Today marker
     let today_x = today.and_then(|today| {
-        let x = LABEL_W + (today - epoch).num_days() as f64 * PX_PER_DAY;
-        if x >= LABEL_W && x <= chart_w {
+        let x = label_w + (today - epoch).num_days() as f64 * PX_PER_DAY;
+        if x >= label_w && x <= chart_w {
             Some(x)
         } else {
             None
@@ -400,8 +422,8 @@ pub fn build_display_list(
             let y_top = HEADER_H + row as f64 * ROW_H;
             let y_bot = y_top + ROW_H;
             (
-                LABEL_W + t.start_days(epoch) * PX_PER_DAY,
-                LABEL_W + t.end_days(epoch) * PX_PER_DAY,
+                label_w + t.start_days(epoch) * PX_PER_DAY,
+                label_w + t.end_days(epoch) * PX_PER_DAY,
                 y_top,
                 y_bot,
                 t.progress(),
@@ -424,7 +446,7 @@ pub fn build_display_list(
     }
 
     if let Some(legend) = &legend {
-        layers.push(legend_layer(chart_h, legend));
+        layers.push(legend_layer(chart_h, legend, label_w));
     }
 
     let primitive_count = layers
@@ -483,18 +505,35 @@ pub(crate) fn chart_width_for(
     tasks: &[GanttTask],
     epoch: NaiveDate,
     legend_mode: LegendMode,
+    row_labels: LabelMode,
+    percent_labels: LabelMode,
 ) -> f64 {
+    let label_w = label_width(row_labels);
     let total_days = total_days_of(tasks, epoch);
-    let days_w = chart_width(total_days as f64);
+    let days_w = chart_width_with_label(total_days as f64, label_w);
     let legend_edge = match legend_mode {
         LegendMode::Shown => {
-            LABEL_W + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
+            label_w + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
         }
         LegendMode::Hidden => 0.0,
     };
-    days_w
-        .max(legend_edge)
-        .max(labels_right_edge(tasks, epoch, total_days))
+    days_w.max(legend_edge).max(labels_right_edge(
+        tasks,
+        epoch,
+        total_days,
+        label_w,
+        percent_labels,
+    ))
+}
+
+/// How wide the title column is: `LABEL_W` with the row labels shown, and with
+/// them hidden only the room a milestone on the first day needs for the left
+/// half of its diamond. Every x the chart draws starts from this.
+pub(crate) fn label_width(row_labels: LabelMode) -> f64 {
+    match row_labels {
+        LabelMode::Shown => LABEL_W,
+        LabelMode::Hidden => HIDDEN_LABELS_LEFT_PX,
+    }
 }
 
 const GRID_LABEL_FONT_PX: f64 = 11.0;
@@ -537,8 +576,8 @@ struct PercentLabel {
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate) -> PercentLabel {
-    let x = LABEL_W + task.start_days(epoch) * PX_PER_DAY;
+fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64) -> PercentLabel {
+    let x = label_w + task.start_days(epoch) * PX_PER_DAY;
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
         return PercentLabel {
@@ -578,9 +617,20 @@ fn text_right_edge(
 /// that runs on past the end of the days, such as a percent label to the right of
 /// a bar that ends on the last day, needs the width to reach it. The bars and the
 /// lines stop at the last day and need nothing.
-fn labels_right_edge(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> f64 {
-    let task_edges = tasks.iter().map(|task| {
-        let label = percent_label(task, epoch);
+fn labels_right_edge(
+    tasks: &[GanttTask],
+    epoch: NaiveDate,
+    total_days: i64,
+    label_w: f64,
+    percent_labels: LabelMode,
+) -> f64 {
+    // Hidden percent labels hold nothing up.
+    let shown_tasks = match percent_labels {
+        LabelMode::Shown => tasks,
+        LabelMode::Hidden => &[],
+    };
+    let task_edges = shown_tasks.iter().map(|task| {
+        let label = percent_label(task, epoch, label_w);
         text_right_edge(
             label.x,
             label.anchor,
@@ -591,7 +641,7 @@ fn labels_right_edge(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> 
     });
     let grid = grid_days(epoch, total_days).into_iter().map(|day| {
         text_right_edge(
-            LABEL_W + (day - epoch).num_days() as f64 * PX_PER_DAY,
+            label_w + (day - epoch).num_days() as f64 * PX_PER_DAY,
             None,
             &grid_label(day),
             GRID_LABEL_FONT_PX,
@@ -621,9 +671,9 @@ fn progress_label_style(x: f64, w: f64, prog_w: f64, label: &str) -> (f64, TextA
 }
 
 /// The legend: the progress-line sample, then one swatch per tier.
-fn legend_layer(chart_h: f64, legend: &LegendLayout) -> Layer {
+fn legend_layer(chart_h: f64, legend: &LegendLayout, label_w: f64) -> Layer {
     let legend_y1 = chart_h - LEGEND_H + 14.0;
-    let legend_x = LABEL_W + LEGEND_LEFT_PAD_PX;
+    let legend_x = label_w + LEGEND_LEFT_PAD_PX;
     let legend_y2 = chart_h - CHART_BOTTOM_PADDING_PX;
     let sw = LEGEND_SWATCH_PX;
 

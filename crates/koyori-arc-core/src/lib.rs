@@ -18,10 +18,11 @@ pub use backend::{
 pub use display_list::constants::{DOM_CAP, HEADER_H, ROW_H};
 pub use display_list::legend::{legend_spec, LegendProgressLine, LegendSpec, LegendTier};
 pub use display_list::types::{
-    BBox, ChartMetadata, ChartOptions, ColorId, Coord, GroupPrim, Layer, LayerKind, LegendMode,
-    LinePrim, LineSemantic, Palette, PathPrim, PathSemantic, PolygonPrim, PolygonSemantic,
-    PolylinePrim, PolylineSemantic, Primitive, ProgressTier, RectPrim, RectSemantic, RoundRectPrim,
-    RoundRectSemantic, TaskBBox, TextAnchor, TextBaseline, TextPrim, TextSemantic, Viewport,
+    BBox, ChartMetadata, ChartOptions, ColorId, Coord, GroupPrim, LabelMode, Layer, LayerKind,
+    LegendMode, LinePrim, LineSemantic, Palette, PathPrim, PathSemantic, PolygonPrim,
+    PolygonSemantic, PolylinePrim, PolylineSemantic, Primitive, ProgressTier, RectPrim,
+    RectSemantic, RoundRectPrim, RoundRectSemantic, TaskBBox, TextAnchor, TextBaseline, TextPrim,
+    TextSemantic, Viewport,
 };
 pub use display_list::{build_display_list, compute_row_window, DisplayList, ScrollViewport};
 pub use error::{

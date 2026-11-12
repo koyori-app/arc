@@ -145,3 +145,45 @@ export const LegendHiddenCanvas: Story = {
     template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
   }),
 };
+
+// A caller that lays the chart beside its own list hides the title column and
+// the percent labels, and usually the legend too. The days start half a bar
+// in from the left edge of the chart.
+export const LabelsHidden: Story = {
+  args: {
+    ...vrtArgs,
+    tasks,
+    deps,
+    today: '2026-06-06',
+    legend: 'hidden',
+    rowLabels: 'hidden',
+    percentLabels: 'hidden',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};
+
+export const LabelsHiddenCanvas: Story = {
+  args: {
+    ...vrtArgs,
+    tasks,
+    deps,
+    today: '2026-06-06',
+    legend: 'hidden',
+    rowLabels: 'hidden',
+    percentLabels: 'hidden',
+    backend: 'canvas',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};

@@ -7,6 +7,9 @@ use super::types::LegendMode;
 
 pub const ROW_H: f64 = 40.0;
 pub const BAR_H: f64 = 20.0;
+/// The left margin of a chart without its title column: half a bar, so a
+/// milestone on the first day draws the left half of its diamond inside the chart.
+pub const HIDDEN_LABELS_LEFT_PX: f64 = BAR_H / 2.0;
 pub const BAR_PAD: f64 = (ROW_H - BAR_H) / 2.0;
 pub const PX_PER_DAY: f64 = 30.0;
 pub const LABEL_W: f64 = 120.0;
@@ -59,8 +62,19 @@ pub const fn chart_height_with(rows: f64, legend: LegendMode) -> f64 {
     rows * ROW_H + chart_chrome_h(legend)
 }
 
+/// The width of `days` days for a chart whose title column is `label_w` wide:
+/// `LABEL_W` with the row labels shown, `HIDDEN_LABELS_LEFT_PX` (half a bar)
+/// with them hidden. With `LABEL_W` it is `days * PX_PER_DAY + CHART_CHROME_W`,
+/// the width the Canvas guard inverts.
+pub const fn chart_width_with_label(days: f64, label_w: f64) -> f64 {
+    days * PX_PER_DAY + label_w + CHART_RIGHT_PADDING_PX
+}
+
+/// `chart_width_with_label` with the title column shown, the chart the tests
+/// written before the column could be hidden compare against.
+#[cfg(test)]
 pub const fn chart_width(days: f64) -> f64 {
-    days * PX_PER_DAY + CHART_CHROME_W
+    chart_width_with_label(days, LABEL_W)
 }
 /// Corner radius shared by a bar's background and its progress fill: they are
 /// stacked, so a mismatch shows as a sliver of background at every corner.

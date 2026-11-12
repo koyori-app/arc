@@ -20,6 +20,7 @@ import {
   chartHeightForTaskCount,
   isCanvasCapacityError,
   resolveCanvasFailure,
+  skeletonLabelWidthPx,
 } from './canvasFallback';
 import {
   EMPTY_SVG_MARKUP,
@@ -35,7 +36,13 @@ import {
  * `display_list/constants.rs`, not a second set that happens to match today.
  */
 const skeletonRowH = `${RUST_LAYOUT.ROW_H}px`;
-const skeletonLabelW = `${RUST_LAYOUT.LABEL_W}px`;
+// A chart without the title column has no label slot in its skeleton either,
+// only the left margin the chart keeps for a first-day milestone. This one
+// width follows props, so it is set inline on the skeleton as a custom
+// property instead of through `v-bind` in `<style>`: the Node build of Vue
+// that the tests load makes `useCssVars` a no-op, and a value the tests
+// cannot read is a value they cannot pin (GanttChart.skeleton.test.ts).
+const skeletonLabelW = computed(() => `${skeletonLabelWidthPx(props.rowLabels)}px`);
 const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
 
 const props = defineProps<{
@@ -58,6 +65,15 @@ const props = defineProps<{
    * legend of every existing caller.
    */
   legend?: 'shown' | 'hidden';
+  /**
+   * `'hidden'` leaves the title column out: the days start half a bar
+   * (`HIDDEN_LABELS_LEFT_PX`) in from the left edge, and a click hits only the
+   * bars and the milestones' diamonds. For a caller that lays the chart beside
+   * a list of its own. A string for the same reason as `legend`.
+   */
+  rowLabels?: 'shown' | 'hidden';
+  /** `'hidden'` leaves out the `NN%` on every bar and milestone. */
+  percentLabels?: 'shown' | 'hidden';
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -163,6 +179,8 @@ const optionsJson = computed(() =>
     scrollViewport: scrollViewport.value,
     tzOffsetMinutes: props.tzOffsetMinutes,
     legend: props.legend,
+    rowLabels: props.rowLabels,
+    percentLabels: props.percentLabels,
   }),
 );
 
@@ -251,6 +269,8 @@ function renderCanvasFallback(failure: RenderFailure) {
           // Left out here, the SVG the canvas falls back to would bring the
           // legend back and be taller than the height reserved for it.
           legend: props.legend,
+          rowLabels: props.rowLabels,
+          percentLabels: props.percentLabels,
         }),
       );
     } catch {
@@ -397,7 +417,12 @@ function onCanvasClick(e: MouseEvent) {
 
 <template>
   <div class="koyori-gantt" @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)">
-    <div v-if="!ready" class="koyori-gantt-skeleton" aria-hidden="true">
+    <div
+      v-if="!ready"
+      class="koyori-gantt-skeleton"
+      :style="{ '--koyori-skeleton-label-w': skeletonLabelW }"
+      aria-hidden="true"
+    >
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
         <div class="koyori-gantt-skeleton-label" />
         <div class="koyori-gantt-skeleton-bar" :style="{ width: `${task.progress_pct}%` }" />
@@ -479,7 +504,7 @@ function onCanvasClick(e: MouseEvent) {
   gap: var(--koyori-skeleton-gap);
 }
 .koyori-gantt-skeleton-label {
-  width: v-bind(skeletonLabelW);
+  width: var(--koyori-skeleton-label-w);
   height: 12px;
   border-radius: 4px;
   background: #e5e7eb;
@@ -489,7 +514,7 @@ function onCanvasClick(e: MouseEvent) {
   height: v-bind(skeletonBarH);
   min-width: var(--koyori-skeleton-bar-min-w);
   max-width: calc(
-    100% - v-bind(skeletonLabelW) - var(--koyori-skeleton-gap)
+    100% - var(--koyori-skeleton-label-w) - var(--koyori-skeleton-gap)
       - var(--koyori-skeleton-bar-min-w)
   );
   border-radius: 4px;
