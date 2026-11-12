@@ -127,4 +127,13 @@ describe('skeletonLabelWidthPx', () => {
     expect(skeletonLabelWidthPx('hidden', 30)).toBe(15);
     expect(skeletonLabelWidthPx('shown', 30)).toBe(RUST_LAYOUT.LABEL_W);
   });
+
+  it('widens with the titles shown once half the bar is wider than the title column', () => {
+    // core の label_width は題を出す図でも LABEL_W と棒の半分の大きい方を取る
+    expect(skeletonLabelWidthPx('shown', 300)).toBe(150);
+    expect(skeletonLabelWidthPx(undefined, 300)).toBe(150);
+    expect(skeletonLabelWidthPx('hidden', 300)).toBe(150);
+    // 棒が題の列の倍（240）までは LABEL_W のまま
+    expect(skeletonLabelWidthPx('shown', 2 * RUST_LAYOUT.LABEL_W)).toBe(RUST_LAYOUT.LABEL_W);
+  });
 });
