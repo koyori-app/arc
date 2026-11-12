@@ -331,7 +331,7 @@ pub fn build_display_list_with_rows(
                 semantic: PolygonSemantic::Milestone,
             }));
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, &axis);
+                let label = percent_label(task, epoch, &axis, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: cy,
@@ -394,7 +394,7 @@ pub fn build_display_list_with_rows(
                 )));
             }
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, &axis);
+                let label = percent_label(task, epoch, &axis, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: y + bar_h / 2.0,
@@ -1413,12 +1413,13 @@ struct PercentLabel {
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate, axis: &XAxis) -> PercentLabel {
+fn percent_label(task: &GanttTask, epoch: NaiveDate, axis: &XAxis, bar_h: f64) -> PercentLabel {
     let x = axis.x(task.start_days(epoch));
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
+        // Clear of the diamond, whose half-width is half the bar drawn.
         return PercentLabel {
-            x: x + BAR_H / 2.0 + 6.0,
+            x: x + bar_h / 2.0 + 6.0,
             anchor: None,
             fill: ColorId::ProgressTextOnBg,
             content,
@@ -1467,7 +1468,7 @@ fn labels_right_edge(
         LabelMode::Hidden => &[],
     };
     let task_edges = shown_tasks.iter().map(|task| {
-        let label = percent_label(task, epoch, axis);
+        let label = percent_label(task, epoch, axis, options.bar_height.unwrap_or(BAR_H));
         text_right_edge(
             label.x,
             label.anchor,
