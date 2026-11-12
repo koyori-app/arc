@@ -224,6 +224,35 @@ fn a_bottom_bar_keeps_the_standard_gap_under_it() {
 }
 
 #[test]
+fn a_bottom_bar_stays_inside_a_row_shorter_than_the_standard() {
+    // 標準の行 40・棒 20 の下寄せは、下に 10 の隙を取る。高さ 20 の行にはその隙の場所が無い。
+    let g = graph();
+    let (row, bar, short) = (40.0, 20.0, 20.0);
+    let options = ChartOptions {
+        row_height: Some(row),
+        bar_height: Some(bar),
+        bar_align: BarAlign::Bottom,
+        ..Default::default()
+    };
+    let rows = [
+        t("a"),
+        GanttRow::Task {
+            task_id: "b".to_string(),
+            height: Some(short),
+        },
+    ];
+    let list = build_display_list_with_rows(&g, Some(&rows), epoch(), &options);
+    let b = &bar_of(&list, "b").bar_bbox;
+    let (top, bottom) = (HEADER_H + row, HEADER_H + row + short);
+    assert!(b.y >= top, "bar top {} is above the row top {top}", b.y);
+    assert!(
+        b.y + b.height <= bottom,
+        "bar bottom {} is below the row bottom {bottom}",
+        b.y + b.height
+    );
+}
+
+#[test]
 fn a_dependency_on_a_task_left_out_draws_no_arrow() {
     let mut g = graph();
     g.deps = vec![
@@ -292,4 +321,75 @@ fn the_scroll_window_follows_rows_of_any_height() {
     let mut sorted = drawn.clone();
     sorted.sort_unstable();
     assert_eq!(sorted, expected);
+}
+
+/// 一覧を渡さず寸法だけを替えた図で、`scroll_y` から `client_height` の間に見える行と、
+/// 描いた行を返す。行は課題の順に一つずつ並ぶ（依存が無いゆえ）。
+fn rows_drawn_without_a_list(
+    count: usize,
+    header: Option<f64>,
+    row: Option<f64>,
+    scroll_y: f64,
+    client_height: f64,
+) -> (Vec<u32>, Vec<u32>) {
+    let g = GanttGraph {
+        tasks: (0..count)
+            .map(|i| task(&format!("t{i}"), 0, 0, 3))
+            .collect(),
+        deps: vec![],
+    };
+    let options = ChartOptions {
+        header_height: header,
+        row_height: row,
+        scroll_viewport: Some(ScrollViewport {
+            scroll_y,
+            client_height,
+        }),
+        ..Default::default()
+    };
+    let list = build_display_list(&g, epoch(), &options);
+    let (header, row) = (header.unwrap_or(HEADER_H), row.unwrap_or(ROW_H));
+    let visible = (0..count)
+        .filter(|&i| {
+            let top = header + i as f64 * row;
+            top + row > scroll_y && top < scroll_y + client_height
+        })
+        .map(|i| i as u32)
+        .collect();
+    let mut drawn: Vec<u32> = list.metadata.task_bboxes.iter().map(|b| b.row).collect();
+    drawn.sort_unstable();
+    (visible, drawn)
+}
+
+#[test]
+fn a_taller_row_without_a_list_draws_the_rows_in_view() {
+    // review の形: 60 件、行の高さ 80、2000 まで送って 600 を見る。
+    // 既定の寸法で割ると 47〜59 行を描き、見える 24〜32 行が空になっておった。
+    for (count, row, scroll_y) in [(60, 80.0, 2000.0), (100, 100.0, 5000.0)] {
+        let (visible, drawn) = rows_drawn_without_a_list(count, None, Some(row), scroll_y, 600.0);
+        assert!(!visible.is_empty());
+        for v in &visible {
+            assert!(
+                drawn.contains(v),
+                "row {v} of {count} at {row}px: drew {drawn:?}"
+            );
+        }
+        // 前後に ROW_BUFFER の行を足すだけで、見えぬ所までは描かぬ
+        let first = *visible.first().unwrap() as usize;
+        let last = *visible.last().unwrap() as usize;
+        let expected: Vec<u32> = (first.saturating_sub(ROW_BUFFER as usize)
+            ..=(last + ROW_BUFFER as usize).min(count - 1))
+            .map(|i| i as u32)
+            .collect();
+        assert_eq!(drawn, expected, "{count} rows at {row}px");
+    }
+}
+
+#[test]
+fn a_taller_header_without_a_list_draws_the_rows_in_view() {
+    // 見出しだけを高くした図も、行の窓が見出しの分だけずれぬ
+    let (visible, drawn) = rows_drawn_without_a_list(60, Some(400.0), None, 1200.0, 300.0);
+    for v in &visible {
+        assert!(drawn.contains(v), "row {v}: drew {drawn:?}");
+    }
 }
