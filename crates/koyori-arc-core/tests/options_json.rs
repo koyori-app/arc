@@ -445,3 +445,66 @@ fn an_unknown_label_value_is_refused_and_named() {
         }
     }
 }
+
+/// SVG の図の幅と、マイルストーンの菱形の頂点の x。
+fn svg_width_and_diamond(svg: &str) -> (f64, Vec<f64>) {
+    let attr = |from: &str, key: &str| -> String {
+        let start = from.find(key).unwrap_or_else(|| panic!("{key} in {svg}")) + key.len();
+        let rest = &from[start..];
+        rest[..rest.find('"').unwrap()].to_string()
+    };
+    let width: f64 = attr(svg, " width=\"").parse().unwrap();
+    let polygon = &svg[svg
+        .find("<polygon class=\"bar-milestone")
+        .expect("a milestone")..];
+    let xs = attr(polygon, " points=\"")
+        .split_whitespace()
+        .map(|pair| pair.split(',').next().unwrap().parse::<f64>().unwrap())
+        .collect();
+    (width, xs)
+}
+
+/// canvas の命の図の幅と、塗る多角形（菱形）の頂点の x。
+fn canvas_width_and_diamond(json: &str) -> (f64, Vec<f64>) {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap();
+    let width = v["viewport_width"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("{v}"));
+    let xs = v["ops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|op| op.get("FillPolygon"))
+        .expect("a filled polygon")["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p[0].as_f64().unwrap())
+        .collect();
+    (width, xs)
+}
+
+#[test]
+fn a_tall_milestone_stays_whole_on_both_entry_points() {
+    // 日曜に始まり日曜に終わるマイルストーン一つ
+    let task =
+        r#"[{"id":"m","title":"M","progress_pct":0,"start":"2026-06-07","end":"2026-06-07"}]"#;
+    for options in [
+        // review の形: 題・進みの字・凡例を全て消し、行と棒を 120 にする
+        r#"{"row_height_px":120,"bar_height_px":120,"row_labels":"hidden","percent_labels":"hidden","legend":"hidden"}"#,
+        // 題を出し、棒を題の列（120）の倍より高い 300 にする
+        r#"{"row_height_px":300,"bar_height_px":300,"percent_labels":"hidden","legend":"hidden"}"#,
+    ] {
+        let (svg_w, svg_xs) = svg_width_and_diamond(&render_svg(task, "[]", s(options), None));
+        let (canvas_w, canvas_xs) =
+            canvas_width_and_diamond(&render_canvas_commands(task, "[]", s(options), None));
+        assert_eq!(svg_w, canvas_w, "{options}");
+        assert_eq!(svg_xs, canvas_xs, "{options}");
+        for x in &svg_xs {
+            assert!(
+                (0.0..=svg_w).contains(x),
+                "{options}: a corner at {x}, the chart is {svg_w} wide"
+            );
+        }
+    }
+}
