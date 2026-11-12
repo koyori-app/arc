@@ -237,3 +237,34 @@ fn the_canvas_guard_measures_the_rows_as_drawn() {
     // SVG は canvas の上限を持たぬ
     assert_eq!(render_svg_error(TASKS, "[]", None, s(&groups)), None);
 }
+
+#[test]
+fn a_bar_left_at_the_default_height_may_not_be_taller_than_a_task_row_either() {
+    // bar_height_px を省いた図の棒は既定の BAR_H（20）。それより低い課題の行は断る。
+    assert_refused(
+        None,
+        r#"[{"kind":"task","task_id":"a","height":10}]"#,
+        CODE_PARSE_ERROR,
+        "bar_height_px",
+    );
+    // 一覧なしで行の高さだけを 10 にした図も、三つの入口が同じく断る
+    let options = s(r#"{"row_height_px":10}"#);
+    let v: serde_json::Value = serde_json::from_str(
+        &render_svg_error(TASKS, "[]", options.clone(), None).expect("must be refused"),
+    )
+    .unwrap();
+    assert_eq!(v["code"], CODE_PARSE_ERROR, "{v}");
+    assert!(
+        v["error"].as_str().unwrap().contains("bar_height_px"),
+        "{v}"
+    );
+    assert_eq!(render_svg(TASKS, "[]", options.clone(), None), empty_svg());
+    let canvas: serde_json::Value =
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", options, None)).unwrap();
+    assert_eq!(canvas["code"], CODE_PARSE_ERROR, "{canvas}");
+    // 既定の棒がちょうど収まる行は通る
+    assert_eq!(
+        render_svg_error(TASKS, "[]", s(r#"{"row_height_px":20}"#), None),
+        None
+    );
+}
