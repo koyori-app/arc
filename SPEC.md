@@ -172,8 +172,8 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
   - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W - HIDDEN_LABELS_LEFT_PX`（110）だけ詰める。左には最初の日のマイルストーンの菱形が収まる余白（10）を残す（下の「題と進みの字を消す」）
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
-  - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る
-  - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる
+  - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る（`bar_height_px` を省いた時も `BAR_H` で検める）。棒を高くした図は、マイルストーンの菱形が欠けぬよう、左の余白を少なくとも棒の高さの半分にし（題を出す時は `LABEL_W` と棒の半分の大きい方）、図の幅を菱形の右端まで広げる。既定の棒では今の余白で足り、出力は変わらない（docs/design/external-rows.md の 3.3）
+  - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる。標準より低い行では、その行に収まる分までしか隙を取らない
   - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
