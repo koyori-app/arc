@@ -125,6 +125,17 @@ pub enum LabelMode {
     Hidden,
 }
 
+/// Where a bar sits in its row. `Middle` centres it. `Bottom` keeps under it
+/// the gap a middle bar has in a row of the standard height, so a tall row
+/// leaves its room above the bar, for a caller that writes over it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarAlign {
+    #[default]
+    Middle,
+    Bottom,
+}
+
 /// What a caller chooses about one drawing. `Default` is the chart drawn with no
 /// today marker, no row window, and the legend and every label shown.
 ///
@@ -142,13 +153,23 @@ pub struct ChartOptions {
     /// `docs/design/legend-opt-out.md` (4) for what else moves.
     pub legend: LegendMode,
     /// `Hidden` leaves the title column out: the days start at
-    /// x = `HIDDEN_LABELS_LEFT_PX` (half a bar) and the rows have no title text
-    /// and no hit area left of the bar or the milestone's diamond. See
+    /// x = `HIDDEN_LABELS_LEFT_PX` (half a bar; half of `bar_height` when that
+    /// is set) and the rows have no title text and no hit area left of the bar
+    /// or the milestone's diamond. See
     /// `docs/design/labels-opt-out.md`.
     pub row_labels: LabelMode,
     /// `Hidden` leaves out the `NN%` on every bar and milestone, and the width
     /// a label running past the last day would have held up.
     pub percent_labels: LabelMode,
+    /// The height of a row in pixels; `None` is `ROW_H`. A row of a caller's
+    /// row list may ask for its own height. See docs/design/external-rows.md.
+    pub row_height: Option<f64>,
+    /// The height of the date header in pixels; `None` is `HEADER_H`.
+    pub header_height: Option<f64>,
+    /// The height of a bar in pixels; `None` is `BAR_H`.
+    pub bar_height: Option<f64>,
+    /// Where a bar sits in its row.
+    pub bar_align: BarAlign,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,6 +238,8 @@ pub enum RectSemantic {
     HeaderBackground,
     BarBackground,
     LegendSwatch,
+    /// The band of a group row in a caller's row list.
+    GroupRow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

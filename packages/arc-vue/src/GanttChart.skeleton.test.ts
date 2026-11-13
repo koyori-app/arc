@@ -39,4 +39,20 @@ describe("the loading skeleton's label column", () => {
       `${RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX}px`,
     );
   });
+
+  it('widens the title column for a bar wider than twice the column, as the chart does', async () => {
+    // 棒の高さ 300 の図は、題を出しても左に 150 の余白を取る（core の label_width と同じ）
+    expect(await skeletonLabelWidth({ rowLabels: 'shown', barHeight: 300, rowHeight: 300 })).toBe(
+      '150px',
+    );
+    expect(await skeletonLabelWidth({ rowLabels: 'shown' })).toBe(`${RUST_LAYOUT.LABEL_W}px`);
+  });
+
+  it('follows the bar height the caller set, as the chart does', async () => {
+    // 棒の高さ 30 の図は、題を消すと左に 15 の余白を残す（core の label_width と同じ）
+    expect(await skeletonLabelWidth({ rowLabels: 'hidden', barHeight: 30 })).toBe('15px');
+    expect(await skeletonLabelWidth({ rowLabels: 'shown', barHeight: 30 })).toBe(
+      `${RUST_LAYOUT.LABEL_W}px`,
+    );
+  });
 });

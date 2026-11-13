@@ -1,12 +1,12 @@
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashMap;
 
-use crate::graph::{GanttGraph, GanttTask};
-use crate::layout::assign_rows;
+use crate::graph::{GanttGraph, GanttRow, GanttTask};
 use crate::progress::progress_line;
 
 use super::constants::*;
 use super::legend::{tier_fill_color, PROGRESS_LABEL, TIER_ITEMS};
+use super::rows::RowPlan;
 use super::text_metrics::{text_width_px, text_width_weighted_px, truncate_to_width};
 use super::types::*;
 
@@ -50,33 +50,56 @@ pub fn build_display_list(
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> DisplayList {
+    build_display_list_with_rows(graph, None, epoch, options)
+}
+
+/// `build_display_list` for a caller that lays out the rows itself: `rows` is
+/// the chart's rows, top to bottom, task rows and group rows, and a task it
+/// leaves out is not drawn. `None` is `build_display_list`. See
+/// docs/design/external-rows.md.
+pub fn build_display_list_with_rows(
+    graph: &GanttGraph,
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+    options: &ChartOptions,
+) -> DisplayList {
     let ChartOptions {
         today,
         scroll_viewport,
         legend: legend_mode,
         row_labels,
         percent_labels,
+        ..
     } = *options;
-    let rows = assign_rows(&graph.tasks, &graph.deps);
-    let label_w = label_width(row_labels);
+    let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
+    let header_h = plan.header_h;
+    let bar_h = plan.bar_h;
+    let label_w = label_width(row_labels, bar_h);
 
     let total_days = total_days_of(&graph.tasks, epoch);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, epoch, legend_mode, row_labels, percent_labels);
-    let chart_h = chart_height_with(rows.len() as f64, legend_mode);
+    let chart_w = chart_width_for(
+        &graph.tasks,
+        epoch,
+        legend_mode,
+        row_labels,
+        percent_labels,
+        bar_h,
+    );
+    let chart_h = chart_height_of(&plan, legend_mode);
 
     let viewport = Viewport {
         width: chart_w,
         height: chart_h,
         label_width: label_w,
-        header_height: HEADER_H,
-        row_height: ROW_H,
+        header_height: header_h,
+        row_height: plan.row_h,
     };
 
-    let row_window = compute_row_window(scroll_viewport, rows.len());
+    let row_window = plan.window(scroll_viewport);
 
     let mut layers = Vec::new();
     let mut task_bboxes = Vec::new();
@@ -88,12 +111,37 @@ pub fn build_display_list(
             x: label_w,
             y: 0.0,
             width: chart_w - label_w,
-            height: HEADER_H,
+            height: header_h,
             fill: ColorId::HeaderBg,
             rx: None,
             semantic: RectSemantic::HeaderBackground,
         })],
     });
+
+    // Group rows: a band across the days. Only a caller's row list has them.
+    let group_bands: Vec<Primitive> = plan
+        .slots
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| s.task.is_none() && row_in_window(*i, row_window))
+        .map(|(_, s)| {
+            Primitive::Rect(RectPrim {
+                x: label_w,
+                y: s.y_top,
+                width: chart_w - label_w,
+                height: s.height,
+                fill: ColorId::HeaderBg,
+                rx: None,
+                semantic: RectSemantic::GroupRow,
+            })
+        })
+        .collect();
+    if !group_bands.is_empty() {
+        layers.push(Layer {
+            kind: LayerKind::Background,
+            primitives: group_bands,
+        });
+    }
 
     // Grid layer
     let mut grid_prims = Vec::new();
@@ -104,7 +152,7 @@ pub fn build_display_list(
         let x = label_w + (grid_day - epoch).num_days() as f64 * PX_PER_DAY;
         grid_prims.push(Primitive::Line(LinePrim {
             x1: x,
-            y1: HEADER_H,
+            y1: header_h,
             x2: x,
             y2: chart_h,
             stroke: ColorId::Grid,
@@ -115,7 +163,7 @@ pub fn build_display_list(
         let label = grid_label(grid_day);
         grid_prims.push(Primitive::Text(TextPrim {
             x,
-            y: HEADER_H / 2.0 + 4.0,
+            y: header_h / 2.0 + 4.0,
             content: label,
             fill: Some(ColorId::GridLabel),
             font_size: Some(GRID_LABEL_FONT_PX),
@@ -132,11 +180,16 @@ pub fn build_display_list(
 
     // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
-    for (task, row) in graph.tasks.iter().zip(rows.iter()) {
-        if !row_in_window(row.row, row_window) {
+    // In the order the tasks came in, as before row lists existed, so the
+    // output of a chart without one keeps its order.
+    for (task_index, task) in graph.tasks.iter().enumerate() {
+        let Some(slot_index) = plan.slot_of_task[task_index] else {
+            continue;
+        };
+        if !row_in_window(slot_index, row_window) {
             continue;
         }
-        let y = HEADER_H + row.row as f64 * ROW_H + BAR_PAD;
+        let y = plan.bar_top(&plan.slots[slot_index]);
         let x = label_w + task.start_days(epoch) * PX_PER_DAY;
         let w = task_bar_width_days(task, epoch) * PX_PER_DAY;
         let prog = task.progress();
@@ -162,8 +215,8 @@ pub fn build_display_list(
 
         if is_zero_duration(task) {
             let cx = x;
-            let cy = y + BAR_H / 2.0;
-            let half = BAR_H / 2.0;
+            let cy = y + bar_h / 2.0;
+            let half = bar_h / 2.0;
             children.push(Primitive::Polygon(PolygonPrim {
                 points: vec![
                     (cx, cy - half),
@@ -178,7 +231,7 @@ pub fn build_display_list(
                 semantic: PolygonSemantic::Milestone,
             }));
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, label_w, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: cy,
@@ -197,7 +250,7 @@ pub fn build_display_list(
                     x,
                     y,
                     width: w,
-                    height: BAR_H,
+                    height: bar_h,
                     fill: ColorId::BarBg,
                     rx: Some(BAR_CORNER_RADIUS_PX),
                     semantic: RectSemantic::BarBackground,
@@ -207,7 +260,7 @@ pub fn build_display_list(
                         x,
                         y,
                         width: prog_w,
-                        height: BAR_H,
+                        height: bar_h,
                         fill: tier_fill_color(tier),
                         rx: BAR_CORNER_RADIUS_PX,
                         tier,
@@ -216,10 +269,10 @@ pub fn build_display_list(
                 }
             }
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, label_w);
+                let label = percent_label(task, epoch, label_w, bar_h);
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
-                    y: y + BAR_H / 2.0,
+                    y: y + bar_h / 2.0,
                     content: label.content,
                     fill: Some(label.fill),
                     font_size: Some(PROGRESS_LABEL_FONT_PX),
@@ -234,7 +287,7 @@ pub fn build_display_list(
         // The left of what the row draws: a milestone's diamond reaches half a
         // bar left of its day.
         let shape_left = if is_zero_duration(task) {
-            x - BAR_H / 2.0
+            x - bar_h / 2.0
         } else {
             x
         };
@@ -248,7 +301,7 @@ pub fn build_display_list(
                 let label_x = LABEL_W - LABEL_GAP_PX;
                 children.push(Primitive::Text(TextPrim {
                     x: label_x,
-                    y: y + BAR_H / 2.0,
+                    y: y + bar_h / 2.0,
                     content: display_title,
                     fill: None,
                     font_size: None,
@@ -265,18 +318,18 @@ pub fn build_display_list(
         let bar_bbox = BBox {
             x,
             y,
-            width: w.max(BAR_H),
-            height: BAR_H,
+            width: w.max(bar_h),
+            height: bar_h,
         };
         let group_bbox = BBox {
             x: hit_left,
             y,
-            width: x + w.max(BAR_H) - hit_left,
-            height: BAR_H,
+            width: x + w.max(bar_h) - hit_left,
+            height: bar_h,
         };
         task_bboxes.push(TaskBBox {
             task_id: task.id.clone(),
-            row: row.row as u32,
+            row: slot_index as u32,
             bbox: group_bbox.clone(),
             bar_bbox,
         });
@@ -298,9 +351,11 @@ pub fn build_display_list(
     // uses to place the dependency edges. `collect()` into a map keeps the last
     // one, which would draw an arrow from a different bar than the row it was
     // laid out for.
-    let mut row_map: HashMap<&str, &crate::layout::RowLayout> = HashMap::new();
-    for r in &rows {
-        row_map.entry(r.task_id.as_str()).or_insert(r);
+    let mut row_map: HashMap<&str, usize> = HashMap::new();
+    for (i, t) in graph.tasks.iter().enumerate() {
+        if let Some(slot) = plan.slot_of_task[i] {
+            row_map.entry(t.id.as_str()).or_insert(slot);
+        }
     }
     let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
     for t in &graph.tasks {
@@ -321,7 +376,8 @@ pub fn build_display_list(
         let Some(to_r) = row_map.get(dep.blocked_task_id.as_str()) else {
             continue;
         };
-        if !dep_incident_to_window(from_r.row, to_r.row, row_window) {
+        let (from_r, to_r) = (*from_r, *to_r);
+        if !dep_incident_to_window(from_r, to_r, row_window) {
             continue;
         }
 
@@ -335,11 +391,12 @@ pub fn build_display_list(
         }
         start_x -= DEP_BACKOFF_STEP_PX;
 
-        let start_y = HEADER_H + from_r.row as f64 * ROW_H + BAR_PAD + BAR_H;
+        let (from_slot, to_slot) = (&plan.slots[from_r], &plan.slots[to_r]);
+        let start_y = plan.bar_top(from_slot) + bar_h;
         let end_x = to_x - ARROW_LEAD;
-        let end_y = HEADER_H + to_r.row as f64 * ROW_H + ROW_H / 2.0;
+        let end_y = to_slot.y_top + to_slot.height / 2.0;
 
-        let from_is_below_to = from_r.row > to_r.row;
+        let from_is_below_to = from_r > to_r;
         let mut curve = ARROW_CURVE;
         let clockwise = if from_is_below_to { 1 } else { 0 };
         let mut curve_y = if from_is_below_to { -curve } else { curve };
@@ -409,25 +466,22 @@ pub fn build_display_list(
     }
 
     // Progress line layer — delegates geometry to progress_line().
-    // `rows` is in input order but the line runs top to bottom, so the points are
-    // ordered by row. Otherwise a dependency that reorders rows makes the line
-    // run backwards, and the today anchors grow from a row in the middle.
-    let mut by_row: Vec<(usize, usize)> =
-        rows.iter().enumerate().map(|(i, r)| (r.row, i)).collect();
-    by_row.sort_unstable();
-    let prog_input: Vec<(f64, f64, f64, f64, f64)> = by_row
+    // The tasks come in input order but the line runs top to bottom, so the
+    // points follow the rows. Otherwise a dependency that reorders rows makes
+    // the line run backwards, and the today anchors grow from a row in the
+    // middle. A group row has no task and adds no point.
+    let prog_input: Vec<(f64, f64, f64, f64, f64)> = plan
+        .slots
         .iter()
-        .map(|&(row, i)| {
-            let t = &graph.tasks[i];
-            let y_top = HEADER_H + row as f64 * ROW_H;
-            let y_bot = y_top + ROW_H;
-            (
+        .filter_map(|slot| {
+            let t = &graph.tasks[slot.task?];
+            Some((
                 label_w + t.start_days(epoch) * PX_PER_DAY,
                 label_w + t.end_days(epoch) * PX_PER_DAY,
-                y_top,
-                y_bot,
+                slot.y_top,
+                slot.y_bottom(),
                 t.progress(),
-            )
+            ))
         })
         .collect();
 
@@ -491,6 +545,13 @@ fn total_days_of(tasks: &[GanttTask], epoch: NaiveDate) -> i64 {
         .ceil() as i64
 }
 
+/// The height the chart is drawn at: its header, its rows, and below them the
+/// legend (when shown) and the bottom padding. For a chart without a row list
+/// this is `chart_height_with(tasks.len(), legend)`.
+pub(crate) fn chart_height_of(plan: &RowPlan, legend: LegendMode) -> f64 {
+    plan.header_h + plan.rows_height() + chart_chrome_h(legend) - HEADER_H
+}
+
 /// The width the chart is drawn at. Drawing and the canvas size guard
 /// (`render::canvas_graph_limit_error`) both read this, so the guard cannot
 /// accept a chart wider than the one that is drawn.
@@ -507,8 +568,9 @@ pub(crate) fn chart_width_for(
     legend_mode: LegendMode,
     row_labels: LabelMode,
     percent_labels: LabelMode,
+    bar_h: f64,
 ) -> f64 {
-    let label_w = label_width(row_labels);
+    let label_w = label_width(row_labels, bar_h);
     let total_days = total_days_of(tasks, epoch);
     let days_w = chart_width_with_label(total_days as f64, label_w);
     let legend_edge = match legend_mode {
@@ -517,22 +579,39 @@ pub(crate) fn chart_width_for(
         }
         LegendMode::Hidden => 0.0,
     };
-    days_w.max(legend_edge).max(labels_right_edge(
-        tasks,
-        epoch,
-        total_days,
-        label_w,
-        percent_labels,
-    ))
+    // A milestone's diamond reaches half a bar past its day. The right padding
+    // holds that for the default bar, not for a much taller one.
+    let diamond_edge = tasks
+        .iter()
+        .filter(|t| is_zero_duration(t))
+        .map(|t| label_w + t.start_days(epoch) * PX_PER_DAY + bar_h / 2.0)
+        .fold(0.0, f64::max);
+    days_w
+        .max(legend_edge)
+        .max(diamond_edge)
+        .max(labels_right_edge(
+            tasks,
+            epoch,
+            total_days,
+            label_w,
+            percent_labels,
+            bar_h,
+        ))
 }
 
 /// How wide the title column is: `LABEL_W` with the row labels shown, and with
 /// them hidden only the room a milestone on the first day needs for the left
-/// half of its diamond. Every x the chart draws starts from this.
-pub(crate) fn label_width(row_labels: LabelMode) -> f64 {
+/// half of its diamond: half the bar's height (`HIDDEN_LABELS_LEFT_PX` for the
+/// default bar). Every x the chart draws starts from this.
+///
+/// With the labels shown the column is `LABEL_W` unless half the bar is wider,
+/// so a first-day diamond of a bar taller than `2 * LABEL_W` is not cut at the
+/// left either. The larger of the two, not their sum: the column only grows
+/// for a bar that would otherwise be cut, and every other chart keeps its x.
+pub(crate) fn label_width(row_labels: LabelMode, bar_h: f64) -> f64 {
     match row_labels {
-        LabelMode::Shown => LABEL_W,
-        LabelMode::Hidden => HIDDEN_LABELS_LEFT_PX,
+        LabelMode::Shown => LABEL_W.max(bar_h / 2.0),
+        LabelMode::Hidden => bar_h / 2.0,
     }
 }
 
@@ -576,12 +655,13 @@ struct PercentLabel {
 /// diamond. A bar's sits inside the bar when it fits, and runs on past the bar's
 /// end when it does not. Drawing and `labels_right_edge` both read this, so the
 /// width cannot disagree with what is drawn.
-fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64) -> PercentLabel {
+fn percent_label(task: &GanttTask, epoch: NaiveDate, label_w: f64, bar_h: f64) -> PercentLabel {
     let x = label_w + task.start_days(epoch) * PX_PER_DAY;
     let content = format!("{}%", task.progress_pct.clamp(0, 100));
     if is_zero_duration(task) {
+        // Clear of the diamond, whose half-width is half the bar drawn.
         return PercentLabel {
-            x: x + BAR_H / 2.0 + 6.0,
+            x: x + bar_h / 2.0 + 6.0,
             anchor: None,
             fill: ColorId::ProgressTextOnBg,
             content,
@@ -623,6 +703,7 @@ fn labels_right_edge(
     total_days: i64,
     label_w: f64,
     percent_labels: LabelMode,
+    bar_h: f64,
 ) -> f64 {
     // Hidden percent labels hold nothing up.
     let shown_tasks = match percent_labels {
@@ -630,7 +711,7 @@ fn labels_right_edge(
         LabelMode::Hidden => &[],
     };
     let task_edges = shown_tasks.iter().map(|task| {
-        let label = percent_label(task, epoch, label_w);
+        let label = percent_label(task, epoch, label_w, bar_h);
         text_right_edge(
             label.x,
             label.anchor,

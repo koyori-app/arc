@@ -21,6 +21,15 @@ export interface GanttTask {
   end?: string;
 }
 
+/**
+ * One row of a chart whose rows the caller lays out (`rows` on `GanttChart`).
+ * A task row draws that task's bar; a group row draws a band across the days
+ * and no bar. `height` is in pixels; left out, the row is `rowHeight` tall.
+ */
+export type GanttRow =
+  | { kind: 'task'; task_id: string; height?: number }
+  | { kind: 'group'; height?: number };
+
 /** Mirrors `task_relations` entity. */
 export interface GanttDep {
   /** `task_relations.blocker_task_id` */

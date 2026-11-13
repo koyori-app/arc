@@ -126,7 +126,24 @@ pub struct ChartOptions {
     pub legend: LegendMode, // Shown（既定）か Hidden
     pub row_labels: LabelMode, // Shown（既定）か Hidden
     pub percent_labels: LabelMode, // Shown（既定）か Hidden
+    pub row_height: Option<f64>,    // 既定 ROW_H
+    pub header_height: Option<f64>, // 既定 HEADER_H
+    pub bar_height: Option<f64>,    // 既定 BAR_H
+    pub bar_align: BarAlign,        // Middle（既定）か Bottom
 }
+
+// 使う側が行を並べる図（docs/design/external-rows.md）
+pub enum GanttRow {
+    Task { task_id: String, height: Option<f64> },
+    Group { height: Option<f64> },
+}
+
+pub fn build_display_list_with_rows(
+    graph: &GanttGraph,
+    rows: Option<&[GanttRow]>, // None は build_display_list と同じ
+    epoch: NaiveDate,
+    options: &ChartOptions,
+) -> DisplayList
 
 pub fn legend_spec() -> LegendSpec
 ```
@@ -138,13 +155,13 @@ pub fn legend_spec() -> LegendSpec
 
 ```rust
 #[wasm_bindgen]
-pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
+pub fn render_svg(tasks_json: &str, deps_json: &str, options_json: Option<String>, rows_json: Option<String>) -> String
 
 #[wasm_bindgen]
-pub fn render_svg_error(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> Option<String>
+pub fn render_svg_error(tasks_json: &str, deps_json: &str, options_json: Option<String>, rows_json: Option<String>) -> Option<String>
 
 #[wasm_bindgen]
-pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: Option<String>) -> String
+pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: Option<String>, rows_json: Option<String>) -> String
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
@@ -155,6 +172,9 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `legend`: `"shown"`（既定）か `"hidden"`。`"hidden"` で凡例を描かず、図の高さを詰める（下の「達成率の塗り分け」）
   - `row_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で左の題の列を描かず、図の幅を `LABEL_W - HIDDEN_LABELS_LEFT_PX`（110）だけ詰める。左には最初の日のマイルストーンの菱形が収まる余白（10）を残す（下の「題と進みの字を消す」）
   - `percent_labels`: `"shown"`（既定）か `"hidden"`。`"hidden"` で棒とマイルストーンの `NN%` を描かない
+  - `row_height_px`、`header_height_px`、`bar_height_px`: 行、日付の見出し、棒の高さ（px）。0 を越え 1000 以下の数。省略は `ROW_H`、`HEADER_H`、`BAR_H`。棒が課題の行のどれより高い時は断る（`bar_height_px` を省いた時も `BAR_H` で検める）。棒を高くした図は、マイルストーンの菱形が欠けぬよう、左の余白を少なくとも棒の高さの半分にし（題を出す時は `LABEL_W` と棒の半分の大きい方）、図の幅を菱形の右端まで広げる。既定の棒では今の余白で足り、出力は変わらない（docs/design/external-rows.md の 3.3）
+  - `bar_align`: `"middle"`（既定）か `"bottom"`。`"bottom"` は標準の高さの行と同じ隙を下に残して、棒を行の下へ寄せる。標準より低い行では、その行に収まる分までしか隙を取らない
+- `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
   - 4 KiB を超える字は `input_limit` で断る
@@ -187,6 +207,9 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - `percentLabels`: `'shown'`(既定)か `'hidden'`。`'hidden'` で `NN%` を描かない
   - どちらも、省略した時に wasm へ渡す `options_json` は、その鍵を持たない。真偽値にしない訳は `legend` と同じ
 - 型 `LabelMode` は `index.ts` から出す
+- `rows`: 使う側が並べた図の行（型 `GanttRow`）。渡した時だけ、wasm の入口に四つ目の引数 `rows_json` を付けて呼ぶ。入れ物の高さも一覧の行の高さの和で取り置く
+- `rowHeight`、`headerHeight`、`barHeight`（px）と `barAlign`（`'middle'` か `'bottom'`）: `options_json` の寸法の鍵に渡す。読み込み中の骨組みの行の高さも `rowHeight` に合わせる
+- 型 `GanttRow` と `BarAlign` は `index.ts` から出す
 
 ## SVG 出力仕様
 
@@ -248,7 +271,7 @@ Canvas の上限の判定は、実際に描く図より緩まない。
 ### 題と進みの字を消す
 
 `options_json` の `row_labels` に `"hidden"` を渡すと、左の題の列（`LABEL_W`、120）を描かない。
-左には、最初の日のマイルストーンの菱形の左半分が収まる余白（`HIDDEN_LABELS_LEFT_PX`、`BAR_H / 2` の 10）だけを残す。
+左には、最初の日のマイルストーンの菱形の左半分が収まる余白（棒の高さの半分。既定の棒で 10）だけを残す。`bar_height_px` を渡した図は、その半分を残す。
 図の全ての x（見出しの帯、目盛りの線と字、棒、マイルストーン、依存の矢印、今日の線、進捗の線、凡例）が 110 だけ左へ寄り、図の幅も 110 詰まる。高さは変わらない。
 題の字と、題の左へ伸びていた当たりの範囲（`LABEL_HIT_W`）は無くなり、タスクの当たりの範囲は描いた形の範囲になる。棒は棒の範囲、マイルストーンは菱形の左の端から（題の列を出す時も同じ式で、題の列の左が菱形より左にあるので変わらない）。
 並べた自分の一覧で題を出す使い手が使う（docs/design/labels-opt-out.md）。

@@ -18,6 +18,7 @@ fn svg(tasks: &str, today: Option<&str>, tz: Option<f64>) -> String {
         tasks,
         "[]",
         common::options_json(today.map(str::to_string), None, tz),
+        None,
     )
 }
 
@@ -110,13 +111,15 @@ fn absent_offset_draws_what_it_drew_before_the_option_existed() {
         tasks,
         "[]",
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     for tz in [0.0, 540.0, -300.0] {
         assert_eq!(
             render_svg(
                 tasks,
                 "[]",
-                common::options_json(Some("2026-06-03".to_string()), None, Some(tz))
+                common::options_json(Some("2026-06-03".to_string()), None, Some(tz)),
+                None
             ),
             base
         );
@@ -125,12 +128,14 @@ fn absent_offset_draws_what_it_drew_before_the_option_existed() {
         tasks,
         "[]",
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     assert_eq!(
         render_canvas_commands(
             tasks,
             "[]",
-            common::options_json(Some("2026-06-03".to_string()), None, Some(540.0))
+            common::options_json(Some("2026-06-03".to_string()), None, Some(540.0)),
+            None
         ),
         canvas
     );
@@ -142,8 +147,13 @@ fn absent_offset_draws_what_it_drew_before_the_option_existed() {
 fn an_absurd_offset_is_refused_by_all_three_entries() {
     let tasks = one_task("2026-06-01", "2026-06-08");
     for bad in [1440.0, -1440.0, 100000.0, 30.5, f64::NAN, f64::INFINITY] {
-        let reported = render_svg_error(&tasks, "[]", common::options_json(None, None, Some(bad)))
-            .unwrap_or_else(|| panic!("{bad} must be reported"));
+        let reported = render_svg_error(
+            &tasks,
+            "[]",
+            common::options_json(None, None, Some(bad)),
+            None,
+        )
+        .unwrap_or_else(|| panic!("{bad} must be reported"));
         let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
         assert_eq!(v["code"], CODE_PARSE_ERROR, "{bad}");
         assert!(
@@ -151,8 +161,12 @@ fn an_absurd_offset_is_refused_by_all_three_entries() {
             "{reported}"
         );
         assert_eq!(svg(&tasks, None, Some(bad)), empty_svg(), "{bad}");
-        let canvas =
-            render_canvas_commands(&tasks, "[]", common::options_json(None, None, Some(bad)));
+        let canvas = render_canvas_commands(
+            &tasks,
+            "[]",
+            common::options_json(None, None, Some(bad)),
+            None,
+        );
         let c: serde_json::Value = serde_json::from_str(&canvas).unwrap();
         assert_eq!(c["code"], CODE_PARSE_ERROR, "{bad}");
     }
@@ -163,7 +177,12 @@ fn real_world_offsets_are_accepted() {
     let tasks = one_task("2026-06-01", "2026-06-08");
     for ok in [-720.0, -300.0, 0.0, 330.0, 345.0, 540.0, 840.0] {
         assert_eq!(
-            render_svg_error(&tasks, "[]", common::options_json(None, None, Some(ok))),
+            render_svg_error(
+                &tasks,
+                "[]",
+                common::options_json(None, None, Some(ok)),
+                None
+            ),
             None,
             "{ok}"
         );
@@ -176,8 +195,13 @@ fn a_bad_date_names_the_task_and_the_field() {
       {"id":"a","title":"A","progress_pct":0,"start":"2026-06-01"},
       {"id":"b","title":"B","progress_pct":0,"start":"2026-06-01","end":"soon"}
     ]"#;
-    let reported = render_svg_error(tasks, "[]", common::options_json(None, None, Some(540.0)))
-        .expect("refused");
+    let reported = render_svg_error(
+        tasks,
+        "[]",
+        common::options_json(None, None, Some(540.0)),
+        None,
+    )
+    .expect("refused");
     let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
     assert!(
         v["error"].as_str().unwrap().contains("tasks[1].end"),

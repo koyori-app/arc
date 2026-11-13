@@ -32,6 +32,33 @@ pub struct GanttDep {
     pub blocked_task_id: String,
 }
 
+/// One row of a chart whose rows the caller lays out
+/// (docs/design/external-rows.md). A task row draws that task's bar; a group
+/// row draws a band across the days and no bar, for a caller that heads a group
+/// of tasks in a list of its own. `height` is in pixels; left out, the row is
+/// `row_height_px` tall.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum GanttRow {
+    Task {
+        task_id: String,
+        #[serde(default)]
+        height: Option<f64>,
+    },
+    Group {
+        #[serde(default)]
+        height: Option<f64>,
+    },
+}
+
+impl GanttRow {
+    pub fn height(&self) -> Option<f64> {
+        match self {
+            GanttRow::Task { height, .. } | GanttRow::Group { height } => *height,
+        }
+    }
+}
+
 pub struct GanttGraph {
     pub tasks: Vec<GanttTask>,
     pub deps: Vec<GanttDep>,

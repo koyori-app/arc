@@ -13,14 +13,16 @@ const DEPS: &str = r#"[{"blocker_task_id":"t1","blocked_task_id":"t2"}]"#;
 
 #[wasm_bindgen_test]
 fn render_svg_returns_svg() {
-    let svg = koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None));
+    let svg =
+        koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None), None);
     assert!(svg.starts_with("<svg "));
     assert!(svg.ends_with("</svg>"));
 }
 
 #[wasm_bindgen_test]
 fn render_svg_contains_titles() {
-    let svg = koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None));
+    let svg =
+        koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None), None);
     assert!(svg.contains("Design"));
     assert!(svg.contains("Build"));
 }
@@ -31,6 +33,7 @@ fn render_svg_with_today_marker() {
         TASKS,
         DEPS,
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     // Palette::standard() の ColorId::Today（#f59e0b）。palette を変えたらここも落ちる。
     assert!(svg.contains("f59e0b"));
@@ -38,7 +41,12 @@ fn render_svg_with_today_marker() {
 
 #[wasm_bindgen_test]
 fn render_svg_parse_error_returns_safe_empty_svg() {
-    let svg = koyori_arc_core::render_svg("not json", "[]", common::options_json(None, None, None));
+    let svg = koyori_arc_core::render_svg(
+        "not json",
+        "[]",
+        common::options_json(None, None, None),
+        None,
+    );
     assert!(svg.contains("width=\"0\""));
     assert!(!svg.contains("<!--"));
     assert!(!svg.contains("parse error"));
@@ -47,21 +55,23 @@ fn render_svg_parse_error_returns_safe_empty_svg() {
 #[wasm_bindgen_test]
 fn render_svg_id_xss_payload_escaped() {
     let tasks = r#"[{"id":"x\" onmouseover=\"alert(1)","title":"Safe","progress_pct":0,"start":"2026-06-01","end":"2026-06-02"}]"#;
-    let svg = koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, None));
+    let svg =
+        koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, None), None);
     assert!(svg.contains("&quot;"));
     assert!(!svg.contains(r#"onmouseover="alert"#));
 }
 
 #[wasm_bindgen_test]
 fn render_svg_empty_tasks() {
-    let svg = koyori_arc_core::render_svg("[]", "[]", common::options_json(None, None, None));
+    let svg = koyori_arc_core::render_svg("[]", "[]", common::options_json(None, None, None), None);
     assert!(svg.contains("width=\"0\""));
     assert!(svg.contains("viewBox="));
 }
 
 #[wasm_bindgen_test]
 fn render_svg_has_a11y_and_progress_labels() {
-    let svg = koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None));
+    let svg =
+        koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(None, None, None), None);
     assert!(svg.contains(r#"role="img""#));
     assert!(svg.contains("viewBox="));
     assert!(svg.contains("100%"));
@@ -76,6 +86,7 @@ fn render_svg_progress_line_today_anchored() {
         TASKS,
         DEPS,
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     let poly = svg
         .split(r#"class="progress-status-line" points=""#)
@@ -91,7 +102,8 @@ fn render_svg_progress_line_today_anchored() {
 #[wasm_bindgen_test]
 fn render_svg_milestone_and_tooltip() {
     let tasks = r#"[{"id":"ms","title":"Ship","progress_pct":100,"start":"2026-06-03","end":"2026-06-03"}]"#;
-    let svg = koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, None));
+    let svg =
+        koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, None), None);
     assert!(svg.contains("<polygon"));
     assert!(svg.contains("100%"));
     assert!(svg.contains("<title>Ship: 2026-06-03 – 2026-06-03 (100%)</title>"));
@@ -103,6 +115,7 @@ fn render_canvas_commands_returns_json_buffer() {
         TASKS,
         DEPS,
         common::options_json(None, None, None),
+        None,
     );
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert!(v.get("error").is_none());
@@ -116,6 +129,7 @@ fn render_canvas_commands_progress_line_present() {
         TASKS,
         DEPS,
         common::options_json(None, None, None),
+        None,
     );
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     let ops = v["ops"].as_array().expect("ops array");
@@ -134,6 +148,7 @@ fn render_canvas_commands_today_anchored_progress_line() {
         TASKS,
         DEPS,
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     let ops = v["ops"].as_array().expect("ops array");
@@ -157,6 +172,7 @@ fn render_canvas_commands_parse_error_json() {
         "not json",
         "[]",
         common::options_json(None, None, None),
+        None,
     );
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert!(v.get("error").is_some());
@@ -165,24 +181,33 @@ fn render_canvas_commands_parse_error_json() {
 #[wasm_bindgen_test]
 fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
     assert_eq!(
-        koyori_arc_core::render_svg_error("[]", "[]", common::options_json(None, None, None)),
+        koyori_arc_core::render_svg_error("[]", "[]", common::options_json(None, None, None), None),
         None
     );
     assert_eq!(
-        koyori_arc_core::render_svg_error(TASKS, DEPS, common::options_json(None, None, None)),
+        koyori_arc_core::render_svg_error(
+            TASKS,
+            DEPS,
+            common::options_json(None, None, None),
+            None
+        ),
         None
     );
 
     let refused =
         r#"[{"id":"t","title":"T","progress_pct":0,"start":"2026-06-01","end":"2126-06-01"}]"#;
-    let reported =
-        koyori_arc_core::render_svg_error(refused, "[]", common::options_json(None, None, None))
-            .expect("refusal reported");
+    let reported = koyori_arc_core::render_svg_error(
+        refused,
+        "[]",
+        common::options_json(None, None, None),
+        None,
+    )
+    .expect("refusal reported");
     let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
     assert_eq!(v["code"].as_str(), Some("input_limit"));
     // The SVG entry point itself still answers with the empty chart.
     assert_eq!(
-        koyori_arc_core::render_svg(refused, "[]", common::options_json(None, None, None)),
+        koyori_arc_core::render_svg(refused, "[]", common::options_json(None, None, None), None),
         koyori_arc_core::empty_svg_markup()
     );
 }
@@ -190,15 +215,24 @@ fn render_svg_error_separates_nothing_to_draw_from_refused_input() {
 #[wasm_bindgen_test]
 fn empty_svg_markup_matches_what_refusals_return() {
     assert_eq!(
-        koyori_arc_core::render_svg("not json", "[]", common::options_json(None, None, None)),
+        koyori_arc_core::render_svg(
+            "not json",
+            "[]",
+            common::options_json(None, None, None),
+            None
+        ),
         koyori_arc_core::empty_svg_markup()
     );
 }
 
 #[wasm_bindgen_test]
 fn render_canvas_commands_empty_tasks() {
-    let json =
-        koyori_arc_core::render_canvas_commands("[]", "[]", common::options_json(None, None, None));
+    let json = koyori_arc_core::render_canvas_commands(
+        "[]",
+        "[]",
+        common::options_json(None, None, None),
+        None,
+    );
     let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
     assert_eq!(v["viewport_width"].as_f64().unwrap(), 0.0);
     assert!(v["ops"].as_array().unwrap().is_empty());
@@ -214,11 +248,13 @@ fn datetime_strings_cross_the_wasm_boundary() {
         TASKS,
         DEPS,
         common::options_json(Some("2026-06-03".to_string()), None, None),
+        None,
     );
     let from_datetimes = koyori_arc_core::render_svg(
         datetimes,
         DEPS,
         common::options_json(Some("2026-06-03T12:00:00+09:00".to_string()), None, None),
+        None,
     );
     assert_eq!(from_dates, from_datetimes);
 }
@@ -227,19 +263,29 @@ fn datetime_strings_cross_the_wasm_boundary() {
 fn an_unreadable_today_is_reported_not_dropped() {
     let bad = Some("garbage".to_string());
     assert_eq!(
-        koyori_arc_core::render_svg(TASKS, DEPS, common::options_json(bad.clone(), None, None)),
+        koyori_arc_core::render_svg(
+            TASKS,
+            DEPS,
+            common::options_json(bad.clone(), None, None),
+            None
+        ),
         koyori_arc_core::empty_svg_markup()
     );
     let reported = koyori_arc_core::render_svg_error(
         TASKS,
         DEPS,
         common::options_json(bad.clone(), None, None),
+        None,
     )
     .expect("an unreadable today is reported");
     let v: serde_json::Value = serde_json::from_str(&reported).expect("valid json");
     assert_eq!(v["code"].as_str(), Some("parse_error"));
-    let canvas =
-        koyori_arc_core::render_canvas_commands(TASKS, DEPS, common::options_json(bad, None, None));
+    let canvas = koyori_arc_core::render_canvas_commands(
+        TASKS,
+        DEPS,
+        common::options_json(bad, None, None),
+        None,
+    );
     let c: serde_json::Value = serde_json::from_str(&canvas).expect("valid json");
     assert_eq!(c["code"].as_str(), Some("parse_error"));
 }
@@ -247,9 +293,18 @@ fn an_unreadable_today_is_reported_not_dropped() {
 #[wasm_bindgen_test]
 fn tz_offset_minutes_crosses_the_wasm_boundary() {
     let tasks = r#"[{"id":"t","title":"T","progress_pct":50,"start":"2026-06-01","end":"2026-06-08T15:30:00Z"}]"#;
-    let jst =
-        koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, Some(540.0)));
-    let utc = koyori_arc_core::render_svg(tasks, "[]", common::options_json(None, None, Some(0.0)));
+    let jst = koyori_arc_core::render_svg(
+        tasks,
+        "[]",
+        common::options_json(None, None, Some(540.0)),
+        None,
+    );
+    let utc = koyori_arc_core::render_svg(
+        tasks,
+        "[]",
+        common::options_json(None, None, Some(0.0)),
+        None,
+    );
     assert!(jst.contains(" – 2026-06-09 ("));
     assert!(utc.contains(" – 2026-06-08 ("));
     // NaN は i32 で受けると黙って 0 になる。f64 で受けて断る。
@@ -257,6 +312,7 @@ fn tz_offset_minutes_crosses_the_wasm_boundary() {
         tasks,
         "[]",
         common::options_json(None, None, Some(f64::NAN)),
+        None,
     )
     .expect("an unusable offset is reported");
     assert!(reported.contains("tz_offset_minutes"));
@@ -271,9 +327,13 @@ fn legend_spec_json_crosses_the_wasm_boundary() {
 
 #[wasm_bindgen_test]
 fn the_legend_can_be_hidden_through_options_json() {
-    let shown = koyori_arc_core::render_svg(TASKS, DEPS, None);
-    let hidden =
-        koyori_arc_core::render_svg(TASKS, DEPS, Some(r#"{"legend":"hidden"}"#.to_string()));
+    let shown = koyori_arc_core::render_svg(TASKS, DEPS, None, None);
+    let hidden = koyori_arc_core::render_svg(
+        TASKS,
+        DEPS,
+        Some(r#"{"legend":"hidden"}"#.to_string()),
+        None,
+    );
     assert!(shown.contains("bar-tier-legend"));
     assert!(!hidden.contains("bar-tier-legend"));
 }

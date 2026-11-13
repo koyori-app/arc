@@ -43,6 +43,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
         Primitive::Rect(r) => {
             let class = match r.semantic {
                 RectSemantic::BarBackground => Some("bar-bg"),
+                RectSemantic::GroupRow => Some("group-row"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(

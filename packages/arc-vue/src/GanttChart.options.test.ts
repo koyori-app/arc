@@ -122,6 +122,44 @@ describe('what reaches the Wasm entry points', () => {
     }
   });
 
+  it('passes the rows as a fourth argument only when the caller lays them out', async () => {
+    const rows = [{ kind: 'group' as const }, { kind: 'task' as const, task_id: 'a', height: 64 }];
+    mount(GanttChart, {
+      props: { tasks, rows, rowHeight: 32, barHeight: 12, barAlign: 'bottom', deviceTier: 'high' },
+    });
+    mount(GanttChart, {
+      props: { tasks, rows, backend: 'canvas', deviceTier: 'high' },
+    });
+    await flushPromises();
+
+    expect(renderSvgMock).toHaveBeenCalled();
+    for (const call of renderSvgMock.mock.calls) {
+      expect(call).toHaveLength(4);
+      expect(JSON.parse(call[3] as string)).toEqual(rows);
+      expect(JSON.parse(call[2] as string)).toEqual({
+        row_height_px: 32,
+        bar_height_px: 12,
+        bar_align: 'bottom',
+      });
+    }
+    expect(renderCanvasMock).toHaveBeenCalled();
+    for (const call of renderCanvasMock.mock.calls) {
+      expect(call).toHaveLength(4);
+      expect(JSON.parse(call[3] as string)).toEqual(rows);
+    }
+  });
+
+  it('reserves the height of the rows as laid out', async () => {
+    const rows = [{ kind: 'group' as const }, { kind: 'task' as const, task_id: 'a', height: 64 }];
+    const w = mount(GanttChart, {
+      props: { tasks, rows, rowHeight: 32, headerHeight: 48, deviceTier: 'high' },
+    });
+    await flushPromises();
+    const expected = 48 + 32 + 64 + RUST_LAYOUT.LEGEND_H + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
+    const height = (w.get('.koyori-gantt-inner').element as HTMLElement).style.height;
+    expect(Number.parseInt(height, 10)).toBe(expected);
+  });
+
   it('reserves the shorter height for a hidden legend, and the old one otherwise', async () => {
     const hidden = mount(GanttChart, { props: { tasks, legend: 'hidden', deviceTier: 'high' } });
     const shown = mount(GanttChart, { props: { tasks, deviceTier: 'high' } });

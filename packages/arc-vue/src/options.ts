@@ -21,6 +21,9 @@ export type LegendMode = 'shown' | 'hidden';
  */
 export type LabelMode = 'shown' | 'hidden';
 
+/** Where a bar sits in its row. Left out, it is centred. */
+export type BarAlign = 'middle' | 'bottom';
+
 export interface ChartOptionsInput {
   today?: string | null;
   scrollViewport?: ScrollViewportOption | null;
@@ -28,6 +31,10 @@ export interface ChartOptionsInput {
   legend?: LegendMode | null;
   rowLabels?: LabelMode | null;
   percentLabels?: LabelMode | null;
+  rowHeightPx?: number | null;
+  headerHeightPx?: number | null;
+  barHeightPx?: number | null;
+  barAlign?: BarAlign | null;
 }
 
 /**
@@ -41,6 +48,10 @@ export interface ChartOptions {
   legend?: LegendMode;
   row_labels?: LabelMode;
   percent_labels?: LabelMode;
+  row_height_px?: number;
+  header_height_px?: number;
+  bar_height_px?: number;
+  bar_align?: BarAlign;
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -60,5 +71,9 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   if (input.legend != null) options.legend = input.legend;
   if (input.rowLabels != null) options.row_labels = input.rowLabels;
   if (input.percentLabels != null) options.percent_labels = input.percentLabels;
+  if (input.rowHeightPx != null) options.row_height_px = input.rowHeightPx;
+  if (input.headerHeightPx != null) options.header_height_px = input.headerHeightPx;
+  if (input.barHeightPx != null) options.bar_height_px = input.barHeightPx;
+  if (input.barAlign != null) options.bar_align = input.barAlign;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

@@ -187,3 +187,43 @@ export const LabelsHiddenCanvas: Story = {
     template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
   }),
 };
+
+// A caller that lays out its own rows beside its own list: group rows head the
+// groups, the rows and the bars are its own sizes, and the bars sit low in
+// their rows. The title column, the percent labels and the legend are off,
+// as that caller draws them.
+const externalRows = [
+  { kind: 'group' as const },
+  ...tasks.slice(0, 2).map((t) => ({ kind: 'task' as const, task_id: t.id })),
+  { kind: 'group' as const },
+  ...tasks.slice(2).map((t) => ({ kind: 'task' as const, task_id: t.id, height: 52 })),
+];
+
+export const ExternalRows: Story = {
+  args: {
+    ...vrtArgs,
+    tasks,
+    deps,
+    today: '2026-06-06',
+    legend: 'hidden',
+    rowLabels: 'hidden',
+    percentLabels: 'hidden',
+    rows: externalRows,
+    rowHeight: 40,
+    headerHeight: 48,
+    barHeight: 18,
+    barAlign: 'bottom',
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, onTaskClick: action('taskClick') };
+    },
+    template: '<GanttChart v-bind="args" @task-click="onTaskClick" />',
+  }),
+};
+
+export const ExternalRowsCanvas: Story = {
+  args: { ...ExternalRows.args, backend: 'canvas' },
+  render: ExternalRows.render,
+};

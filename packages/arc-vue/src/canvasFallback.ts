@@ -1,4 +1,5 @@
 import type { LegendMode } from './options';
+import type { GanttRow } from './types.ts';
 import {
   CANVAS_CAPACITY_CODE,
   RUST_LAYOUT,
@@ -20,6 +21,35 @@ export function chartHeightForTaskCount(
   if (taskCount === 0) return 0;
   return taskCount * RUST_LAYOUT.ROW_H
     + RUST_LAYOUT.HEADER_H
+    + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
+    + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
+}
+
+/** The sizes a caller may set, in pixels; each left out is the crate's own. */
+export interface RowSizes {
+  rowHeight?: number;
+  headerHeight?: number;
+}
+
+/**
+ * `chartHeightForTaskCount` for a chart that may lay out its own rows: the
+ * header, every row at its own height (or `rowHeight`), and below them the
+ * legend when shown and the bottom padding. Without `rows` it is one row per
+ * task, as the crate lays them out.
+ */
+export function chartHeightForRows(
+  rows: GanttRow[] | undefined,
+  taskCount: number,
+  legend: LegendMode = 'shown',
+  sizes: RowSizes = {},
+): number {
+  if (taskCount === 0) return 0;
+  const rowH = sizes.rowHeight ?? RUST_LAYOUT.ROW_H;
+  const rowsH = rows
+    ? rows.reduce((sum, row) => sum + (row.height ?? rowH), 0)
+    : taskCount * rowH;
+  return rowsH
+    + (sizes.headerHeight ?? RUST_LAYOUT.HEADER_H)
     + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
     + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
 }
@@ -57,10 +87,14 @@ export function resolveCanvasFailure(
 
 /**
  * The width of the loading skeleton's label column, which stands in for the
- * chart's title column: `LABEL_W` with the titles shown, and with them hidden
- * the left margin the chart keeps for a first-day milestone, so the skeleton's
- * bars start where the drawn chart's do.
+ * chart's left margin, so the skeleton's bars start where the drawn chart's
+ * do. It reads the bar the chart draws (`barHeight`, or `BAR_H`) the way the
+ * crate's `label_width` does: with the titles shown, the title column
+ * `LABEL_W` unless half the bar is wider; with them hidden, half the bar
+ * (`HIDDEN_LABELS_LEFT_PX` for the default bar). Half the bar is the room a
+ * first-day milestone's diamond needs.
  */
-export function skeletonLabelWidthPx(rowLabels?: 'shown' | 'hidden'): number {
-  return rowLabels === 'hidden' ? RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX : RUST_LAYOUT.LABEL_W;
+export function skeletonLabelWidthPx(rowLabels?: 'shown' | 'hidden', barHeight?: number): number {
+  const halfBar = (barHeight ?? RUST_LAYOUT.BAR_H) / 2;
+  return rowLabels === 'hidden' ? halfBar : Math.max(RUST_LAYOUT.LABEL_W, halfBar);
 }

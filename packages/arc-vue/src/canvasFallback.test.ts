@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  chartHeightForRows,
   chartHeightForTaskCount,
   resolveCanvasFailure,
   skeletonLabelWidthPx,
@@ -91,6 +92,27 @@ describe('resolveCanvasFailure', () => {
   });
 });
 
+describe('chartHeightForRows', () => {
+  it('is chartHeightForTaskCount when the crate lays out the rows', () => {
+    for (const n of [0, 1, 4, 408]) {
+      expect(chartHeightForRows(undefined, n)).toBe(chartHeightForTaskCount(n));
+      expect(chartHeightForRows(undefined, n, 'hidden')).toBe(chartHeightForTaskCount(n, 'hidden'));
+    }
+  });
+
+  it('adds every row at its own height under the header the caller set', () => {
+    const rows = [
+      { kind: 'group' as const },
+      { kind: 'task' as const, task_id: 'a' },
+      { kind: 'task' as const, task_id: 'b', height: 64 },
+    ];
+    expect(chartHeightForRows(rows, 2, 'hidden', { rowHeight: 32, headerHeight: 48 })).toBe(
+      48 + 32 + 32 + 64 + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX,
+    );
+    expect(chartHeightForRows(rows, 0)).toBe(0);
+  });
+});
+
 describe('skeletonLabelWidthPx', () => {
   it('is the title column with titles, and the chart\'s left margin without them', () => {
     expect(skeletonLabelWidthPx()).toBe(RUST_LAYOUT.LABEL_W);
@@ -98,5 +120,20 @@ describe('skeletonLabelWidthPx', () => {
     // 図は題の列を消すと、左に最初の日の菱形のための余白を残す
     expect(skeletonLabelWidthPx('hidden')).toBe(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX);
     expect(RUST_LAYOUT.HIDDEN_LABELS_LEFT_PX).toBe(RUST_LAYOUT.BAR_H / 2);
+  });
+
+  it('follows the bar height the caller set, as the chart does', () => {
+    // 棒の高さ 30 の図は、左に 15 の余白を残す（core の label_width と同じ）
+    expect(skeletonLabelWidthPx('hidden', 30)).toBe(15);
+    expect(skeletonLabelWidthPx('shown', 30)).toBe(RUST_LAYOUT.LABEL_W);
+  });
+
+  it('widens with the titles shown once half the bar is wider than the title column', () => {
+    // core の label_width は題を出す図でも LABEL_W と棒の半分の大きい方を取る
+    expect(skeletonLabelWidthPx('shown', 300)).toBe(150);
+    expect(skeletonLabelWidthPx(undefined, 300)).toBe(150);
+    expect(skeletonLabelWidthPx('hidden', 300)).toBe(150);
+    // 棒が題の列の倍（240）までは LABEL_W のまま
+    expect(skeletonLabelWidthPx('shown', 2 * RUST_LAYOUT.LABEL_W)).toBe(RUST_LAYOUT.LABEL_W);
   });
 });

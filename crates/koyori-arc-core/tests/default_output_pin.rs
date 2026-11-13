@@ -96,9 +96,11 @@ mod entry {
             w.viewport_json.map(str::to_string),
             w.tz_offset_minutes,
         );
-        let svg = koyori_arc_core::render_svg(w.tasks_json, w.deps_json, options.clone());
-        let err = koyori_arc_core::render_svg_error(w.tasks_json, w.deps_json, options.clone());
-        let canvas = koyori_arc_core::render_canvas_commands(w.tasks_json, w.deps_json, options);
+        let svg = koyori_arc_core::render_svg(w.tasks_json, w.deps_json, options.clone(), None);
+        let err =
+            koyori_arc_core::render_svg_error(w.tasks_json, w.deps_json, options.clone(), None);
+        let canvas =
+            koyori_arc_core::render_canvas_commands(w.tasks_json, w.deps_json, options, None);
         (svg, err, canvas)
     }
 }

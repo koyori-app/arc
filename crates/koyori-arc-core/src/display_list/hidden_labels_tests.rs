@@ -301,3 +301,88 @@ fn hidden_percent_labels_draw_no_percent_and_hold_no_width() {
     let hidden = list(3, LegendMode::Hidden, LabelMode::Hidden, LabelMode::Hidden);
     assert!(hidden.viewport.width < shown.viewport.width);
 }
+
+#[test]
+fn a_taller_bar_takes_a_wider_left_margin_so_its_first_day_milestone_stays_whole() {
+    let graph = GanttGraph {
+        tasks: vec![GanttTask {
+            id: "first".to_string(),
+            title: "first".to_string(),
+            progress_pct: 0,
+            start: epoch(),
+            end: Some(epoch()),
+        }],
+        deps: vec![],
+    };
+    let list = build_display_list(
+        &graph,
+        epoch(),
+        &ChartOptions {
+            row_labels: LabelMode::Hidden,
+            bar_height: Some(30.0),
+            ..Default::default()
+        },
+    );
+    // 棒の高さ 30 の菱形は中心から 15 左へ伸びる
+    assert_eq!(list.viewport.label_width, 15.0);
+    let (left, _) = diamond_span(&list, "first");
+    assert_eq!(left, 0.0);
+    let hit = &list.metadata.task_bboxes[0];
+    assert_eq!(hit.bbox.x, 0.0);
+}
+
+/// 一点の課題（マイルストーン）一つだけの図。課題の日を epoch にするゆえ、日数の幅は 0 である。
+fn one_milestone(options: ChartOptions) -> DisplayList {
+    let graph = GanttGraph {
+        tasks: vec![GanttTask {
+            id: "m".to_string(),
+            title: "m".to_string(),
+            progress_pct: 0,
+            start: epoch(),
+            end: Some(epoch()),
+        }],
+        deps: vec![],
+    };
+    build_display_list(&graph, epoch(), &options)
+}
+
+#[test]
+fn a_tall_milestone_on_the_last_day_stays_whole_at_the_right() {
+    // review の形: 行と棒の高さ 120、題・進みの字・凡例を全て消す。
+    // 日数の幅は 0 で、図の幅は左の余白 60 と右の余白 20 の 80 しかなかった。
+    let bar = 120.0;
+    let list = one_milestone(ChartOptions {
+        row_height: Some(bar),
+        bar_height: Some(bar),
+        row_labels: LabelMode::Hidden,
+        percent_labels: LabelMode::Hidden,
+        legend: LegendMode::Hidden,
+        ..Default::default()
+    });
+    let (left, right) = diamond_span(&list, "m");
+    assert!(left >= 0.0, "the diamond starts at {left}");
+    assert!(
+        right <= list.viewport.width,
+        "the diamond ends at {right}, the chart is {} wide",
+        list.viewport.width
+    );
+}
+
+#[test]
+fn a_milestone_taller_than_the_title_column_stays_whole_at_the_left() {
+    // 題を出す図の左の余白は LABEL_W（120）。棒の高さ 300 の菱形は中心から 150 左へ伸びる。
+    let bar = 300.0;
+    let list = one_milestone(ChartOptions {
+        row_height: Some(bar),
+        bar_height: Some(bar),
+        percent_labels: LabelMode::Hidden,
+        legend: LegendMode::Hidden,
+        ..Default::default()
+    });
+    let (left, right) = diamond_span(&list, "m");
+    assert!(left >= 0.0, "the diamond starts at {left}");
+    assert!(right <= list.viewport.width);
+    // 既定の棒では題の列の幅は LABEL_W のまま
+    let list = one_milestone(ChartOptions::default());
+    assert_eq!(list.viewport.label_width, LABEL_W);
+}

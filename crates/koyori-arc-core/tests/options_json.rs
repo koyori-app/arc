@@ -15,11 +15,11 @@ fn s(json: &str) -> Option<String> {
 }
 
 fn svg(options: Option<String>) -> String {
-    render_svg(TASKS, "[]", options)
+    render_svg(TASKS, "[]", options, None)
 }
 
 fn error_of(options: Option<String>) -> serde_json::Value {
-    let reported = render_svg_error(TASKS, "[]", options).expect("must be refused");
+    let reported = render_svg_error(TASKS, "[]", options, None).expect("must be refused");
     serde_json::from_str(&reported).unwrap()
 }
 
@@ -33,7 +33,7 @@ fn assert_refused(options: &str, code: &str, mentions: &str) {
     assert_eq!(svg(s(options)), empty_svg(), "{options}");
 
     let canvas: serde_json::Value =
-        serde_json::from_str(&render_canvas_commands(TASKS, "[]", s(options))).unwrap();
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", s(options), None)).unwrap();
     assert_eq!(canvas["code"], code, "{options}");
     assert_eq!(canvas["error"], v["error"], "{options}");
 }
@@ -54,11 +54,15 @@ fn absent_empty_and_null_keys_are_the_defaults() {
     ] {
         assert_eq!(svg(s(options)), plain, "{options}");
         assert_eq!(
-            render_canvas_commands(TASKS, "[]", s(options)),
-            render_canvas_commands(TASKS, "[]", None),
+            render_canvas_commands(TASKS, "[]", s(options), None),
+            render_canvas_commands(TASKS, "[]", None, None),
             "{options}"
         );
-        assert_eq!(render_svg_error(TASKS, "[]", s(options)), None, "{options}");
+        assert_eq!(
+            render_svg_error(TASKS, "[]", s(options), None),
+            None,
+            "{options}"
+        );
     }
 }
 
@@ -230,11 +234,11 @@ fn options_over_the_limit_are_refused_with_the_input_limit_code() {
 #[test]
 fn the_options_are_judged_before_the_tasks() {
     // 設定が読めない時は、タスクの誤りより先にそれを言う。
-    let reported = render_svg_error("not json", "[]", s(r#"{"colour":1}"#)).unwrap();
+    let reported = render_svg_error("not json", "[]", s(r#"{"colour":1}"#), None).unwrap();
     let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
     assert!(v["error"].as_str().unwrap().contains("colour"), "{v}");
     // 設定が読めて、タスクが読めない時は、タスクの誤りを言う。
-    let reported = render_svg_error("not json", "[]", s("{}")).unwrap();
+    let reported = render_svg_error("not json", "[]", s("{}"), None).unwrap();
     let v: serde_json::Value = serde_json::from_str(&reported).unwrap();
     assert!(!v["error"].as_str().unwrap().contains("options"), "{v}");
 }
@@ -250,7 +254,7 @@ fn height_of(svg: &str) -> f64 {
 #[test]
 fn shown_is_the_default_however_it_is_spelt() {
     let plain = svg(None);
-    let canvas = render_canvas_commands(TASKS, "[]", None);
+    let canvas = render_canvas_commands(TASKS, "[]", None, None);
     for options in [
         r#"{"legend":"shown"}"#,
         r#"{"legend":null}"#,
@@ -258,11 +262,15 @@ fn shown_is_the_default_however_it_is_spelt() {
     ] {
         assert_eq!(svg(s(options)), plain, "{options}");
         assert_eq!(
-            render_canvas_commands(TASKS, "[]", s(options)),
+            render_canvas_commands(TASKS, "[]", s(options), None),
             canvas,
             "{options}"
         );
-        assert_eq!(render_svg_error(TASKS, "[]", s(options)), None, "{options}");
+        assert_eq!(
+            render_svg_error(TASKS, "[]", s(options), None),
+            None,
+            "{options}"
+        );
     }
 }
 
@@ -276,11 +284,12 @@ fn hidden_leaves_the_legend_out_and_takes_its_height_back() {
     assert_eq!(height_of(&shown) - height_of(&hidden), 40.0);
 
     let shown_canvas: serde_json::Value =
-        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None)).unwrap();
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None, None)).unwrap();
     let hidden_canvas: serde_json::Value = serde_json::from_str(&render_canvas_commands(
         TASKS,
         "[]",
         s(r#"{"legend":"hidden"}"#),
+        None,
     ))
     .unwrap();
     assert_eq!(
@@ -296,7 +305,7 @@ fn hidden_goes_with_the_other_keys() {
     let out = svg(s(all));
     assert_ne!(out, empty_svg());
     assert!(!out.contains("bar-tier-legend"));
-    assert_eq!(render_svg_error(TASKS, "[]", s(all)), None);
+    assert_eq!(render_svg_error(TASKS, "[]", s(all), None), None);
 }
 
 #[test]
@@ -332,8 +341,8 @@ fn the_canvas_capacity_guard_ignores_the_legend() {
             .collect::<Vec<_>>()
             .join(",")
     );
-    let shown = render_canvas_commands(&many, "[]", None);
-    let hidden = render_canvas_commands(&many, "[]", s(r#"{"legend":"hidden"}"#));
+    let shown = render_canvas_commands(&many, "[]", None, None);
+    let hidden = render_canvas_commands(&many, "[]", s(r#"{"legend":"hidden"}"#), None);
     let v: serde_json::Value = serde_json::from_str(&shown).unwrap();
     assert_eq!(v["code"], koyori_arc_core::CODE_CANVAS_CAPACITY, "{shown}");
     assert_eq!(hidden, shown);
@@ -363,7 +372,7 @@ fn width_of(svg: &str) -> f64 {
 #[test]
 fn shown_labels_are_the_default_however_they_are_spelt() {
     let plain = svg(None);
-    let canvas = render_canvas_commands(TASKS, "[]", None);
+    let canvas = render_canvas_commands(TASKS, "[]", None, None);
     for options in [
         r#"{"row_labels":"shown"}"#,
         r#"{"percent_labels":"shown"}"#,
@@ -372,11 +381,15 @@ fn shown_labels_are_the_default_however_they_are_spelt() {
     ] {
         assert_eq!(svg(s(options)), plain, "{options}");
         assert_eq!(
-            render_canvas_commands(TASKS, "[]", s(options)),
+            render_canvas_commands(TASKS, "[]", s(options), None),
             canvas,
             "{options}"
         );
-        assert_eq!(render_svg_error(TASKS, "[]", s(options)), None, "{options}");
+        assert_eq!(
+            render_svg_error(TASKS, "[]", s(options), None),
+            None,
+            "{options}"
+        );
     }
 }
 
@@ -392,11 +405,12 @@ fn hidden_row_labels_leave_the_titles_out_and_take_their_width_back() {
     assert_eq!(width_of(&shown) - width_of(&hidden), 110.0);
 
     let shown_canvas: serde_json::Value =
-        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None)).unwrap();
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", None, None)).unwrap();
     let hidden_canvas: serde_json::Value = serde_json::from_str(&render_canvas_commands(
         TASKS,
         "[]",
         s(r#"{"row_labels":"hidden"}"#),
+        None,
     ))
     .unwrap();
     assert_eq!(
@@ -420,7 +434,7 @@ fn hidden_labels_go_with_the_other_keys() {
     let out = svg(s(all));
     assert_ne!(out, empty_svg());
     assert!(!out.contains(">A</text>") && !out.contains(">50%</text>"));
-    assert_eq!(render_svg_error(TASKS, "[]", s(all)), None);
+    assert_eq!(render_svg_error(TASKS, "[]", s(all), None), None);
 }
 
 #[test]
@@ -428,6 +442,69 @@ fn an_unknown_label_value_is_refused_and_named() {
     for key in ["row_labels", "percent_labels"] {
         for value in [r#""Hidden""#, r#""none""#, r#""""#, "true", "1", "[]", "{}"] {
             assert_refused(&format!(r#"{{"{key}":{value}}}"#), CODE_PARSE_ERROR, key);
+        }
+    }
+}
+
+/// SVG の図の幅と、マイルストーンの菱形の頂点の x。
+fn svg_width_and_diamond(svg: &str) -> (f64, Vec<f64>) {
+    let attr = |from: &str, key: &str| -> String {
+        let start = from.find(key).unwrap_or_else(|| panic!("{key} in {svg}")) + key.len();
+        let rest = &from[start..];
+        rest[..rest.find('"').unwrap()].to_string()
+    };
+    let width: f64 = attr(svg, " width=\"").parse().unwrap();
+    let polygon = &svg[svg
+        .find("<polygon class=\"bar-milestone")
+        .expect("a milestone")..];
+    let xs = attr(polygon, " points=\"")
+        .split_whitespace()
+        .map(|pair| pair.split(',').next().unwrap().parse::<f64>().unwrap())
+        .collect();
+    (width, xs)
+}
+
+/// canvas の命の図の幅と、塗る多角形（菱形）の頂点の x。
+fn canvas_width_and_diamond(json: &str) -> (f64, Vec<f64>) {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap();
+    let width = v["viewport_width"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("{v}"));
+    let xs = v["ops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|op| op.get("FillPolygon"))
+        .expect("a filled polygon")["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p[0].as_f64().unwrap())
+        .collect();
+    (width, xs)
+}
+
+#[test]
+fn a_tall_milestone_stays_whole_on_both_entry_points() {
+    // 日曜に始まり日曜に終わるマイルストーン一つ
+    let task =
+        r#"[{"id":"m","title":"M","progress_pct":0,"start":"2026-06-07","end":"2026-06-07"}]"#;
+    for options in [
+        // review の形: 題・進みの字・凡例を全て消し、行と棒を 120 にする
+        r#"{"row_height_px":120,"bar_height_px":120,"row_labels":"hidden","percent_labels":"hidden","legend":"hidden"}"#,
+        // 題を出し、棒を題の列（120）の倍より高い 300 にする
+        r#"{"row_height_px":300,"bar_height_px":300,"percent_labels":"hidden","legend":"hidden"}"#,
+    ] {
+        let (svg_w, svg_xs) = svg_width_and_diamond(&render_svg(task, "[]", s(options), None));
+        let (canvas_w, canvas_xs) =
+            canvas_width_and_diamond(&render_canvas_commands(task, "[]", s(options), None));
+        assert_eq!(svg_w, canvas_w, "{options}");
+        assert_eq!(svg_xs, canvas_xs, "{options}");
+        for x in &svg_xs {
+            assert!(
+                (0.0..=svg_w).contains(x),
+                "{options}: a corner at {x}, the chart is {svg_w} wide"
+            );
         }
     }
 }

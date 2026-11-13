@@ -1,5 +1,5 @@
 export { default as GanttChart } from './GanttChart.vue';
-export type { GanttTask, GanttDep } from './types.ts';
+export type { GanttTask, GanttDep, GanttRow } from './types.ts';
 export {
   replayCommands,
   parseCommandBuffer,
@@ -8,4 +8,4 @@ export {
 export type { CommandBuffer, DrawOp, ReplayResult, TaskHitRegion } from './replayCommands';
 export { loadLegendSpec } from './legend';
 export type { LegendSpec, LegendTier, LegendProgressLine } from './legend';
-export type { ChartOptions, LabelMode, LegendMode } from './options';
+export type { BarAlign, ChartOptions, LabelMode, LegendMode } from './options';
