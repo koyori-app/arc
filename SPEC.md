@@ -230,7 +230,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - `rows`: 使う側が並べた図の行（型 `GanttRow`）。渡した時だけ、wasm の入口に四つ目の引数 `rows_json` を付けて呼ぶ。入れ物の高さも一覧の行の高さの和で取り置く
 - `rowHeight`、`headerHeight`、`barHeight`（px）と `barAlign`（`'middle'` か `'bottom'`）: `options_json` の寸法の鍵に渡す。読み込み中の骨組みの行の高さも `rowHeight` に合わせる
 - 型 `GanttRow` と `BarAlign` は `index.ts` から出す。`GanttRow` の課題の行は `hard_deadline`、`state`、`note`、`shape` を持てる（型 `BarState` と `BarShape` も出す）
-- `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く
+- `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く。canvas は `prefers-color-scheme` の change と、図の祖先の `class`・`style`・`data-*` の変化で描き直し、token の替わりに付いて来る。それ以外の替え方は、公開の `repaint()` か、`palette` を新しい object で渡し直して描き直す（docs/design/palette-opt-in.md の 4.2）
 - 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
 - `pxPerDay`、`scale`（`'week'`、`'day'`、`'month'`）、`weekendDays`、`weekdayLabels`: `options_json` の同じ名の鍵に渡す。型 `Scale` は `index.ts` から出す
 
