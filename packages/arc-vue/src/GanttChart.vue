@@ -100,7 +100,11 @@ const props = defineProps<{
   /**
    * Colours that replace the chart's own, by colour name, such as
    * `{ HeaderBg: 'var(--koyori-color-surface)' }`. The SVG path writes
-   * `var(--…)` as it is; the canvas path reads it off the canvas's computed style.
+   * `var(--…)` as it is, and the browser follows a token whenever it changes.
+   * The canvas path reads it off the canvas's computed style when it paints,
+   * and paints again when the colour scheme or an ancestor's `class`, `style`
+   * or `data-*` changes. A token changed any other way (a stylesheet swapped
+   * in, say) needs `repaint()`, or the palette passed again as a new object.
    */
   palette?: PaletteOverrides;
   /** Width of a day in pixels. Left out, the crate's own. */
@@ -452,6 +456,92 @@ watch(pixelRatio, () => {
   if (canvasRef.value && canvasCommandsJson.value) void paintCanvas();
 });
 
+/**
+ * A palette colour written as `var(--name)` is read off the canvas's computed
+ * style once, when the canvas is painted; the SVG path writes it as it is and
+ * the browser follows the token. So while the canvas paints a palette that
+ * names a `var()`, watch what a theme switch usually changes and paint again:
+ * the `prefers-color-scheme` query, and the `class`, `style` and `data-*`
+ * attributes of every ancestor of the chart up to `<html>` (a theme is put on
+ * `<html>`, `<body>` or a wrapper, and a custom property is inherited only
+ * from the ancestors). Each ancestor is watched on its own attributes, not its
+ * subtree, so changes elsewhere in the page cost nothing. A token changed
+ * another way is not seen: `repaint()`, or the palette passed again as a new
+ * object, paints with the value it has now. Paints are gathered into one frame.
+ */
+const rootRef = ref<HTMLElement | null>(null);
+const paletteNamesVar = computed(() =>
+  Object.values(props.palette ?? {}).some((c) => typeof c === 'string' && c.includes('var(')),
+);
+const paintsTokenColors = computed(
+  () => useCanvas.value && !canvasFallbackSvg.value && paletteNamesVar.value,
+);
+let themeQuery: MediaQueryList | null = null;
+let themeObserver: MutationObserver | null = null;
+let repaintFrame = 0;
+
+/** Paints the canvas again, once per frame however often it is asked. */
+function repaint() {
+  if (repaintFrame) return;
+  const paint = () => {
+    repaintFrame = 0;
+    if (canvasRef.value && canvasCommandsJson.value) void paintCanvas();
+  };
+  if (typeof requestAnimationFrame === 'function') {
+    repaintFrame = requestAnimationFrame(paint);
+  } else {
+    paint();
+  }
+}
+
+function isThemeAttribute(name: string | null): boolean {
+  return name === 'class' || name === 'style' || (name?.startsWith('data-') ?? false);
+}
+
+function stopWatchingTheme() {
+  themeQuery?.removeEventListener('change', repaint);
+  themeQuery = null;
+  themeObserver?.disconnect();
+  themeObserver = null;
+}
+
+function watchTheme() {
+  stopWatchingTheme();
+  if (typeof window === 'undefined' || !paintsTokenColors.value) return;
+  if (typeof window.matchMedia === 'function') {
+    themeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    themeQuery.addEventListener('change', repaint);
+  }
+  if (typeof MutationObserver !== 'undefined' && rootRef.value) {
+    themeObserver = new MutationObserver((records) => {
+      if (records.some((r) => isThemeAttribute(r.attributeName))) repaint();
+    });
+    for (let el = rootRef.value.parentElement; el; el = el.parentElement) {
+      themeObserver.observe(el, { attributes: true });
+    }
+  }
+}
+
+onMounted(watchTheme);
+watch(paintsTokenColors, watchTheme);
+// A new palette object, even with the same colours, paints with the tokens' values now.
+watch(
+  () => props.palette,
+  () => {
+    watchTheme();
+    if (useCanvas.value) repaint();
+  },
+);
+onBeforeUnmount(() => {
+  stopWatchingTheme();
+  if (repaintFrame && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(repaintFrame);
+  }
+  repaintFrame = 0;
+});
+
+defineExpose({ repaint });
+
 function onScroll(e: Event) {
   syncScrollViewport(e.target as HTMLElement);
 }
@@ -484,7 +574,11 @@ function onCanvasClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="koyori-gantt" @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)">
+  <div
+    ref="rootRef"
+    class="koyori-gantt"
+    @click="(!useCanvas || canvasFallbackSvg) && onSvgClick($event)"
+  >
     <div
       v-if="!ready"
       class="koyori-gantt-skeleton"
