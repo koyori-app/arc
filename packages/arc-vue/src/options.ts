@@ -1,3 +1,5 @@
+import type { ColorIdName } from './replayCommands';
+
 /**
  * The `options_json` string the Wasm entry points take.
  *
@@ -21,6 +23,13 @@ export type LegendMode = 'shown' | 'hidden';
  */
 export type LabelMode = 'shown' | 'hidden';
 
+/**
+ * Colours that replace the chart's own, by colour name. A value is a CSS
+ * colour: `#hex`, `rgb()`/`hsl()`/`oklch()`, or `var(--name)` to draw with the
+ * caller's design tokens. The crate refuses anything else.
+ */
+export type PaletteOverrides = Partial<Record<ColorIdName, string>>;
+
 /** Where a bar sits in its row. Left out, it is centred. */
 export type BarAlign = 'middle' | 'bottom';
 
@@ -35,6 +44,7 @@ export interface ChartOptionsInput {
   headerHeightPx?: number | null;
   barHeightPx?: number | null;
   barAlign?: BarAlign | null;
+  palette?: PaletteOverrides | null;
 }
 
 /**
@@ -52,6 +62,7 @@ export interface ChartOptions {
   header_height_px?: number;
   bar_height_px?: number;
   bar_align?: BarAlign;
+  palette?: PaletteOverrides;
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -75,5 +86,6 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   if (input.headerHeightPx != null) options.header_height_px = input.headerHeightPx;
   if (input.barHeightPx != null) options.bar_height_px = input.barHeightPx;
   if (input.barAlign != null) options.bar_align = input.barAlign;
+  if (input.palette != null) options.palette = input.palette;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

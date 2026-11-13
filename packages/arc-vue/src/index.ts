@@ -5,7 +5,13 @@ export {
   parseCommandBuffer,
   findTaskAtPoint,
 } from './replayCommands';
-export type { CommandBuffer, DrawOp, ReplayResult, TaskHitRegion } from './replayCommands';
+export type {
+  ColorIdName,
+  CommandBuffer,
+  DrawOp,
+  ReplayResult,
+  TaskHitRegion,
+} from './replayCommands';
 export { loadLegendSpec } from './legend';
 export type { LegendSpec, LegendTier, LegendProgressLine } from './legend';
-export type { BarAlign, ChartOptions, LabelMode, LegendMode } from './options';
+export type { BarAlign, ChartOptions, LabelMode, LegendMode, PaletteOverrides } from './options';

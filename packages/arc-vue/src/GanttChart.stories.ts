@@ -227,3 +227,38 @@ export const ExternalRowsCanvas: Story = {
   args: { ...ExternalRows.args, backend: 'canvas' },
   render: ExternalRows.render,
 };
+
+// A caller that draws with its own design tokens: the colours are `var(--…)`
+// of tokens set on a wrapper, and the canvas resolves them off its style.
+const tokenStyle = [
+  '--demo-surface: #faf8f5',
+  '--demo-surface-hover: #f1edf7',
+  '--demo-accent: #7c5cbf',
+  '--demo-border: #e4dfe9',
+  '--demo-text-muted: #8a8296',
+].join('; ');
+
+const tokenPalette = {
+  HeaderBg: 'var(--demo-surface)',
+  GroupRow: 'var(--demo-surface-hover)',
+  TierMid: 'var(--demo-accent)',
+  Grid: 'var(--demo-border)',
+  GridLabel: 'var(--demo-text-muted)',
+};
+
+export const PaletteFromTokens: Story = {
+  args: { ...ExternalRows.args, palette: tokenPalette },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      return { args, tokenStyle, onTaskClick: action('taskClick') };
+    },
+    template:
+      '<div :style="tokenStyle"><GanttChart v-bind="args" @task-click="onTaskClick" /></div>',
+  }),
+};
+
+export const PaletteFromTokensCanvas: Story = {
+  args: { ...PaletteFromTokens.args, backend: 'canvas' },
+  render: PaletteFromTokens.render,
+};
