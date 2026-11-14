@@ -14,4 +14,11 @@ export type {
 } from './replayCommands';
 export { loadLegendSpec } from './legend';
 export type { LegendSpec, LegendTier, LegendProgressLine } from './legend';
-export type { BarAlign, ChartOptions, LabelMode, LegendMode, PaletteOverrides } from './options';
+export type {
+  BarAlign,
+  ChartOptions,
+  LabelMode,
+  LegendMode,
+  PaletteOverrides,
+  Scale,
+} from './options';

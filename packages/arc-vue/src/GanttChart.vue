@@ -102,6 +102,20 @@ const props = defineProps<{
    * in, say) needs `repaint()`, or the palette passed again as a new object.
    */
   palette?: PaletteOverrides;
+  /** Width of a day in pixels. Left out, the crate's own. */
+  pxPerDay?: number;
+  /**
+   * What the date header marks: `'week'` (the default), `'day'` (every day's
+   * number and weekday, and the month above the first day of each), or
+   * `'month'`. With `'day'` and no `headerHeight`, the header is 48 px, room
+   * for its three tiers. A `headerHeight` below 48 leaves the months out rather
+   * than draw them over the days.
+   */
+  scale?: 'week' | 'day' | 'month';
+  /** Weekday numbers drawn as weekend bands, 0 for Monday to 6 for Sunday. */
+  weekendDays?: number[];
+  /** Seven labels, Monday first, for the `'day'` scale, such as `['月', …, '日']`. */
+  weekdayLabels?: string[];
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -193,6 +207,7 @@ const chartHeight = computed(() => {
   return chartHeightForRows(props.rows, props.tasks.length, props.legend, {
     rowHeight: props.rowHeight,
     headerHeight: props.headerHeight,
+    scale: props.scale,
   });
 });
 
@@ -218,6 +233,10 @@ function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | 
     barHeightPx: props.barHeight,
     barAlign: props.barAlign,
     palette: props.palette,
+    pxPerDay: props.pxPerDay,
+    scale: props.scale,
+    weekendDays: props.weekendDays,
+    weekdayLabels: props.weekdayLabels,
   });
 }
 

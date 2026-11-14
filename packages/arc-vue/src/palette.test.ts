@@ -48,4 +48,27 @@ describe('palette overrides', () => {
     replayCommands(ctx, buffer([['HeaderBg', '#f3f4f6'], ['GroupRow', '#eeeeee']]));
     expect(fills).toEqual(['#f3f4f6', '#eeeeee']);
   });
+
+  it('draw a weekend band with the header colour until Weekend is set', () => {
+    const fills: string[] = [];
+    const canvas = document.createElement('canvas');
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_t, key) => (key === 'canvas' ? canvas : () => {}),
+        set: (_t, key, value) => {
+          if (key === 'fillStyle') fills.push(value as string);
+          return true;
+        },
+      },
+    ) as unknown as CanvasRenderingContext2D;
+    const buffer: CommandBuffer = {
+      viewport_width: 10,
+      viewport_height: 10,
+      ops: [{ FillRect: { x: 0, y: 0, w: 1, h: 1, color_id: 14, radius: 0 } }],
+      palette: { colors: [['HeaderBg', '#f3f4f6']] },
+    };
+    replayCommands(ctx, buffer);
+    expect(fills).toEqual(['#f3f4f6']);
+  });
 });

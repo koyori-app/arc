@@ -13,8 +13,14 @@ pub const BAR_H: f64 = 20.0;
 #[cfg(test)]
 pub const HIDDEN_LABELS_LEFT_PX: f64 = BAR_H / 2.0;
 pub const PX_PER_DAY: f64 = 30.0;
+/// The weekday labels of the `Day` scale when the caller gives none.
+pub const DEFAULT_WEEKDAY_LABELS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 pub const LABEL_W: f64 = 120.0;
 pub const HEADER_H: f64 = 30.0;
+/// The header of the `Day` scale when the caller sets no height: room for its
+/// three tiers, the month at the top and the day and weekday at the foot
+/// (docs/design/day-scale.md, 3.1). `HEADER_H` would set the day over the month.
+pub const DAY_SCALE_HEADER_H: f64 = 48.0;
 pub const ARROW_LEAD: f64 = 13.0;
 pub const ARROW_CURVE: f64 = 4.0;
 pub const ARROW_HEAD: f64 = 4.0;
@@ -65,20 +71,20 @@ pub const fn chart_height_with(rows: f64, legend: LegendMode) -> f64 {
     rows * ROW_H + chart_chrome_h(legend)
 }
 
-/// The width of `days` days for a chart whose title column is `label_w` wide:
+/// The width of `days` days of `px_per_day` for a chart whose title column is `label_w` wide:
 /// `LABEL_W` with the row labels shown, `HIDDEN_LABELS_LEFT_PX` (half a bar)
 /// with them hidden, or half of `bar_height` when the caller sets one. With
 /// `LABEL_W` it is `days * PX_PER_DAY + CHART_CHROME_W`, the width the Canvas
 /// guard inverts.
-pub const fn chart_width_with_label(days: f64, label_w: f64) -> f64 {
-    days * PX_PER_DAY + label_w + CHART_RIGHT_PADDING_PX
+pub const fn chart_width_with_label(days: f64, label_w: f64, px_per_day: f64) -> f64 {
+    days * px_per_day + label_w + CHART_RIGHT_PADDING_PX
 }
 
 /// `chart_width_with_label` with the title column shown, the chart the tests
 /// written before the column could be hidden compare against.
 #[cfg(test)]
 pub const fn chart_width(days: f64) -> f64 {
-    chart_width_with_label(days, LABEL_W)
+    chart_width_with_label(days, LABEL_W, PX_PER_DAY)
 }
 /// Corner radius shared by a bar's background and its progress fill: they are
 /// stacked, so a mismatch shows as a sliver of background at every corner.

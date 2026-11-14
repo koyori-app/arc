@@ -21,6 +21,9 @@ pub enum ColorId {
     /// The band of a group row. Not in the standard palette: it falls back to
     /// `HeaderBg` until a caller sets it (see `ColorId::fallback`).
     GroupRow,
+    /// The band of a weekend day. Not in the standard palette: it falls back
+    /// to `HeaderBg`.
+    Weekend,
 }
 
 impl ColorId {
@@ -30,7 +33,7 @@ impl ColorId {
     /// in it.
     pub fn fallback(self) -> Option<ColorId> {
         match self {
-            ColorId::GroupRow => Some(ColorId::HeaderBg),
+            ColorId::GroupRow | ColorId::Weekend => Some(ColorId::HeaderBg),
             _ => None,
         }
     }
@@ -169,13 +172,39 @@ pub enum BarAlign {
     Bottom,
 }
 
+/// What the date header marks. `Week` is the chart drawn before scales
+/// existed: a line and a `M/D` label at each Monday. `Day` labels every day
+/// with its number and weekday under the month, and keeps the Monday lines.
+/// `Month` puts a line and a `YYYY/M` label at the first of each month. See
+/// docs/design/day-scale.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scale {
+    #[default]
+    Week,
+    Day,
+    Month,
+}
+
+/// The weekdays drawn as weekend bands, one bit per weekday from Monday
+/// (bit 0) to Sunday (bit 6). Empty by default: a chart without bands is the
+/// chart drawn before they existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WeekendDays(pub u8);
+
+impl WeekendDays {
+    pub fn contains(self, weekday: chrono::Weekday) -> bool {
+        self.0 & (1 << weekday.num_days_from_monday()) != 0
+    }
+}
+
 /// What a caller chooses about one drawing. `Default` is the chart drawn with no
 /// today marker, no row window, and the legend and every label shown.
 ///
 /// There is deliberately no `#[non_exhaustive]`: nothing promises a stable shape
 /// during 0.1.0-alpha, and a caller builds one with
 /// `ChartOptions { today, ..Default::default() }`.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ChartOptions {
     /// The calendar day to mark. `None` draws no marker and the progress line
     /// takes its legacy shape.
@@ -203,6 +232,15 @@ pub struct ChartOptions {
     pub bar_height: Option<f64>,
     /// Where a bar sits in its row.
     pub bar_align: BarAlign,
+    /// The width of a day in pixels; `None` is `PX_PER_DAY`.
+    pub px_per_day: Option<f64>,
+    /// What the date header marks.
+    pub scale: Scale,
+    /// The weekdays drawn as weekend bands.
+    pub weekend: WeekendDays,
+    /// The weekday labels of the `Day` scale, Monday first; `None` is
+    /// `DEFAULT_WEEKDAY_LABELS`.
+    pub weekday_labels: Option<[String; 7]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +311,8 @@ pub enum RectSemantic {
     LegendSwatch,
     /// The band of a group row in a caller's row list.
     GroupRow,
+    /// The band of a weekend day.
+    Weekend,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -373,6 +413,12 @@ pub enum TextSemantic {
     RowLabel,
     LegendProgress,
     LegendTier,
+    /// The day of the month over a day column (`Day` scale).
+    DayNumber,
+    /// The weekday under the day number (`Day` scale).
+    Weekday,
+    /// `YYYY/M` above the first day of a month (`Day` scale).
+    MonthLabel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

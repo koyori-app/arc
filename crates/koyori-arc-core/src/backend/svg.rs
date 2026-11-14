@@ -44,6 +44,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
             let class = match r.semantic {
                 RectSemantic::BarBackground => Some("bar-bg"),
                 RectSemantic::GroupRow => Some("group-row"),
+                RectSemantic::Weekend => Some("weekend"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(

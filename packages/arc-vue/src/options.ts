@@ -33,6 +33,13 @@ export type PaletteOverrides = Partial<Record<ColorIdName, string>>;
 /** Where a bar sits in its row. Left out, it is centred. */
 export type BarAlign = 'middle' | 'bottom';
 
+/**
+ * What the date header marks: `'week'` a line and `M/D` at each Monday (the
+ * default), `'day'` every day's number and weekday under the month, `'month'`
+ * a line and `YYYY/M` at the first of each month.
+ */
+export type Scale = 'week' | 'day' | 'month';
+
 export interface ChartOptionsInput {
   today?: string | null;
   scrollViewport?: ScrollViewportOption | null;
@@ -45,6 +52,12 @@ export interface ChartOptionsInput {
   barHeightPx?: number | null;
   barAlign?: BarAlign | null;
   palette?: PaletteOverrides | null;
+  pxPerDay?: number | null;
+  scale?: Scale | null;
+  /** Weekday numbers drawn as weekend bands, 0 for Monday to 6 for Sunday. */
+  weekendDays?: number[] | null;
+  /** Seven labels, Monday first, for the `'day'` scale. */
+  weekdayLabels?: string[] | null;
 }
 
 /**
@@ -63,6 +76,10 @@ export interface ChartOptions {
   bar_height_px?: number;
   bar_align?: BarAlign;
   palette?: PaletteOverrides;
+  px_per_day?: number;
+  scale?: Scale;
+  weekend_days?: number[];
+  weekday_labels?: string[];
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -87,5 +104,9 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   if (input.barHeightPx != null) options.bar_height_px = input.barHeightPx;
   if (input.barAlign != null) options.bar_align = input.barAlign;
   if (input.palette != null) options.palette = input.palette;
+  if (input.pxPerDay != null) options.px_per_day = input.pxPerDay;
+  if (input.scale != null) options.scale = input.scale;
+  if (input.weekendDays != null) options.weekend_days = input.weekendDays;
+  if (input.weekdayLabels != null) options.weekday_labels = input.weekdayLabels;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

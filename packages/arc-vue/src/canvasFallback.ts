@@ -29,6 +29,18 @@ export function chartHeightForTaskCount(
 export interface RowSizes {
   rowHeight?: number;
   headerHeight?: number;
+  /** The date header's scale, which decides the header's height when none is set. */
+  scale?: 'week' | 'day' | 'month';
+}
+
+/**
+ * The header's height as the crate draws it: `headerHeight` when set, and
+ * otherwise `DAY_SCALE_HEADER_H` for the `'day'` scale, whose month, day and
+ * weekday do not fit `HEADER_H`, and `HEADER_H` for the others.
+ */
+export function headerHeightPx(sizes: RowSizes = {}): number {
+  if (sizes.headerHeight != null) return sizes.headerHeight;
+  return sizes.scale === 'day' ? RUST_LAYOUT.DAY_SCALE_HEADER_H : RUST_LAYOUT.HEADER_H;
 }
 
 /**
@@ -49,7 +61,7 @@ export function chartHeightForRows(
     ? rows.reduce((sum, row) => sum + (row.height ?? rowH), 0)
     : taskCount * rowH;
   return rowsH
-    + (sizes.headerHeight ?? RUST_LAYOUT.HEADER_H)
+    + headerHeightPx(sizes)
     + (legend === 'hidden' ? 0 : RUST_LAYOUT.LEGEND_H)
     + RUST_LAYOUT.CHART_BOTTOM_PADDING_PX;
 }
