@@ -266,3 +266,26 @@ fn a_row_at_0_percent_in_the_done_state_stays_on_the_today_line() {
     assert!(line(&list).points.iter().all(|p| p.0 == today_x()));
     assert!(dots(&list).is_empty());
 }
+
+#[test]
+fn by_row_draws_no_line_for_a_today_just_outside_the_view() {
+    // 範囲は 4〜10 日目。翌日（11 日目、x は範囲の右の端）と前日（3 日目）の今日は図に無い
+    let with_today = |today: i64| {
+        let opts = ChartOptions {
+            today: Some(day(today)),
+            view: Some(ViewRange {
+                from: day(4),
+                to: day(10),
+            }),
+            ..options(ProgressLineMode::ByRow)
+        };
+        build_rows(&graph(), &all_rows(), &opts)
+    };
+    for today in [11, 3] {
+        assert!(line_layer(&with_today(today)).is_none(), "day {today}");
+    }
+    // 最後の日と最初の日の今日は図に在り、線を引く
+    for today in [10, 4] {
+        assert!(line_layer(&with_today(today)).is_some(), "day {today}");
+    }
+}
