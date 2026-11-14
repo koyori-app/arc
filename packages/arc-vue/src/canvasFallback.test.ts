@@ -3,6 +3,7 @@ import {
   chartHeightForRows,
   chartHeightForTaskCount,
   resolveCanvasFailure,
+  headerHeightPx,
   skeletonLabelWidthPx,
 } from './canvasFallback';
 import { EMPTY_SVG_MARKUP, RUST_ERROR_CODES, RUST_LAYOUT } from './wasmContract';
@@ -135,5 +136,30 @@ describe('skeletonLabelWidthPx', () => {
     expect(skeletonLabelWidthPx('hidden', 300)).toBe(150);
     // 棒が題の列の倍（240）までは LABEL_W のまま
     expect(skeletonLabelWidthPx('shown', 2 * RUST_LAYOUT.LABEL_W)).toBe(RUST_LAYOUT.LABEL_W);
+  });
+});
+
+describe('headerHeightPx', () => {
+  it('reserves the day scale its three tiers when no height is set, as the crate draws it', () => {
+    expect(headerHeightPx({ scale: 'day' })).toBe(RUST_LAYOUT.DAY_SCALE_HEADER_H);
+    expect(RUST_LAYOUT.DAY_SCALE_HEADER_H).toBe(48);
+    // 週と月の段と、段を渡さぬ図は今までの HEADER_H
+    expect(headerHeightPx()).toBe(RUST_LAYOUT.HEADER_H);
+    expect(headerHeightPx({ scale: 'week' })).toBe(RUST_LAYOUT.HEADER_H);
+    expect(headerHeightPx({ scale: 'month' })).toBe(RUST_LAYOUT.HEADER_H);
+  });
+
+  it('takes the height the caller set on every scale', () => {
+    for (const scale of ['week', 'day', 'month'] as const) {
+      expect(headerHeightPx({ scale, headerHeight: 60 })).toBe(60);
+    }
+  });
+
+  it('is the header chartHeightForRows reserves', () => {
+    const rows = undefined;
+    expect(chartHeightForRows(rows, 2, 'hidden', { scale: 'day' })
+      - chartHeightForRows(rows, 2, 'hidden', {})).toBe(
+      RUST_LAYOUT.DAY_SCALE_HEADER_H - RUST_LAYOUT.HEADER_H,
+    );
   });
 });

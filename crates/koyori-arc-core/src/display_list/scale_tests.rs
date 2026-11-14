@@ -233,3 +233,192 @@ fn weekend_days_draw_a_band_over_the_rows() {
         list.palette.resolve(ColorId::HeaderBg)
     );
 }
+
+/// 字の箱の上と下（基線から字の大きさだけ上、字の大きさの四分の一だけ下）。
+fn text_span(t: &TextPrim) -> (f64, f64) {
+    let size = t.font_size.unwrap_or(11.0);
+    (t.y - size, t.y + size / 4.0)
+}
+
+#[test]
+fn the_day_scale_takes_room_for_its_three_tiers_by_default() {
+    // 見出しの高さを渡さぬ日の段。HEADER_H（30）では月の札と日の数字が重なっておった
+    let list = list_with(ChartOptions {
+        scale: Scale::Day,
+        ..Default::default()
+    });
+    assert_eq!(list.viewport.header_height, DAY_SCALE_HEADER_H);
+    let months = texts(&list, TextSemantic::MonthLabel);
+    let numbers = texts(&list, TextSemantic::DayNumber);
+    assert!(!months.is_empty());
+    let month_bottom = months
+        .iter()
+        .map(|t| text_span(t).1)
+        .fold(f64::MIN, f64::max);
+    let number_top = numbers
+        .iter()
+        .map(|t| text_span(t).0)
+        .fold(f64::MAX, f64::min);
+    assert!(
+        month_bottom <= number_top,
+        "the month ends at {month_bottom}, the day number starts at {number_top}"
+    );
+    // 行は見出しの下から始まる
+    let a = list
+        .metadata
+        .task_bboxes
+        .iter()
+        .find(|t| t.task_id == "a")
+        .unwrap();
+    assert!(a.bar_bbox.y >= DAY_SCALE_HEADER_H);
+}
+
+#[test]
+fn a_header_height_the_caller_sets_wins_on_every_scale() {
+    for scale in [Scale::Week, Scale::Day, Scale::Month] {
+        let list = list_with(ChartOptions {
+            scale,
+            header_height: Some(60.0),
+            ..Default::default()
+        });
+        assert_eq!(list.viewport.header_height, 60.0, "{scale:?}");
+    }
+    // 週と月の段の既定は今までの HEADER_H のまま
+    for scale in [Scale::Week, Scale::Month] {
+        let list = list_with(ChartOptions {
+            scale,
+            ..Default::default()
+        });
+        assert_eq!(list.viewport.header_height, HEADER_H, "{scale:?}");
+    }
+}
+
+#[test]
+fn a_day_scale_header_too_low_for_the_month_leaves_the_month_out() {
+    let list = list_with(ChartOptions {
+        scale: Scale::Day,
+        header_height: Some(HEADER_H),
+        ..Default::default()
+    });
+    assert!(texts(&list, TextSemantic::MonthLabel).is_empty());
+    assert_eq!(texts(&list, TextSemantic::DayNumber).len(), DAYS as usize);
+    assert_eq!(texts(&list, TextSemantic::Weekday).len(), DAYS as usize);
+}
+
+/// 2026-11-08 は日曜。
+fn sunday() -> NaiveDate {
+    epoch() + Duration::days(6)
+}
+
+fn milestone_alone(options: ChartOptions) -> DisplayList {
+    let graph = GanttGraph {
+        tasks: vec![GanttTask {
+            id: "m".to_string(),
+            title: "m".to_string(),
+            progress_pct: 0,
+            start: sunday(),
+            end: Some(sunday()),
+        }],
+        deps: vec![],
+    };
+    build_display_list(&graph, sunday(), &options)
+}
+
+fn sunday_mask() -> WeekendDays {
+    WeekendDays(1 << Weekday::Sun.num_days_from_monday())
+}
+
+#[test]
+fn a_milestone_alone_still_gets_its_day_on_every_scale() {
+    // 日の段: 日付と曜日と年月
+    let day = milestone_alone(ChartOptions {
+        scale: Scale::Day,
+        ..Default::default()
+    });
+    let contents = |list: &DisplayList, sem| {
+        texts(list, sem)
+            .into_iter()
+            .map(|t| t.content)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        contents(&day, TextSemantic::DayNumber),
+        vec!["8".to_string()]
+    );
+    assert_eq!(
+        contents(&day, TextSemantic::Weekday),
+        vec!["Su".to_string()]
+    );
+    assert_eq!(
+        contents(&day, TextSemantic::MonthLabel),
+        vec!["2026/11".to_string()]
+    );
+    // 月の段: 最初の年月
+    let month = milestone_alone(ChartOptions {
+        scale: Scale::Month,
+        ..Default::default()
+    });
+    assert_eq!(
+        contents(&month, TextSemantic::GridLabel),
+        vec!["2026/11".to_string()]
+    );
+    // 日曜を土日に指せば、その日に帯
+    let weekend = milestone_alone(ChartOptions {
+        weekend: sunday_mask(),
+        ..Default::default()
+    });
+    let bands = rects(&weekend, RectSemantic::Weekend);
+    assert_eq!(bands.len(), 1);
+    assert_eq!(bands[0].x, LABEL_W);
+    // 帯も字も図の幅の中
+    for list in [&day, &month, &weekend] {
+        assert!(bands[0].x + bands[0].width <= weekend.viewport.width);
+        let widest = right_edges(list)
+            .into_iter()
+            .map(|(_, r)| r)
+            .fold(0.0, f64::max);
+        assert!(widest <= list.viewport.width);
+    }
+}
+
+#[test]
+fn a_milestone_after_every_bar_gets_its_day() {
+    // 棒は 11/2〜11/6（終わりは 11/7 の境）、マイルストーンは 11/8（日曜）
+    let graph = GanttGraph {
+        tasks: vec![
+            task("a", 0, 5),
+            GanttTask {
+                id: "m".to_string(),
+                title: "m".to_string(),
+                progress_pct: 0,
+                start: sunday(),
+                end: Some(sunday()),
+            },
+        ],
+        deps: vec![],
+    };
+    let list = build_display_list(
+        &graph,
+        epoch(),
+        &ChartOptions {
+            scale: Scale::Day,
+            weekend: sunday_mask(),
+            ..Default::default()
+        },
+    );
+    let numbers: Vec<String> = texts(&list, TextSemantic::DayNumber)
+        .into_iter()
+        .map(|t| t.content)
+        .collect();
+    assert_eq!(numbers.last().map(String::as_str), Some("8"));
+    assert_eq!(numbers.len(), 7);
+    let bands = rects(&list, RectSemantic::Weekend);
+    assert_eq!(bands.len(), 1);
+    assert_eq!(bands[0].x, LABEL_W + 6.0 * PX_PER_DAY);
+    assert!(bands[0].x + bands[0].width <= list.viewport.width);
+    let widest = right_edges(&list)
+        .into_iter()
+        .map(|(_, r)| r)
+        .fold(0.0, f64::max);
+    assert!(widest <= list.viewport.width);
+}

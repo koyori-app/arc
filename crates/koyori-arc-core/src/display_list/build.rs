@@ -79,6 +79,7 @@ pub fn build_display_list_with_rows(
     let label_w = axis.label_w;
 
     let total_days = total_days_of(&graph.tasks, epoch);
+    let drawn_days = drawn_days_of(&graph.tasks, epoch, total_days);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
@@ -140,7 +141,7 @@ pub fn build_display_list_with_rows(
 
     // Weekend bands over the rows, over the group bands too so a weekend reads
     // through a group's heading. None unless the caller names weekend days.
-    let weekend_bands: Vec<Primitive> = calendar_days(epoch, total_days)
+    let weekend_bands: Vec<Primitive> = calendar_days(epoch, drawn_days)
         .filter(|d| weekend.contains(d.weekday()))
         .map(|d| {
             Primitive::Rect(RectPrim {
@@ -181,7 +182,7 @@ pub fn build_display_list_with_rows(
     match scale {
         // A line and its label in turn, as the chart drawn before scales.
         Scale::Week | Scale::Month => {
-            for grid_day in grid_days_of(scale, epoch, total_days) {
+            for grid_day in grid_days_of(scale, epoch, total_days, drawn_days) {
                 grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
                 grid_prims.push(Primitive::Text(grid_text_of(
                     &axis, epoch, grid_day, scale, header_h,
@@ -194,7 +195,7 @@ pub fn build_display_list_with_rows(
                 grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
             }
             grid_prims.extend(
-                day_texts(&axis, epoch, total_days, header_h, options)
+                day_texts(&axis, epoch, drawn_days, header_h, options)
                     .into_iter()
                     .map(Primitive::Text),
             );
@@ -597,7 +598,14 @@ pub(crate) fn chart_width_for(
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
     let total_days = total_days_of(tasks, epoch);
-    let days_w = chart_width_with_label(total_days as f64, label_w, axis.px_per_day);
+    // A chart that draws a column for every day (the `Day` scale, or weekend
+    // bands) holds up the column of a milestone on its last day as well.
+    let span_days = if options.scale == Scale::Day || options.weekend.0 != 0 {
+        drawn_days_of(tasks, epoch, total_days)
+    } else {
+        total_days
+    };
+    let days_w = chart_width_with_label(span_days as f64, label_w, axis.px_per_day);
     let legend_edge = match options.legend {
         LegendMode::Shown => {
             label_w + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
@@ -700,11 +708,18 @@ fn month_label(day: NaiveDate) -> String {
 
 /// The days the grid of `scale` draws a line at: the Mondays for `Week`, the
 /// first of each month (and the epoch, so the first month has its label) for
-/// `Month`. `Day` draws the Monday lines and labels every day.
-fn grid_days_of(scale: Scale, epoch: NaiveDate, total_days: i64) -> Vec<NaiveDate> {
+/// `Month`. `Day` draws the Monday lines and labels every day. The Mondays
+/// reach the end of the span already (`grid_days` counts its last boundary);
+/// the months go through `drawn_days`, so a milestone's day is in them.
+fn grid_days_of(
+    scale: Scale,
+    epoch: NaiveDate,
+    total_days: i64,
+    drawn_days: i64,
+) -> Vec<NaiveDate> {
     match scale {
         Scale::Week | Scale::Day => grid_days(epoch, total_days),
-        Scale::Month => calendar_days(epoch, total_days)
+        Scale::Month => calendar_days(epoch, drawn_days)
             .filter(|d| d.day() == 1 || *d == epoch)
             .collect(),
     }
@@ -734,16 +749,45 @@ fn grid_text_of(
     }
 }
 
+/// The days the chart draws a column for, counted from the epoch. A bar's end
+/// is the boundary after its last day, so `total_days` covers every bar; a
+/// milestone sits on its day and ends where it starts, so a milestone on the
+/// last day (or alone in the chart) would fall outside `total_days`. Its day
+/// counts here, for the labels of each day, the months and the weekend bands.
+fn drawn_days_of(tasks: &[GanttTask], epoch: NaiveDate, total_days: i64) -> i64 {
+    tasks
+        .iter()
+        .filter(|t| is_zero_duration(t))
+        .map(|t| t.start_days(epoch).floor() as i64 + 1)
+        .fold(total_days, i64::max)
+}
+
 /// Every day from the epoch through `total_days` days, the days the chart
 /// spans. Stops instead of panicking at the end of the calendar.
 fn calendar_days(epoch: NaiveDate, total_days: i64) -> impl Iterator<Item = NaiveDate> {
     (0..total_days.max(0)).map_while(move |i| epoch.checked_add_signed(Duration::days(i)))
 }
 
+/// The header's height: `header_height_px` when the caller sets it, and
+/// otherwise `DAY_SCALE_HEADER_H` for the `Day` scale, whose three tiers do
+/// not fit `HEADER_H`, and `HEADER_H` for the others. The rows and the width
+/// both read this, so the two cannot disagree on whether the month is drawn.
+pub(crate) fn header_height_of(options: &ChartOptions) -> f64 {
+    options.header_height.unwrap_or(match options.scale {
+        Scale::Day => DAY_SCALE_HEADER_H,
+        Scale::Week | Scale::Month => HEADER_H,
+    })
+}
+
 /// The labels of the `Day` scale: over each day its number, under it the
 /// weekday, and above the first day of each month (and the first day drawn)
 /// `YYYY/M`. The month sits at the top, the number and weekday at the foot of
 /// the header, so a taller header leaves its room in the middle.
+///
+/// A header the caller sets lower than `DAY_SCALE_HEADER_H` has no room for
+/// the month above the day, so the month is left out rather than drawn over
+/// the day: the day and weekday still read, two labels on top of each other
+/// do not.
 fn day_texts(
     axis: &XAxis,
     epoch: NaiveDate,
@@ -760,7 +804,7 @@ fn day_texts(
             Some(labels) => labels[weekday].clone(),
             None => DEFAULT_WEEKDAY_LABELS[weekday].to_string(),
         };
-        if day == epoch || day.day() == 1 {
+        if header_h >= DAY_SCALE_HEADER_H && (day == epoch || day.day() == 1) {
             out.push(TextPrim {
                 x: x + 2.0,
                 y: 12.0,
@@ -876,13 +920,15 @@ fn labels_right_edge(
         )
     });
     // The grid's labels, read from what the grid draws so the two cannot differ.
-    // The header's height moves no label sideways, so the default stands in.
+    // The header's height moves no label sideways, but it decides whether the
+    // `Day` scale draws its months, so that scale reads the height drawn.
+    let drawn_days = drawn_days_of(tasks, epoch, total_days);
     let grid_texts: Vec<TextPrim> = match options.scale {
-        Scale::Week | Scale::Month => grid_days_of(options.scale, epoch, total_days)
+        Scale::Week | Scale::Month => grid_days_of(options.scale, epoch, total_days, drawn_days)
             .into_iter()
             .map(|day| grid_text_of(axis, epoch, day, options.scale, HEADER_H))
             .collect(),
-        Scale::Day => day_texts(axis, epoch, total_days, HEADER_H, options),
+        Scale::Day => day_texts(axis, epoch, drawn_days, header_height_of(options), options),
     };
     let grid = grid_texts
         .iter()

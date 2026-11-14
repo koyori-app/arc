@@ -53,7 +53,7 @@ impl RowPlan {
         rows: Option<&[GanttRow]>,
         options: &ChartOptions,
     ) -> Self {
-        let header_h = options.header_height.unwrap_or(HEADER_H);
+        let header_h = super::build::header_height_of(options);
         let row_h = options.row_height.unwrap_or(ROW_H);
         let mut slots = Vec::new();
         let mut slot_of_task = vec![None; tasks.len()];
