@@ -103,3 +103,42 @@ fn a_weekday_label_is_escaped_like_any_text() {
     assert!(svg.contains("&lt;b&gt;") && svg.contains("&amp;"));
     assert!(!svg.contains("<b>"));
 }
+
+/// SVG の字（`>…</text>`）を並べる。
+fn svg_texts(svg: &str) -> Vec<String> {
+    svg.split("</text>")
+        .filter_map(|chunk| chunk.rfind('>').map(|i| chunk[i + 1..].to_string()))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// canvas の命の字を並べる。
+fn canvas_texts(json: &str) -> Vec<String> {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap();
+    v["ops"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{v}"))
+        .iter()
+        .filter_map(|op| op.get("DrawText"))
+        .map(|t| t["text"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn a_milestone_alone_draws_its_day_on_both_entry_points() {
+    // 日曜（2026-11-08）に始まり終わるマイルストーン一つ。日の段、見出しの高さは渡さぬ
+    let task =
+        r#"[{"id":"m","title":"M","progress_pct":0,"start":"2026-11-08","end":"2026-11-08"}]"#;
+    let options =
+        s(r#"{"scale":"day","percent_labels":"hidden","row_labels":"hidden","legend":"hidden"}"#);
+    let svg = svg_texts(&render_svg(task, "[]", options.clone(), None));
+    let canvas = canvas_texts(&render_canvas_commands(task, "[]", options, None));
+    for want in ["2026/11", "8", "Su"] {
+        assert!(svg.iter().any(|t| t == want), "SVG: {want} in {svg:?}");
+        assert!(
+            canvas.iter().any(|t| t == want),
+            "canvas: {want} in {canvas:?}"
+        );
+    }
+    assert_eq!(svg, canvas);
+}
