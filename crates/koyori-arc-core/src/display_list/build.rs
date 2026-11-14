@@ -1,7 +1,7 @@
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashMap;
 
-use crate::graph::{GanttGraph, GanttRow, GanttTask};
+use crate::graph::{BarShape, BarState, GanttGraph, GanttRow, GanttTask, TaskRow};
 use crate::progress::progress_line;
 
 use super::constants::*;
@@ -78,13 +78,13 @@ pub fn build_display_list_with_rows(
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
 
-    let total_days = total_days_of(&graph.tasks, epoch);
+    let total_days = span_days(&graph.tasks, rows, epoch);
     let drawn_days = drawn_days_of(&graph.tasks, epoch, total_days);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, epoch, options);
+    let chart_w = chart_width_for(&graph.tasks, rows, epoch, options);
     let chart_h = chart_height_of(&plan, legend_mode);
 
     let viewport = Viewport {
@@ -208,6 +208,7 @@ pub fn build_display_list_with_rows(
 
     // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
+    let mut note_prims = Vec::new();
     // In the order the tasks came in, as before row lists existed, so the
     // output of a chart without one keeps its order.
     for (task_index, task) in graph.tasks.iter().enumerate() {
@@ -240,8 +241,27 @@ pub fn build_display_list_with_rows(
         );
 
         let mut children = Vec::new();
+        let marks = task_row_of(rows, &plan.slots[slot_index]);
+        let marks_geometry = marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, bar_h));
 
-        if is_zero_duration(task) {
+        if let Some(MarkGeometry {
+            point_cx: Some(cx), ..
+        }) = marks_geometry
+        {
+            // A task with only a deadline: a dot on its last day, no bar.
+            let state = marks.and_then(|m| m.state);
+            let d = 2.0 * point_radius(bar_h);
+            children.push(Primitive::RoundRect(RoundRectPrim {
+                x: cx - d / 2.0,
+                y: y + (bar_h - d) / 2.0,
+                width: d,
+                height: d,
+                fill: outline_color(state),
+                rx: d / 2.0,
+                tier,
+                semantic: RoundRectSemantic::Point,
+            }));
+        } else if is_zero_duration(task) {
             let cx = x;
             let cy = y + bar_h / 2.0;
             let half = bar_h / 2.0;
@@ -274,12 +294,13 @@ pub fn build_display_list_with_rows(
             }
         } else {
             if w > 0.0 {
+                let state = marks.and_then(|m| m.state);
                 children.push(Primitive::Rect(RectPrim {
                     x,
                     y,
                     width: w,
                     height: bar_h,
-                    fill: ColorId::BarBg,
+                    fill: bar_fill_color(state),
                     rx: Some(BAR_CORNER_RADIUS_PX),
                     semantic: RectSemantic::BarBackground,
                 }));
@@ -293,6 +314,15 @@ pub fn build_display_list_with_rows(
                         rx: BAR_CORNER_RADIUS_PX,
                         tier,
                         semantic: RoundRectSemantic::BarProgress,
+                    }));
+                }
+                // A state, given at all, outlines the bar in its colour.
+                if state.is_some() {
+                    children.push(Primitive::Path(PathPrim {
+                        d: rounded_rect_path(x, y, w, bar_h, BAR_CORNER_RADIUS_PX),
+                        stroke: outline_color(state),
+                        stroke_width: 1.0,
+                        semantic: PathSemantic::BarOutline,
                     }));
                 }
             }
@@ -309,6 +339,48 @@ pub fn build_display_list_with_rows(
                     baseline: TextBaseline::Middle,
                     semantic: TextSemantic::ProgressPercent,
                 }));
+            }
+        }
+
+        // The marks a task row adds after the bar: the hard deadline's diamond,
+        // the line from a point to it, and the note.
+        if let (Some(m), Some(g)) = (marks, marks_geometry) {
+            let cy = y + bar_h / 2.0;
+            if let (Some(px), Some(dx)) = (g.point_cx, g.diamond_cx) {
+                if dx > px {
+                    children.push(Primitive::Line(LinePrim {
+                        x1: px,
+                        y1: cy,
+                        x2: dx,
+                        y2: cy,
+                        stroke: outline_color(m.state),
+                        stroke_width: 1.0,
+                        stroke_dash: None,
+                        semantic: LineSemantic::DeadlineLink,
+                    }));
+                }
+            }
+            if let Some(dx) = g.diamond_cx {
+                let half = HARD_DEADLINE_HALF_PX;
+                children.push(Primitive::Polygon(PolygonPrim {
+                    points: vec![
+                        (dx, cy - half),
+                        (dx + half, cy),
+                        (dx, cy + half),
+                        (dx - half, cy),
+                    ],
+                    fill: ColorId::HardDeadline,
+                    stroke: ColorId::HardDeadline,
+                    stroke_width: 1.0,
+                    tier,
+                    semantic: PolygonSemantic::HardDeadline,
+                }));
+            }
+            if let Some(note) = &m.note {
+                // The note goes on its own layer over the today line, with a
+                // band of the ground's colour under it; where it sits is the
+                // same as before.
+                note_prims.extend(note_with_band(g.note_x, cy, note, m.state));
             }
         }
 
@@ -493,6 +565,15 @@ pub fn build_display_list_with_rows(
         });
     }
 
+    // Notes over the today line and the grid. No note, no layer: a chart
+    // without notes is the chart drawn before them.
+    if !note_prims.is_empty() {
+        layers.push(Layer {
+            kind: LayerKind::Notes,
+            primitives: note_prims,
+        });
+    }
+
     // Progress line layer — delegates geometry to progress_line().
     // The tasks come in input order but the line runs top to bottom, so the
     // points follow the rows. Otherwise a dependency that reorders rows makes
@@ -592,20 +673,21 @@ pub(crate) fn chart_height_of(plan: &RowPlan, legend: LegendMode) -> f64 {
 /// the rows in the window, or the width would change as the chart scrolls.
 pub(crate) fn chart_width_for(
     tasks: &[GanttTask],
+    rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> f64 {
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
-    let total_days = total_days_of(tasks, epoch);
+    let total_days = span_days(tasks, rows, epoch);
     // A chart that draws a column for every day (the `Day` scale, or weekend
     // bands) holds up the column of a milestone on its last day as well.
-    let span_days = if options.scale == Scale::Day || options.weekend.0 != 0 {
+    let column_days = if options.scale == Scale::Day || options.weekend.0 != 0 {
         drawn_days_of(tasks, epoch, total_days)
     } else {
         total_days
     };
-    let days_w = chart_width_with_label(span_days as f64, label_w, axis.px_per_day);
+    let days_w = chart_width_with_label(column_days as f64, label_w, axis.px_per_day);
     let legend_edge = match options.legend {
         LegendMode::Shown => {
             label_w + LEGEND_LEFT_PAD_PX + legend_layout().width + CHART_RIGHT_PADDING_PX
@@ -624,6 +706,201 @@ pub(crate) fn chart_width_for(
         .max(legend_edge)
         .max(diamond_edge)
         .max(labels_right_edge(tasks, epoch, total_days, &axis, options))
+        .max(marks_right_edge(tasks, rows, epoch, &axis, bar_h))
+}
+
+/// The days the chart spans: through the last task's end, and through the
+/// last hard deadline a task row gives, so its diamond is on the chart. A chart
+/// without marks spans what it spanned before them.
+fn span_days(tasks: &[GanttTask], rows: Option<&[GanttRow]>, epoch: NaiveDate) -> i64 {
+    let deadlines = rows
+        .into_iter()
+        .flatten()
+        .filter_map(|r| match r {
+            GanttRow::Task(t) => t.hard_deadline,
+            GanttRow::Group { .. } => None,
+        })
+        .map(|d| (d - epoch).num_days() + 1);
+    deadlines.fold(total_days_of(tasks, epoch), i64::max)
+}
+
+/// The task row drawn on `slot`, when the caller's row list gives one.
+fn task_row_of<'a>(rows: Option<&'a [GanttRow]>, slot: &super::rows::Slot) -> Option<&'a TaskRow> {
+    match rows?.get(slot.row?)? {
+        GanttRow::Task(t) => Some(t),
+        GanttRow::Group { .. } => None,
+    }
+}
+
+/// The radius of a `point` row's dot: a quarter of the bar, so the dot is half
+/// the bar across. Drawing the dot and placing its note both read this, so a
+/// note starts right of the dot however tall the bar or narrow the day.
+fn point_radius(bar_h: f64) -> f64 {
+    bar_h / 4.0
+}
+
+/// Where a task row's marks sit across the chart. Drawing and the width both
+/// read this, so a note cannot run past the chart.
+#[derive(Debug, Clone, Copy)]
+struct MarkGeometry {
+    /// The centre of the dot of a `point` row.
+    point_cx: Option<f64>,
+    /// The centre of the hard deadline's diamond: the middle of its day.
+    diamond_cx: Option<f64>,
+    /// Where the note starts: right of the bar (or dot), or right of the
+    /// diamond when the note would run over it.
+    note_x: f64,
+}
+
+impl MarkGeometry {
+    fn of(task: &GanttTask, row: &TaskRow, axis: &XAxis, epoch: NaiveDate, bar_h: f64) -> Self {
+        let start = task.start_days(epoch);
+        let end = task.end_days(epoch);
+        // The middle of the span's last day; a span of no days is its start day.
+        let last_day_mid = if end > start {
+            axis.x(end) - axis.px_per_day / 2.0
+        } else {
+            axis.x(start) + axis.px_per_day / 2.0
+        };
+        let point_cx = (row.shape == BarShape::Point).then_some(last_day_mid);
+        // A deadline before the chart's first day has no column to sit in.
+        let diamond_cx = row
+            .hard_deadline
+            .filter(|d| *d >= epoch)
+            .map(|d| axis.day_x(epoch, d) + axis.px_per_day / 2.0);
+        let bar_right = match point_cx {
+            Some(cx) => cx + point_radius(bar_h),
+            None => axis.x(end).max(axis.x(start)),
+        };
+        Self {
+            point_cx,
+            diamond_cx,
+            note_x: note_x_beside(bar_right, row.note.as_deref(), diamond_cx, point_cx),
+        }
+    }
+}
+
+/// Where a note starts. A note speaks of its bar, so it sits right of the bar
+/// (`bar_right`); only when it would run over the hard deadline's diamond does
+/// it move right of the diamond. For a dot, the line from the dot to a later
+/// diamond is in the way as the diamond is.
+fn note_x_beside(
+    bar_right: f64,
+    note: Option<&str>,
+    diamond_cx: Option<f64>,
+    point_cx: Option<f64>,
+) -> f64 {
+    let x = bar_right + NOTE_GAP_PX;
+    let Some(c) = diamond_cx else {
+        return x;
+    };
+    let half = HARD_DEADLINE_HALF_PX;
+    let left = match point_cx {
+        Some(px) if c > px => px,
+        _ => c - half,
+    };
+    let right = c + half;
+    let width = note.map_or(0.0, |n| text_width_weighted_px(n, GRID_LABEL_FONT_PX, None));
+    if x < right && x + width > left {
+        right + NOTE_GAP_PX
+    } else {
+        x
+    }
+}
+
+/// A row's note at `x` and the band under it. The band takes the note's width
+/// from the same estimate the chart's width does, so it adds no width.
+fn note_with_band(x: f64, cy: f64, note: &str, state: Option<BarState>) -> [Primitive; 2] {
+    let width = text_width_weighted_px(note, GRID_LABEL_FONT_PX, None);
+    let height = GRID_LABEL_FONT_PX + 2.0 * NOTE_BAND_PAD_PX;
+    [
+        Primitive::Rect(RectPrim {
+            x: x - NOTE_BAND_PAD_PX,
+            y: cy - height / 2.0,
+            width: width + 2.0 * NOTE_BAND_PAD_PX,
+            height,
+            fill: ColorId::NoteBg,
+            rx: Some(NOTE_BAND_PAD_PX),
+            semantic: RectSemantic::NoteBackground,
+        }),
+        Primitive::Text(TextPrim {
+            x,
+            y: cy,
+            content: note.to_string(),
+            fill: Some(match state {
+                Some(BarState::Warn) => ColorId::WarnStroke,
+                _ => ColorId::Note,
+            }),
+            font_size: Some(GRID_LABEL_FONT_PX),
+            font_weight: None,
+            anchor: None,
+            baseline: TextBaseline::Middle,
+            semantic: TextSemantic::BarNote,
+        }),
+    ]
+}
+
+/// The furthest right a task row's diamond or note reaches, with the right
+/// padding past it.
+fn marks_right_edge(
+    tasks: &[GanttTask],
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+    axis: &XAxis,
+    bar_h: f64,
+) -> f64 {
+    let Some(rows) = rows else {
+        return 0.0;
+    };
+    let mut by_id: HashMap<&str, &GanttTask> = HashMap::new();
+    for t in tasks {
+        by_id.entry(t.id.as_str()).or_insert(t);
+    }
+    rows.iter()
+        .filter_map(|r| match r {
+            GanttRow::Task(row) => Some((row, *by_id.get(row.task_id.as_str())?)),
+            GanttRow::Group { .. } => None,
+        })
+        .map(|(row, task)| {
+            let g = MarkGeometry::of(task, row, axis, epoch, bar_h);
+            let diamond = g.diamond_cx.map_or(0.0, |c| c + HARD_DEADLINE_HALF_PX);
+            let note = row.note.as_deref().map_or(0.0, |n| {
+                text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None)
+            });
+            diamond.max(note) + CHART_RIGHT_PADDING_PX
+        })
+        .fold(0.0, f64::max)
+}
+
+/// The fill of a bar in `state`; no state is the fill before states existed.
+fn bar_fill_color(state: Option<BarState>) -> ColorId {
+    match state {
+        None | Some(BarState::Normal) => ColorId::BarBg,
+        Some(BarState::Done) => ColorId::DoneBg,
+        Some(BarState::Warn) => ColorId::WarnBg,
+    }
+}
+
+/// The outline of a bar in `state`, and the colour of a dot.
+fn outline_color(state: Option<BarState>) -> ColorId {
+    match state {
+        None | Some(BarState::Normal) => ColorId::BarStroke,
+        Some(BarState::Done) => ColorId::DoneStroke,
+        Some(BarState::Warn) => ColorId::WarnStroke,
+    }
+}
+
+/// A rounded rectangle as an SVG path, for an outline drawn over a bar.
+fn rounded_rect_path(x: f64, y: f64, w: f64, h: f64, r: f64) -> String {
+    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+    let n = -r;
+    format!(
+        "M {x0} {y} H {x1} a {r} {r} 0 0 1 {r} {r} V {y1} a {r} {r} 0 0 1 {n} {r} H {x0} a {r} {r} 0 0 1 {n} {n} V {y0} a {r} {r} 0 0 1 {r} {n} Z",
+        x0 = x + r,
+        x1 = x + w - r,
+        y0 = y + r,
+        y1 = y + h - r,
+    )
 }
 
 /// Where a day sits across the chart: after the title column, `px_per_day`

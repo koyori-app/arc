@@ -45,6 +45,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 RectSemantic::BarBackground => Some("bar-bg"),
                 RectSemantic::GroupRow => Some("group-row"),
                 RectSemantic::Weekend => Some("weekend"),
+                RectSemantic::NoteBackground => Some("note-bg"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(
@@ -56,7 +57,12 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
             );
         }
         Primitive::RoundRect(r) => {
-            let class = format!("bar-progress bar-tier-{}", r.tier.css_suffix());
+            let class = match r.semantic {
+                RoundRectSemantic::BarProgress => {
+                    format!("bar-progress bar-tier-{}", r.tier.css_suffix())
+                }
+                RoundRectSemantic::Point => "bar-point".to_string(),
+            };
             push_rect(
                 svg,
                 Some(&class),
@@ -97,9 +103,14 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
             svg.push_str("/>");
         }
         Primitive::Polygon(p) => {
+            let class = match p.semantic {
+                PolygonSemantic::Milestone => {
+                    format!("bar-milestone bar-tier-{}", p.tier.css_suffix())
+                }
+                PolygonSemantic::HardDeadline => "hard-deadline".to_string(),
+            };
             svg.push_str(&format!(
-                r#"<polygon class="bar-milestone bar-tier-{tier}" points="{points}" fill="{fill}" stroke="{stroke}" stroke-width="{width}"/>"#,
-                tier = p.tier.css_suffix(),
+                r#"<polygon class="{class}" points="{points}" fill="{fill}" stroke="{stroke}" stroke-width="{width}"/>"#,
                 points = join_points(&p.points),
                 fill = palette.resolve(p.fill),
                 stroke = palette.resolve(p.stroke),

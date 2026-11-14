@@ -23,7 +23,8 @@ impl RenderBackend for CountingBackend {
                 | LayerKind::ProgressLine
                 | LayerKind::TodayMarker
                 | LayerKind::Legend
-                | LayerKind::OverlayHints => count_primitives(&layer.primitives),
+                | LayerKind::OverlayHints
+                | LayerKind::Notes => count_primitives(&layer.primitives),
             })
             .sum::<usize>();
         BackendOutput::Svg(primitive_count.to_string())
@@ -45,7 +46,8 @@ fn count_primitives(primitives: &[Primitive]) -> usize {
                     | RectSemantic::BarBackground
                     | RectSemantic::LegendSwatch
                     | RectSemantic::GroupRow
-                    | RectSemantic::Weekend => 1,
+                    | RectSemantic::Weekend
+                    | RectSemantic::NoteBackground => 1,
                 }
             }
             Primitive::RoundRect(_) => 1,

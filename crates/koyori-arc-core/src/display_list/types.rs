@@ -24,6 +24,26 @@ pub enum ColorId {
     /// The band of a weekend day. Not in the standard palette: it falls back
     /// to `HeaderBg`.
     Weekend,
+    // The colours of the bar marks (docs/design/bar-marks.md). None is in the
+    // standard palette; each falls back as `ColorId::fallback` says.
+    /// The outline of a bar in the `normal` state, and the line from a point
+    /// to its diamond.
+    BarStroke,
+    /// The fill of a bar in the `done` state.
+    DoneBg,
+    /// The outline of a bar in the `done` state.
+    DoneStroke,
+    /// The fill of a bar in the `warn` state.
+    WarnBg,
+    /// The outline and the note of a bar in the `warn` state.
+    WarnStroke,
+    /// The diamond of a hard deadline.
+    HardDeadline,
+    /// The note right of a bar.
+    Note,
+    /// The band under a note, so the today line and the grid do not run
+    /// through it: the colour of the chart's ground.
+    NoteBg,
 }
 
 impl ColorId {
@@ -34,6 +54,11 @@ impl ColorId {
     pub fn fallback(self) -> Option<ColorId> {
         match self {
             ColorId::GroupRow | ColorId::Weekend => Some(ColorId::HeaderBg),
+            ColorId::BarStroke | ColorId::DoneStroke => Some(ColorId::GridLabel),
+            ColorId::DoneBg | ColorId::WarnBg => Some(ColorId::BarBg),
+            ColorId::WarnStroke | ColorId::HardDeadline => Some(ColorId::Progress),
+            ColorId::Note => Some(ColorId::GridLabel),
+            ColorId::NoteBg => Some(ColorId::HeaderBg),
             _ => None,
         }
     }
@@ -278,6 +303,9 @@ pub enum LayerKind {
     TodayMarker,
     Legend,
     OverlayHints,
+    /// The notes of task rows with their bands, over the today line and the
+    /// grid. Only a chart with a note has this layer.
+    Notes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -313,6 +341,8 @@ pub enum RectSemantic {
     GroupRow,
     /// The band of a weekend day.
     Weekend,
+    /// The band under a note.
+    NoteBackground,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,6 +360,8 @@ pub struct RoundRectPrim {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoundRectSemantic {
     BarProgress,
+    /// The dot of a task row whose shape is `point`.
+    Point,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -349,6 +381,8 @@ pub enum LineSemantic {
     Grid,
     TodayMarker,
     LegendProgressLine,
+    /// From a point to the diamond of its hard deadline.
+    DeadlineLink,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,6 +396,8 @@ pub struct PathPrim {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PathSemantic {
     DependencyArrow,
+    /// The outline of a bar whose task row gives a state.
+    BarOutline,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -391,6 +427,8 @@ pub struct PolygonPrim {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PolygonSemantic {
     Milestone,
+    /// The diamond of a task row's hard deadline.
+    HardDeadline,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -419,6 +457,8 @@ pub enum TextSemantic {
     Weekday,
     /// `YYYY/M` above the first day of a month (`Day` scale).
     MonthLabel,
+    /// The note right of a bar.
+    BarNote,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

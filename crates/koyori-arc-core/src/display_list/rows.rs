@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::graph::{GanttDep, GanttRow, GanttTask};
+use crate::graph::{GanttDep, GanttRow, GanttTask, TaskRow};
 use crate::layout::assign_rows;
 
 use super::constants::*;
@@ -18,6 +18,9 @@ pub(crate) struct Slot {
     /// The index into `tasks` of the task drawn on this row; `None` for a group
     /// row, which draws a band and no bar.
     pub task: Option<usize>,
+    /// The index into the caller's row list of the row drawn here; `None` for
+    /// a chart without one.
+    pub row: Option<usize>,
     pub y_top: f64,
     pub height: f64,
 }
@@ -71,6 +74,7 @@ impl RowPlan {
                     slot_of_task[i] = Some(slots.len());
                     slots.push(Slot {
                         task: Some(i),
+                        row: None,
                         y_top: header_h + row as f64 * row_h,
                         height: row_h,
                     });
@@ -84,15 +88,17 @@ impl RowPlan {
                     index_of.entry(t.id.as_str()).or_insert(i);
                 }
                 let mut y = header_h;
-                for row in rows {
+                for (row_index, row) in rows.iter().enumerate() {
                     let task = match row {
                         GanttRow::Group { .. } => None,
                         // The entry points refuse an id that names no task, or
                         // one listed twice; the native builder skips them.
-                        GanttRow::Task { task_id, .. } => match index_of.get(task_id.as_str()) {
-                            Some(&i) if slot_of_task[i].is_none() => Some(i),
-                            _ => continue,
-                        },
+                        GanttRow::Task(TaskRow { task_id, .. }) => {
+                            match index_of.get(task_id.as_str()) {
+                                Some(&i) if slot_of_task[i].is_none() => Some(i),
+                                _ => continue,
+                            }
+                        }
                     };
                     if let Some(i) = task {
                         slot_of_task[i] = Some(slots.len());
@@ -100,6 +106,7 @@ impl RowPlan {
                     let height = row.height().unwrap_or(row_h);
                     slots.push(Slot {
                         task,
+                        row: Some(row_index),
                         y_top: y,
                         height,
                     });

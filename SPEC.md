@@ -138,8 +138,18 @@ pub struct ChartOptions {
 
 // 使う側が行を並べる図（docs/design/external-rows.md）
 pub enum GanttRow {
-    Task { task_id: String, height: Option<f64> },
+    Task(TaskRow),
     Group { height: Option<f64> },
+}
+
+// 課題の行と、その行の印（docs/design/bar-marks.md）
+pub struct TaskRow {
+    pub task_id: String,
+    pub height: Option<f64>,
+    pub hard_deadline: Option<NaiveDate>, // 厳守の期日の菱形
+    pub state: Option<BarState>,          // Normal、Done、Warn。地と縁の色
+    pub note: Option<String>,             // 棒の右の添えの字
+    pub shape: BarShape,                  // Bar（既定）か Point
 }
 
 pub fn build_display_list_with_rows(
@@ -186,6 +196,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - `weekday_labels`: `"day"` の段の曜日の字。月曜から七つで、各 1 から 8 字。既定は `Mo`〜`Su`（docs/design/day-scale.md）
   - `palette`: 色の名（`ColorId`、例 `"HeaderBg"`）から CSS の色への object。渡した名の色だけを替える。色は `#hex`、`rgb()`/`rgba()`/`hsl()`/`hsla()`/`oklch()`/`oklab()`、`var(--name)` で、100 字まで。知らぬ名と、それ以外の色は `parse_error` で断る（docs/design/palette-opt-in.md）
 - `rows_json`: 省略できる。使う側が並べた図の行（上から順）の JSON 配列。`{"kind":"task","task_id":…}` と `{"kind":"group"}` で、どちらも `height`（px）を持てる。一覧に無い課題は描かず、並びは一覧の順だけで決まる（依存で並べ直さない）。群れの行は日の幅いっぱいの帯（`group-row`）だけを描く。課題に無い `task_id`、同じ課題を二度、読めない一覧、範囲外の `height` は `parse_error`、多すぎる行は `input_limit` で断る（docs/design/external-rows.md）
+  - 課題の行は印を持てる。`hard_deadline`（`YYYY-MM-DD`。その日の真ん中に菱形、class `hard-deadline`）、`state`（`"normal"`、`"done"`、`"warn"`。棒の地と縁の色）、`note`（棒の右に一行。字が厳守の菱形と重なる時だけ菱形の右へ逃がす。字の下に地の色の帯 `note-bg`（色の名 `NoteBg`）を敷き、今日の線の後に描く。200 字まで）、`shape`（`"bar"` が既定。`"point"` は期間の最後の日に点を描き、class `bar-point`。後ろの菱形と線で結ぶ）。図の幅と日数は菱形と字まで延びる。知らぬ値、200 字を越える字、最初の課題から 3,650 日より離れた期日は `parse_error` で断る。印の無い行は印の無かった頃と同じ図になる（docs/design/bar-marks.md）
   - 省略、`undefined`、`null`、`{}` は、設定が無い時と同じ出力になる。値が `null` の鍵も、その鍵が無いのと同じ
   - object でない字、知らない鍵（メッセージに鍵の名が入る）、形の違う値、読めない `today`、使えない時差は `parse_error` で断る。読めない `scroll_viewport` も断る（以前は黙って無視していた）
   - 4 KiB を超える字は `input_limit` で断る
@@ -220,7 +231,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - 型 `LabelMode` は `index.ts` から出す
 - `rows`: 使う側が並べた図の行（型 `GanttRow`）。渡した時だけ、wasm の入口に四つ目の引数 `rows_json` を付けて呼ぶ。入れ物の高さも一覧の行の高さの和で取り置く
 - `rowHeight`、`headerHeight`、`barHeight`（px）と `barAlign`（`'middle'` か `'bottom'`）: `options_json` の寸法の鍵に渡す。読み込み中の骨組みの行の高さも `rowHeight` に合わせる
-- 型 `GanttRow` と `BarAlign` は `index.ts` から出す
+- 型 `GanttRow` と `BarAlign` は `index.ts` から出す。`GanttRow` の課題の行は `hard_deadline`、`state`、`note`、`shape` を持てる（型 `BarState` と `BarShape` も出す）
 - `palette`: 色の名から CSS の色への object（型 `PaletteOverrides`）。`options_json` の `palette` に渡す。SVG は `var(--name)` をそのまま書き、canvas は canvas の要素の computed style から読み解く。canvas は `prefers-color-scheme` の change と、図の祖先の `class`・`style`・`data-*` の変化で描き直し、token の替わりに付いて来る。それ以外の替え方は、公開の `repaint()` か、`palette` を新しい object で渡し直して描き直す（docs/design/palette-opt-in.md の 4.2）
 - 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
 - `pxPerDay`、`scale`（`'week'`、`'day'`、`'month'`）、`weekendDays`、`weekdayLabels`: `options_json` の同じ名の鍵に渡す。型 `Scale` は `index.ts` から出す
@@ -312,7 +323,7 @@ Canvas の上限の判定は、実際に描く幅（題の列と進みの字の�
 | ヘッダー背景 | `#f3f4f6` |
 | グリッドラベル | `#6b7280` |
 
-既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）と土日の帯（`Weekend`）の落ち先は見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
+既定の色の表に無い色の名は、落ち先の色で描く。群れの帯（`GroupRow`）と土日の帯（`Weekend`）の落ち先は見出しの帯（`HeaderBg`）。棒の印の色の落ち先は、`BarStroke`、`DoneStroke`、`Note` がグリッドラベル（`GridLabel`）、`DoneBg`、`WarnBg` が棒の地（`BarBg`）、`WarnStroke`、`HardDeadline` が進捗の線（`Progress`）、添えの字の帯（`NoteBg`）が見出しの帯（`HeaderBg`）。使う側が `palette` で渡した時だけ、その色で描く。
 
 ## レイアウト定数
 

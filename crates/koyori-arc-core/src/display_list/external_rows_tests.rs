@@ -8,7 +8,7 @@ use chrono::{Duration, NaiveDate};
 use super::build::{build_display_list, build_display_list_with_rows};
 use super::constants::*;
 use super::types::*;
-use crate::graph::{GanttDep, GanttGraph, GanttRow, GanttTask};
+use crate::graph::{GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 
 fn epoch() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 11, 2).unwrap()
@@ -37,10 +37,10 @@ fn graph() -> GanttGraph {
 }
 
 fn t(id: &str) -> GanttRow {
-    GanttRow::Task {
-        task_id: id.to_string(),
+    GanttRow::Task(TaskRow {
         height: None,
-    }
+        ..TaskRow::new(id.to_string())
+    })
 }
 
 fn group() -> GanttRow {
@@ -173,10 +173,10 @@ fn sizes_set_the_header_rows_and_bars() {
     let rows = [
         group(),
         t("a"),
-        GanttRow::Task {
-            task_id: "c".to_string(),
+        GanttRow::Task(TaskRow {
             height: Some(64.0),
-        },
+            ..TaskRow::new("c".to_string())
+        }),
     ];
     let list = build_display_list_with_rows(&g, Some(&rows), epoch(), &options);
     assert_eq!(list.viewport.header_height, header);
@@ -209,10 +209,10 @@ fn a_bottom_bar_keeps_the_standard_gap_under_it() {
     };
     let rows = [
         t("a"),
-        GanttRow::Task {
-            task_id: "b".to_string(),
+        GanttRow::Task(TaskRow {
             height: Some(tall),
-        },
+            ..TaskRow::new("b".to_string())
+        }),
     ];
     let list = build_display_list_with_rows(&g, Some(&rows), epoch(), &options);
     let gap = (row - bar) / 2.0;
@@ -236,10 +236,10 @@ fn a_bottom_bar_stays_inside_a_row_shorter_than_the_standard() {
     };
     let rows = [
         t("a"),
-        GanttRow::Task {
-            task_id: "b".to_string(),
+        GanttRow::Task(TaskRow {
             height: Some(short),
-        },
+            ..TaskRow::new("b".to_string())
+        }),
     ];
     let list = build_display_list_with_rows(&g, Some(&rows), epoch(), &options);
     let b = &bar_of(&list, "b").bar_bbox;
@@ -283,9 +283,11 @@ fn the_scroll_window_follows_rows_of_any_height() {
     };
     // 行の高さを交互に 40 と 80 にする
     let rows: Vec<GanttRow> = (0..30)
-        .map(|i| GanttRow::Task {
-            task_id: format!("t{i}"),
-            height: Some(if i % 2 == 0 { 40.0 } else { 80.0 }),
+        .map(|i| {
+            GanttRow::Task(TaskRow {
+                height: Some(if i % 2 == 0 { 40.0 } else { 80.0 }),
+                ..TaskRow::new(format!("t{i}"))
+            })
         })
         .collect();
     let options = ChartOptions {
