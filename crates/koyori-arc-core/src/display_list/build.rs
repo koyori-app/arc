@@ -603,19 +603,19 @@ pub fn build_display_list_with_rows(
         primitives: dep_prims,
     });
 
-    // Today marker
+    // Today marker. A view shows `from` through `to`, so its today is read by
+    // the date: the x of the day right after `to` is the view's right edge,
+    // and a test on the x would draw that day's today there. A today the chart
+    // does not show draws no line, and the progress line, which reads this x,
+    // falls back to its form for a chart without today. A chart without a view
+    // keeps the test on the x it was pinned with.
     let today_x = today.and_then(|today| {
         let x = axis.day_x(epoch, today);
-        let right = if view_days.is_some() {
-            days_right
-        } else {
-            chart_w
+        let shown = match options.view {
+            Some(view) => view.from <= today && today <= view.to,
+            None => x >= label_w && x <= chart_w,
         };
-        if x >= label_w && x <= right {
-            Some(x)
-        } else {
-            None
-        }
+        shown.then_some(x)
     });
     if let Some(x) = today_x {
         layers.push(Layer {

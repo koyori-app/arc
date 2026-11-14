@@ -453,3 +453,54 @@ fn the_note_of_a_task_before_the_view_has_its_band_over_the_today_line() {
     // 範囲の前の課題の束には、印だけが残る
     assert!(texts(children_of(&list, "earlier"), TextSemantic::BarNote).is_empty());
 }
+
+fn with_today(today: Option<NaiveDate>) -> DisplayList {
+    let opts = ChartOptions {
+        today,
+        ..options(Some(view()))
+    };
+    build_display_list(&graph(), d(11, 1), &opts)
+}
+
+fn today_line_x(list: &DisplayList) -> Option<f64> {
+    list.layers
+        .iter()
+        .filter(|l| l.kind == LayerKind::TodayMarker)
+        .flat_map(|l| &l.primitives)
+        .find_map(|p| match p {
+            Primitive::Line(l) => Some(l.x1),
+            _ => None,
+        })
+}
+
+fn progress_points(list: &DisplayList) -> Option<Vec<(f64, f64)>> {
+    list.layers
+        .iter()
+        .find(|l| l.kind == LayerKind::ProgressLine)
+        .and_then(|l| match &l.primitives[0] {
+            Primitive::Polyline(p) => Some(p.points.clone()),
+            _ => None,
+        })
+}
+
+#[test]
+fn the_today_line_is_drawn_on_the_view_s_last_day_and_not_the_day_after() {
+    // 範囲は 11/9〜11/15。最後の日は描き、翌日（右の端の境）と前日は描かぬ
+    let last = today_line_x(&with_today(Some(d(11, 15))));
+    assert_eq!(last, Some(LABEL_W + 6.0 * PX_PER_DAY));
+    assert_eq!(today_line_x(&with_today(Some(d(11, 16)))), None);
+    assert_eq!(today_line_x(&with_today(Some(d(11, 8)))), None);
+    // 最初の日も描く
+    assert_eq!(today_line_x(&with_today(Some(d(11, 9)))), Some(LABEL_W));
+}
+
+#[test]
+fn the_progress_line_does_not_use_a_today_the_view_does_not_show() {
+    // 範囲の翌日の今日は、今日の無い図と同じ進捗の線になる（右の端へ尖らぬ）
+    let none = progress_points(&with_today(None));
+    for today in [d(11, 16), d(11, 8)] {
+        assert_eq!(progress_points(&with_today(Some(today))), none, "{today}");
+    }
+    // 範囲の内の今日は、今日へ寄る線を引く（今日の無い図と違う）
+    assert_ne!(progress_points(&with_today(Some(d(11, 12)))), none);
+}

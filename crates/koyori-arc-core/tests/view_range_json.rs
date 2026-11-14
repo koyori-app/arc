@@ -79,3 +79,34 @@ fn a_view_lets_the_canvas_draw_a_short_part_of_a_long_chart() {
     .unwrap();
     assert!(part.get("error").is_none_or(|e| e.is_null()), "{part}");
 }
+
+#[test]
+fn the_today_line_follows_the_view_s_days_on_both_entry_points() {
+    // 範囲 11/9〜11/15。今日の線は SVG では破線 4,3・太さ 2 の line、canvas では色の番号 8 の線
+    let today_lines = |today: &str| {
+        let options = format!(
+            r#"{{"view":{{"from":"2026-11-09","to":"2026-11-15"}},"legend":"hidden","today":"{today}"}}"#
+        );
+        let svg = render_svg(TASKS, "[]", s(&options), None);
+        let svg_count = svg
+            .split("<line ")
+            .skip(1)
+            .filter(|l| {
+                l.contains(r#"stroke-width="2""#) && l.contains(r#"stroke-dasharray="4,3""#)
+            })
+            .count();
+        let canvas: serde_json::Value =
+            serde_json::from_str(&render_canvas_commands(TASKS, "[]", s(&options), None)).unwrap();
+        let canvas_count = canvas["ops"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{canvas}"))
+            .iter()
+            .filter_map(|op| op.get("StrokePolyline"))
+            .filter(|l| l["color_id"] == 8)
+            .count();
+        (svg_count, canvas_count)
+    };
+    assert_eq!(today_lines("2026-11-15"), (1, 1));
+    assert_eq!(today_lines("2026-11-16"), (0, 0));
+    assert_eq!(today_lines("2026-11-08"), (0, 0));
+}
