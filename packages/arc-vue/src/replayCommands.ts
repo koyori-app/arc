@@ -23,7 +23,8 @@ export type ColorIdName =
   | 'WarnStroke'
   | 'HardDeadline'
   | 'Note'
-  | 'NoteBg';
+  | 'NoteBg'
+  | 'ProgressLine';
 
 export interface CommandBuffer {
   viewport_width: number;
@@ -98,6 +99,7 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'HardDeadline',
   'Note',
   'NoteBg',
+  'ProgressLine',
 ];
 
 /**
@@ -116,6 +118,7 @@ const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
   HardDeadline: 'Progress',
   Note: 'GridLabel',
   NoteBg: 'HeaderBg',
+  ProgressLine: 'Progress',
 };
 
 function paletteColor(buffer: CommandBuffer, name: ColorIdName): string | undefined {

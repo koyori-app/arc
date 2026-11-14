@@ -2,7 +2,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashMap;
 
 use crate::graph::{BarShape, BarState, GanttGraph, GanttRow, GanttTask, TaskRow};
-use crate::progress::progress_line;
+use crate::progress::{by_row_bend, progress_line, progress_line_by_row};
 
 use super::constants::*;
 use super::legend::{tier_fill_color, PROGRESS_LABEL, TIER_ITEMS};
@@ -72,14 +72,18 @@ pub fn build_display_list_with_rows(
         weekend,
         ..
     } = *options;
+    let epoch = chart_epoch(epoch, options);
     let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
     let header_h = plan.header_h;
     let bar_h = plan.bar_h;
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
 
-    let total_days = span_days(&graph.tasks, rows, epoch);
-    let drawn_days = drawn_days_of(&graph.tasks, epoch, total_days);
+    let total_days = chart_days(&graph.tasks, rows, epoch, options);
+    let view_days = options.view.map(|_| total_days);
+    // The x where the days a view shows end; past it only marks and notes.
+    let days_right = axis.x(total_days as f64);
+    let drawn_days = chart_drawn_days(&graph.tasks, epoch, total_days, options);
 
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
@@ -115,6 +119,13 @@ pub fn build_display_list_with_rows(
     });
 
     // Group rows: a band across the days. Only a caller's row list has them.
+    // In a view the band stops at the view's last day, as the weekend bands
+    // do; past it is only the room a mark or a note runs into.
+    let band_right = if view_days.is_some() {
+        days_right
+    } else {
+        chart_w
+    };
     let group_bands: Vec<Primitive> = plan
         .slots
         .iter()
@@ -124,7 +135,7 @@ pub fn build_display_list_with_rows(
             Primitive::Rect(RectPrim {
                 x: label_w,
                 y: s.y_top,
-                width: chart_w - label_w,
+                width: band_right - label_w,
                 height: s.height,
                 fill: ColorId::GroupRow,
                 rx: None,
@@ -182,7 +193,7 @@ pub fn build_display_list_with_rows(
     match scale {
         // A line and its label in turn, as the chart drawn before scales.
         Scale::Week | Scale::Month => {
-            for grid_day in grid_days_of(scale, epoch, total_days, drawn_days) {
+            for grid_day in grid_days_in(scale, epoch, total_days, drawn_days, options) {
                 grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
                 grid_prims.push(Primitive::Text(grid_text_of(
                     &axis, epoch, grid_day, scale, header_h,
@@ -191,7 +202,7 @@ pub fn build_display_list_with_rows(
         }
         // The Monday lines, then every day's labels.
         Scale::Day => {
-            for grid_day in grid_days(epoch, total_days) {
+            for grid_day in grid_days_in(scale, epoch, total_days, drawn_days, options) {
                 grid_prims.push(grid_line(axis.day_x(epoch, grid_day)));
             }
             grid_prims.extend(
@@ -219,30 +230,73 @@ pub fn build_display_list_with_rows(
             continue;
         }
         let y = plan.bar_top(&plan.slots[slot_index]);
-        let x = axis.x(task.start_days(epoch));
-        let w = axis.len(task_bar_width_days(task, epoch));
+        let marks = task_row_of(rows, &plan.slots[slot_index]);
+        let placement = Placement::of(task, marks, epoch, view_days);
+        let shown = match placement {
+            Placement::Shown(shown) => shown,
+            // A task wholly outside the view: its mark alone, at the edge it
+            // lies past, so the row says where the task is.
+            Placement::Before(day) | Placement::After(day) => {
+                let cy = y + bar_h / 2.0;
+                let mark = outside_mark(&placement, day, &axis, total_days, cy, marks);
+                let bbox = overflow_bbox(&mark, y, bar_h);
+                let mut children = Vec::new();
+                // A hard deadline inside the view still shows, and so does the
+                // note of a task that ended before it: a task late against its
+                // dates is mostly one whose bar is already behind the view.
+                if let Some(m) = marks {
+                    let g = MarkGeometry::of(task, m, &axis, epoch, view_days, bar_h);
+                    if let Some(dx) = g.diamond_cx {
+                        let tier = ProgressTier::from_pct(task.progress_pct.clamp(0, 100));
+                        children.push(hard_deadline_prim(dx, cy, tier));
+                    }
+                    if let (Placement::Before(_), Some(note)) = (&placement, &m.note) {
+                        let x = outside_note_x(&mark, &g, note);
+                        note_prims.extend(note_with_band(x, cy, note, m.state));
+                    }
+                }
+                children.insert(0, Primitive::Text(mark));
+                task_bboxes.push(TaskBBox {
+                    task_id: task.id.clone(),
+                    row: slot_index as u32,
+                    bbox: bbox.clone(),
+                    bar_bbox: bbox.clone(),
+                });
+                bar_prims.push(Primitive::Group(GroupPrim {
+                    task_id: Some(task.id.clone()),
+                    tooltip: Some(task_tooltip(task)),
+                    bbox,
+                    children,
+                }));
+                continue;
+            }
+        };
+        let cut = shown.cut_left || shown.cut_right;
+        let x = axis.x(shown.start);
+        let w = axis.len((shown.end - shown.start).max(0.0));
         let prog = task.progress();
-        let prog_w = w * prog;
+        let prog_w = if cut {
+            // The progress of the whole bar, cut where the view cuts the bar.
+            let full_x = axis.x(task.start_days(epoch));
+            let full_w = axis.len(task_bar_width_days(task, epoch));
+            ((full_x + full_w * prog).min(x + w) - x).max(0.0)
+        } else {
+            w * prog
+        };
         let prog_pct = task.progress_pct.clamp(0, 100);
         let tier = ProgressTier::from_pct(prog_pct);
-        let pct_label = format!("{prog_pct}%");
-        let end_label = task.end.map(format_date).unwrap_or_else(|| {
-            format_date(
-                task.start
-                    .checked_add_signed(Duration::days(1))
-                    .unwrap_or(task.start),
-            )
-        });
-        let tooltip = format!(
-            "{}: {} – {} ({pct_label})",
-            task.title,
-            format_date(task.start),
-            end_label,
-        );
+        let tooltip = task_tooltip(task);
+        // A bar the view cuts shows no percent: the label sits by the bar's
+        // ends, and one of them is out of the view.
+        let percent_labels = if cut {
+            LabelMode::Hidden
+        } else {
+            percent_labels
+        };
 
         let mut children = Vec::new();
-        let marks = task_row_of(rows, &plan.slots[slot_index]);
-        let marks_geometry = marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, bar_h));
+        let marks_geometry =
+            marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, view_days, bar_h));
 
         if let Some(MarkGeometry {
             point_cx: Some(cx), ..
@@ -326,6 +380,21 @@ pub fn build_display_list_with_rows(
                     }));
                 }
             }
+            // The edges a view cuts: the day the bar runs on to, inside the edge.
+            let cy = y + bar_h / 2.0;
+            if shown.cut_left {
+                let mark = Placement::Before(task.start);
+                children.push(Primitive::Text(overflow_mark(
+                    &mark, task.start, &axis, total_days, cy,
+                )));
+            }
+            if shown.cut_right {
+                let last = last_day(task, epoch);
+                let mark = Placement::After(last);
+                children.push(Primitive::Text(overflow_mark(
+                    &mark, last, &axis, total_days, cy,
+                )));
+            }
             if percent_labels == LabelMode::Shown {
                 let label = percent_label(task, epoch, &axis, bar_h);
                 children.push(Primitive::Text(TextPrim {
@@ -361,20 +430,7 @@ pub fn build_display_list_with_rows(
                 }
             }
             if let Some(dx) = g.diamond_cx {
-                let half = HARD_DEADLINE_HALF_PX;
-                children.push(Primitive::Polygon(PolygonPrim {
-                    points: vec![
-                        (dx, cy - half),
-                        (dx + half, cy),
-                        (dx, cy + half),
-                        (dx - half, cy),
-                    ],
-                    fill: ColorId::HardDeadline,
-                    stroke: ColorId::HardDeadline,
-                    stroke_width: 1.0,
-                    tier,
-                    semantic: PolygonSemantic::HardDeadline,
-                }));
+                children.push(hard_deadline_prim(dx, cy, tier));
             }
             if let Some(note) = &m.note {
                 // The note goes on its own layer over the today line, with a
@@ -485,6 +541,13 @@ pub fn build_display_list_with_rows(
         let from_w = axis.len(task_bar_width_days(from_t, epoch));
         let to_x = axis.x(to_t.start_days(epoch));
 
+        if view_days.is_some() {
+            let in_view = |x: f64| x >= label_w && x <= days_right;
+            if !in_view(from_x + from_w / 2.0) || !in_view(to_x) {
+                continue;
+            }
+        }
+
         let mut start_x = from_x + from_w / 2.0;
         while to_x < start_x + ROW_PADDING && start_x > from_x + ROW_PADDING {
             start_x -= DEP_BACKOFF_STEP_PX;
@@ -540,14 +603,19 @@ pub fn build_display_list_with_rows(
         primitives: dep_prims,
     });
 
-    // Today marker
+    // Today marker. A view shows `from` through `to`, so its today is read by
+    // the date: the x of the day right after `to` is the view's right edge,
+    // and a test on the x would draw that day's today there. A today the chart
+    // does not show draws no line, and the progress line, which reads this x,
+    // falls back to its form for a chart without today. A chart without a view
+    // keeps the test on the x it was pinned with.
     let today_x = today.and_then(|today| {
         let x = axis.day_x(epoch, today);
-        if x >= label_w && x <= chart_w {
-            Some(x)
-        } else {
-            None
-        }
+        let shown = match options.view {
+            Some(view) => view.from <= today && today <= view.to,
+            None => x >= label_w && x <= chart_w,
+        };
+        shown.then_some(x)
     });
     if let Some(x) = today_x {
         layers.push(Layer {
@@ -594,18 +662,67 @@ pub fn build_display_list_with_rows(
         })
         .collect();
 
-    let pts = progress_line(&prog_input, today_x);
-    if pts.len() >= 2 {
-        layers.push(Layer {
-            kind: LayerKind::ProgressLine,
-            primitives: vec![Primitive::Polyline(PolylinePrim {
-                points: pts,
-                stroke: ColorId::Progress,
-                stroke_width: PROGRESS_LINE_STROKE_W,
-                stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
-                semantic: PolylineSemantic::ProgressStatusLine,
-            })],
-        });
+    match options.progress_line {
+        ProgressLineMode::Hidden => {}
+        ProgressLineMode::ByRow => {
+            // Without a today line on the chart there is nothing to measure
+            // against, so no line.
+            if let Some(today_x) = today_x {
+                let line = by_row_progress_line(graph, rows, &plan, &axis, epoch, today_x);
+                let in_view = |x: f64| match view_days {
+                    Some(_) => x.clamp(label_w, days_right),
+                    None => x,
+                };
+                let pts: Vec<(f64, f64)> = line.iter().map(|&(x, y)| (in_view(x), y)).collect();
+                if pts.len() >= 2 {
+                    let mut primitives = vec![Primitive::Polyline(PolylinePrim {
+                        points: pts.clone(),
+                        stroke: ColorId::ProgressLine,
+                        stroke_width: BY_ROW_LINE_STROKE_W,
+                        stroke_dash: None,
+                        semantic: PolylineSemantic::ProgressStatusLine,
+                    })];
+                    // A dot at each bend off the today line.
+                    let r = BY_ROW_POINT_RADIUS_PX;
+                    primitives.extend(pts.iter().filter(|p| p.0 != today_x).map(|&(x, y)| {
+                        Primitive::RoundRect(RoundRectPrim {
+                            x: x - r,
+                            y: y - r,
+                            width: 2.0 * r,
+                            height: 2.0 * r,
+                            fill: ColorId::ProgressLine,
+                            rx: r,
+                            tier: ProgressTier::Low,
+                            semantic: RoundRectSemantic::ProgressPoint,
+                        })
+                    }));
+                    layers.push(Layer {
+                        kind: LayerKind::ProgressLine,
+                        primitives,
+                    });
+                }
+            }
+        }
+        ProgressLineMode::Shown => {
+            let mut pts = progress_line(&prog_input, today_x);
+            if view_days.is_some() {
+                for p in &mut pts {
+                    p.0 = p.0.clamp(label_w, days_right);
+                }
+            }
+            if pts.len() >= 2 {
+                layers.push(Layer {
+                    kind: LayerKind::ProgressLine,
+                    primitives: vec![Primitive::Polyline(PolylinePrim {
+                        points: pts,
+                        stroke: ColorId::Progress,
+                        stroke_width: PROGRESS_LINE_STROKE_W,
+                        stroke_dash: Some(PROGRESS_LINE_DASH.to_string()),
+                        semantic: PolylineSemantic::ProgressStatusLine,
+                    })],
+                });
+            }
+        }
     }
 
     if let Some(legend) = &legend {
@@ -677,13 +794,15 @@ pub(crate) fn chart_width_for(
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> f64 {
+    let epoch = chart_epoch(epoch, options);
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
-    let total_days = span_days(tasks, rows, epoch);
+    let total_days = chart_days(tasks, rows, epoch, options);
+    let view_days = options.view.map(|_| total_days);
     // A chart that draws a column for every day (the `Day` scale, or weekend
     // bands) holds up the column of a milestone on its last day as well.
     let column_days = if options.scale == Scale::Day || options.weekend.0 != 0 {
-        drawn_days_of(tasks, epoch, total_days)
+        chart_drawn_days(tasks, epoch, total_days, options)
     } else {
         total_days
     };
@@ -697,16 +816,322 @@ pub(crate) fn chart_width_for(
     // A milestone's diamond reaches half a bar past its day. The right padding
     // holds that for the default bar, not for a much taller one.
     let bar_h = options.bar_height.unwrap_or(BAR_H);
+    // Only a milestone the view shows draws its diamond.
     let diamond_edge = tasks
         .iter()
         .filter(|t| is_zero_duration(t))
+        .filter(|t| {
+            matches!(
+                Placement::of(t, None, epoch, view_days),
+                Placement::Shown(_)
+            )
+        })
         .map(|t| axis.x(t.start_days(epoch)) + bar_h / 2.0)
         .fold(0.0, f64::max);
     days_w
         .max(legend_edge)
         .max(diamond_edge)
-        .max(labels_right_edge(tasks, epoch, total_days, &axis, options))
-        .max(marks_right_edge(tasks, rows, epoch, &axis, bar_h))
+        .max(labels_right_edge(
+            &whole_in_view(tasks, epoch, view_days),
+            epoch,
+            total_days,
+            &axis,
+            options,
+        ))
+        .max(marks_right_edge(
+            tasks, rows, epoch, &axis, view_days, bar_h,
+        ))
+}
+
+/// The days the grid draws a line on. A view draws none on the day past its
+/// last, whose label would name a day it does not show.
+fn grid_days_in(
+    scale: Scale,
+    epoch: NaiveDate,
+    total_days: i64,
+    drawn_days: i64,
+    options: &ChartOptions,
+) -> Vec<NaiveDate> {
+    let days = grid_days_of(scale, epoch, total_days, drawn_days);
+    match options.view {
+        Some(_) => days
+            .into_iter()
+            .filter(|d| (*d - epoch).num_days() < total_days)
+            .collect(),
+        None => days,
+    }
+}
+
+/// The progress line drawn `by_row` over every row of the plan. A task is done
+/// only when its row's state is `done`: one at 100% that is not done bends to its
+/// end, so a task left open shows.
+fn by_row_progress_line(
+    graph: &GanttGraph,
+    rows: Option<&[GanttRow]>,
+    plan: &RowPlan,
+    axis: &XAxis,
+    epoch: NaiveDate,
+    today_x: f64,
+) -> Vec<(f64, f64)> {
+    let line_rows: Vec<(f64, f64, Option<f64>)> = plan
+        .slots
+        .iter()
+        .map(|slot| {
+            let bend = slot.task.and_then(|i| {
+                let t = &graph.tasks[i];
+                let state = task_row_of(rows, slot).and_then(|m| m.state);
+                let done = state == Some(BarState::Done);
+                by_row_bend(
+                    axis.x(t.start_days(epoch)),
+                    axis.x(t.end_days(epoch)),
+                    t.progress(),
+                    done,
+                    today_x,
+                )
+            });
+            (slot.y_top, slot.y_bottom(), bend)
+        })
+        .collect();
+    progress_line_by_row(&line_rows, today_x)
+}
+
+/// The chart's first day: the view's, or the one the caller passed.
+fn chart_epoch(epoch: NaiveDate, options: &ChartOptions) -> NaiveDate {
+    options.view.map_or(epoch, |v| v.from)
+}
+
+/// The days the chart spans: the view's, or every task's and deadline's.
+fn chart_days(
+    tasks: &[GanttTask],
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+    options: &ChartOptions,
+) -> i64 {
+    match options.view {
+        Some(view) => view.days(),
+        None => span_days(tasks, rows, epoch),
+    }
+}
+
+/// The days the chart draws a column for (`drawn_days_of`). A view's days are
+/// its own: a milestone past them is not drawn, and one inside is in them.
+fn chart_drawn_days(
+    tasks: &[GanttTask],
+    epoch: NaiveDate,
+    total_days: i64,
+    options: &ChartOptions,
+) -> i64 {
+    match options.view {
+        Some(_) => total_days,
+        None => drawn_days_of(tasks, epoch, total_days),
+    }
+}
+
+/// The tasks a view shows whole, whose percent labels are drawn; every task
+/// without a view.
+fn whole_in_view(tasks: &[GanttTask], epoch: NaiveDate, view_days: Option<i64>) -> Vec<GanttTask> {
+    tasks
+        .iter()
+        .filter(|t| match Placement::of(t, None, epoch, view_days) {
+            Placement::Shown(s) => !s.cut_left && !s.cut_right,
+            _ => false,
+        })
+        .cloned()
+        .collect()
+}
+
+/// Where a task sits against the days a view shows.
+#[derive(Debug, Clone, Copy)]
+enum Placement {
+    /// Drawn, perhaps cut at the view's ends.
+    Shown(ShownSpan),
+    /// Wholly before the view; the day is its last.
+    Before(NaiveDate),
+    /// Wholly after the view; the day is its first.
+    After(NaiveDate),
+}
+
+/// The part of a task a chart draws, in days from the epoch.
+#[derive(Debug, Clone, Copy)]
+struct ShownSpan {
+    start: f64,
+    end: f64,
+    /// The bar runs on before the view's first day.
+    cut_left: bool,
+    /// The bar runs on past the view's last day.
+    cut_right: bool,
+}
+
+impl Placement {
+    /// Without a view every task is shown whole, at the days it always had.
+    fn of(
+        task: &GanttTask,
+        row: Option<&TaskRow>,
+        epoch: NaiveDate,
+        view_days: Option<i64>,
+    ) -> Self {
+        let start = task.start_days(epoch);
+        let end = task.end_days(epoch);
+        let whole = ShownSpan {
+            start,
+            end,
+            cut_left: false,
+            cut_right: false,
+        };
+        let Some(days) = view_days else {
+            return Placement::Shown(whole);
+        };
+        let days = days as f64;
+        let is_point = row.is_some_and(|r| r.shape == BarShape::Point);
+        if is_point || is_zero_duration(task) {
+            // A dot or a milestone is a single day: in the view or not.
+            let day = if is_point && end > start {
+                end - 1.0
+            } else {
+                start
+            };
+            let date = epoch + Duration::days(day as i64);
+            return if day < 0.0 {
+                Placement::Before(date)
+            } else if day >= days {
+                Placement::After(date)
+            } else {
+                Placement::Shown(whole)
+            };
+        }
+        if end <= 0.0 {
+            Placement::Before(last_day(task, epoch))
+        } else if start >= days {
+            Placement::After(task.start)
+        } else {
+            Placement::Shown(ShownSpan {
+                start: start.max(0.0),
+                end: end.min(days),
+                cut_left: start < 0.0,
+                cut_right: end > days,
+            })
+        }
+    }
+}
+
+/// The last day a task's bar covers.
+fn last_day(task: &GanttTask, epoch: NaiveDate) -> NaiveDate {
+    let end = task.end_days(epoch);
+    let start = task.start_days(epoch);
+    let last = if end > start { end - 1.0 } else { start };
+    epoch + Duration::days(last as i64)
+}
+
+/// The mark at the edge of the view a task runs past: `← M/D` inside the
+/// first day, `→ M/D` inside the last.
+fn overflow_mark(
+    placement: &Placement,
+    day: NaiveDate,
+    axis: &XAxis,
+    total_days: i64,
+    cy: f64,
+) -> TextPrim {
+    let label = format!("{}/{}", day.month(), day.day());
+    let (x, anchor, content) = match placement {
+        Placement::Before(_) => (
+            axis.x(0.0) + OVERFLOW_INSET_PX,
+            TextAnchor::Start,
+            format!("← {label}"),
+        ),
+        _ => (
+            axis.x(total_days as f64) - OVERFLOW_INSET_PX,
+            TextAnchor::End,
+            format!("→ {label}"),
+        ),
+    };
+    TextPrim {
+        x,
+        y: cy,
+        content,
+        fill: Some(ColorId::Note),
+        font_size: Some(GRID_LABEL_FONT_PX),
+        font_weight: None,
+        anchor: Some(anchor),
+        baseline: TextBaseline::Middle,
+        semantic: TextSemantic::Overflow,
+    }
+}
+
+/// The mark of a task wholly outside the view, in the warn colour when its
+/// row is in the warn state.
+fn outside_mark(
+    placement: &Placement,
+    day: NaiveDate,
+    axis: &XAxis,
+    total_days: i64,
+    cy: f64,
+    row: Option<&TaskRow>,
+) -> TextPrim {
+    let mut mark = overflow_mark(placement, day, axis, total_days, cy);
+    if row.and_then(|r| r.state) == Some(BarState::Warn) {
+        mark.fill = Some(ColorId::WarnStroke);
+    }
+    mark
+}
+
+/// Where the note of a task before the view starts. The mark stands for the
+/// bar the view does not show, so the note sits right of the mark, as a note
+/// sits right of its bar, and moves right of the diamond only when it would run
+/// over it.
+fn outside_note_x(mark: &TextPrim, g: &MarkGeometry, note: &str) -> f64 {
+    let mark_right = text_right_edge(mark.x, mark.anchor, &mark.content, GRID_LABEL_FONT_PX, None);
+    note_x_beside(mark_right, Some(note), g.diamond_cx, None)
+}
+
+/// The diamond of a hard deadline centred on `dx`.
+fn hard_deadline_prim(dx: f64, cy: f64, tier: ProgressTier) -> Primitive {
+    let half = HARD_DEADLINE_HALF_PX;
+    Primitive::Polygon(PolygonPrim {
+        points: vec![
+            (dx, cy - half),
+            (dx + half, cy),
+            (dx, cy + half),
+            (dx - half, cy),
+        ],
+        fill: ColorId::HardDeadline,
+        stroke: ColorId::HardDeadline,
+        stroke_width: 1.0,
+        tier,
+        semantic: PolygonSemantic::HardDeadline,
+    })
+}
+
+/// The hit area of a task drawn as its mark alone.
+fn overflow_bbox(mark: &TextPrim, y: f64, bar_h: f64) -> BBox {
+    let w = text_width_weighted_px(&mark.content, GRID_LABEL_FONT_PX, None);
+    let x = match mark.anchor {
+        Some(TextAnchor::End) => mark.x - w,
+        _ => mark.x,
+    };
+    BBox {
+        x,
+        y,
+        width: w,
+        height: bar_h,
+    }
+}
+
+/// The tooltip of a task's group.
+fn task_tooltip(task: &GanttTask) -> String {
+    let prog_pct = task.progress_pct.clamp(0, 100);
+    let end_label = task.end.map(format_date).unwrap_or_else(|| {
+        format_date(
+            task.start
+                .checked_add_signed(Duration::days(1))
+                .unwrap_or(task.start),
+        )
+    });
+    format!(
+        "{}: {} – {} ({prog_pct}%)",
+        task.title,
+        format_date(task.start),
+        end_label,
+    )
 }
 
 /// The days the chart spans: through the last task's end, and through the
@@ -753,7 +1178,14 @@ struct MarkGeometry {
 }
 
 impl MarkGeometry {
-    fn of(task: &GanttTask, row: &TaskRow, axis: &XAxis, epoch: NaiveDate, bar_h: f64) -> Self {
+    fn of(
+        task: &GanttTask,
+        row: &TaskRow,
+        axis: &XAxis,
+        epoch: NaiveDate,
+        view_days: Option<i64>,
+        bar_h: f64,
+    ) -> Self {
         let start = task.start_days(epoch);
         let end = task.end_days(epoch);
         // The middle of the span's last day; a span of no days is its start day.
@@ -767,10 +1199,16 @@ impl MarkGeometry {
         let diamond_cx = row
             .hard_deadline
             .filter(|d| *d >= epoch)
+            .filter(|d| view_days.is_none_or(|days| (*d - epoch).num_days() < days))
             .map(|d| axis.day_x(epoch, d) + axis.px_per_day / 2.0);
         let bar_right = match point_cx {
             Some(cx) => cx + point_radius(bar_h),
             None => axis.x(end).max(axis.x(start)),
+        };
+        // A bar a view cuts ends at the view's last day.
+        let bar_right = match view_days {
+            Some(days) => bar_right.min(axis.x(days as f64)),
+            None => bar_right,
         };
         Self {
             point_cx,
@@ -847,6 +1285,7 @@ fn marks_right_edge(
     rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     axis: &XAxis,
+    view_days: Option<i64>,
     bar_h: f64,
 ) -> f64 {
     let Some(rows) = rows else {
@@ -862,11 +1301,22 @@ fn marks_right_edge(
             GanttRow::Group { .. } => None,
         })
         .map(|(row, task)| {
-            let g = MarkGeometry::of(task, row, axis, epoch, bar_h);
+            let g = MarkGeometry::of(task, row, axis, epoch, view_days, bar_h);
             let diamond = g.diamond_cx.map_or(0.0, |c| c + HARD_DEADLINE_HALF_PX);
-            let note = row.note.as_deref().map_or(0.0, |n| {
-                text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None)
-            });
+            // A task wholly outside a view: its note only before it, right of
+            // the mark at the view's first day.
+            let note_x = match Placement::of(task, Some(row), epoch, view_days) {
+                Placement::Shown(_) => Some(g.note_x),
+                placement @ Placement::Before(day) => view_days.map(|days| {
+                    let mark = outside_mark(&placement, day, axis, days, 0.0, Some(row));
+                    outside_note_x(&mark, &g, row.note.as_deref().unwrap_or(""))
+                }),
+                Placement::After(_) => None,
+            };
+            let note = match (note_x, row.note.as_deref()) {
+                (Some(x), Some(n)) => text_right_edge(x, None, n, GRID_LABEL_FONT_PX, None),
+                _ => 0.0,
+            };
             diamond.max(note) + CHART_RIGHT_PADDING_PX
         })
         .fold(0.0, f64::max)
@@ -1199,12 +1649,14 @@ fn labels_right_edge(
     // The grid's labels, read from what the grid draws so the two cannot differ.
     // The header's height moves no label sideways, but it decides whether the
     // `Day` scale draws its months, so that scale reads the height drawn.
-    let drawn_days = drawn_days_of(tasks, epoch, total_days);
+    let drawn_days = chart_drawn_days(tasks, epoch, total_days, options);
     let grid_texts: Vec<TextPrim> = match options.scale {
-        Scale::Week | Scale::Month => grid_days_of(options.scale, epoch, total_days, drawn_days)
-            .into_iter()
-            .map(|day| grid_text_of(axis, epoch, day, options.scale, HEADER_H))
-            .collect(),
+        Scale::Week | Scale::Month => {
+            grid_days_in(options.scale, epoch, total_days, drawn_days, options)
+                .into_iter()
+                .map(|day| grid_text_of(axis, epoch, day, options.scale, HEADER_H))
+                .collect()
+        }
         Scale::Day => day_texts(axis, epoch, drawn_days, header_height_of(options), options),
     };
     let grid = grid_texts

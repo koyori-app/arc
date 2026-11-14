@@ -30,6 +30,52 @@ pub fn progress_line(
     }
 }
 
+/// The progress line drawn `by_row`: down the today line, out to each row's
+/// bend and back to the today line at that row's bottom edge. `rows` is every
+/// row top to bottom as `(y_top, y_bottom, bend_x)`, where `bend_x` is `None`
+/// for a row the line passes on the today line. A bend on the today line is no
+/// bend. Returns the polyline's points; consecutive repeats are left out.
+pub fn progress_line_by_row(rows: &[(f64, f64, Option<f64>)], today_x: f64) -> Vec<(f64, f64)> {
+    let (Some(first), Some(last)) = (rows.first(), rows.last()) else {
+        return Vec::new();
+    };
+    let mut pts = vec![(today_x, first.0)];
+    for &(y_top, y_bottom, bend) in rows {
+        let Some(x) = bend.filter(|x| *x != today_x) else {
+            continue;
+        };
+        for p in [
+            (today_x, y_top),
+            (x, y_mid(y_top, y_bottom)),
+            (today_x, y_bottom),
+        ] {
+            if pts.last() != Some(&p) {
+                pts.push(p);
+            }
+        }
+    }
+    if pts.last() != Some(&(today_x, last.1)) {
+        pts.push((today_x, last.1));
+    }
+    pts
+}
+
+/// Where a task row bends the progress line drawn `by_row`, or `None` for one
+/// it passes on the today line: a done task, and a task at 0% that has not
+/// started. A task with progress bends to its progress; one at 0% past its
+/// start bends to its start.
+pub fn by_row_bend(start: f64, end: f64, p: f64, done: bool, today_x: f64) -> Option<f64> {
+    if done {
+        None
+    } else if p > 0.0 {
+        Some(progress_x(start, end, p))
+    } else if start < today_x {
+        Some(start)
+    } else {
+        None
+    }
+}
+
 fn progress_x(start: f64, end: f64, p: f64) -> f64 {
     start + (end - start) * p
 }

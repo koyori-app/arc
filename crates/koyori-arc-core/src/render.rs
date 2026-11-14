@@ -9,7 +9,10 @@ use crate::display_list::constants::{BAR_H, CHART_CHROME_H, CHART_CHROME_W, PX_P
 use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
-    types::{BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, Scale, WeekendDays},
+    types::{
+        BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, ProgressLineMode, Scale,
+        ViewRange, WeekendDays,
+    },
     DisplayList, ScrollViewport,
 };
 use crate::error::{
@@ -185,6 +188,8 @@ fn canvas_graph_limit_error(
         Ok(days) => days,
         Err(err) => return Some(err),
     };
+    // A view draws its own days, however far the tasks run.
+    let span_days = shape.view.map_or(span_days, |v| v.days());
     if span_days > MAX_CANVAS_DATE_SPAN_DAYS {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -266,6 +271,8 @@ struct WireOptions {
     scale: Scale,
     weekend: WeekendDays,
     weekday_labels: Option<[String; 7]>,
+    view: Option<ViewRange>,
+    progress_line: ProgressLineMode,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -286,6 +293,8 @@ const OPTION_KEYS: &[&str] = &[
     "scale",
     "weekend_days",
     "weekday_labels",
+    "view",
+    "progress_line",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -313,6 +322,8 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         scale: Scale::Week,
         weekend: WeekendDays::default(),
         weekday_labels: None,
+        view: None,
+        progress_line: ProgressLineMode::Shown,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -389,6 +400,19 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
             }
             "weekend_days" => wire.weekend = parse_weekend_days(&value)?,
             "weekday_labels" => wire.weekday_labels = Some(parse_weekday_labels(&value)?),
+            "view" => wire.view = Some(parse_view(&value)?),
+            "progress_line" => {
+                wire.progress_line = match value.as_str() {
+                    Some("shown") => ProgressLineMode::Shown,
+                    Some("hidden") => ProgressLineMode::Hidden,
+                    Some("by_row") => ProgressLineMode::ByRow,
+                    _ => {
+                        return Err(options_error(
+                            "progress_line: expected \"shown\", \"hidden\" or \"by_row\"",
+                        ))
+                    }
+                }
+            }
             "bar_align" => {
                 wire.bar_align = match value.as_str() {
                     Some("middle") => BarAlign::Middle,
@@ -513,6 +537,35 @@ fn parse_weekday_labels(value: &serde_json::Value) -> Result<[String; 7], Render
     Ok(out)
 }
 
+/// `view`: `{"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}`, both days included, `to`
+/// not before `from`, and no more days than a chart's dates may span.
+fn parse_view(value: &serde_json::Value) -> Result<ViewRange, RenderError> {
+    let error = || {
+        options_error(format!(
+            "view: expected {{\"from\": \"YYYY-MM-DD\", \"to\": \"YYYY-MM-DD\"}} with `to` not before `from` and at most {MAX_DATE_SPAN_DAYS} days"
+        ))
+    };
+    let object = value
+        .as_object()
+        .filter(|o| o.len() == 2)
+        .ok_or_else(error)?;
+    let day = |key: &str| {
+        object
+            .get(key)
+            .and_then(|v| v.as_str())
+            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            .ok_or_else(error)
+    };
+    let view = ViewRange {
+        from: day("from")?,
+        to: day("to")?,
+    };
+    if view.to < view.from || view.days() > MAX_DATE_SPAN_DAYS {
+        return Err(error());
+    }
+    Ok(view)
+}
+
 /// A height in pixels: a finite number above 0 and at most `MAX_SIZE_PX`.
 fn parse_size(key: &str, value: &serde_json::Value) -> Result<f64, RenderError> {
     match value.as_f64() {
@@ -552,6 +605,8 @@ impl ResolvedOptions {
             scale: self.wire.scale,
             weekend: self.wire.weekend,
             weekday_labels: self.wire.weekday_labels.clone(),
+            view: self.wire.view,
+            progress_line: self.wire.progress_line,
             ..Default::default()
         }
     }

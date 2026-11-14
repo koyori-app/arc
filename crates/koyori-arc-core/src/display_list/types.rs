@@ -44,6 +44,8 @@ pub enum ColorId {
     /// The band under a note, so the today line and the grid do not run
     /// through it: the colour of the chart's ground.
     NoteBg,
+    /// The progress line drawn `by_row`, and the dots at its bends.
+    ProgressLine,
 }
 
 impl ColorId {
@@ -59,6 +61,7 @@ impl ColorId {
             ColorId::WarnStroke | ColorId::HardDeadline => Some(ColorId::Progress),
             ColorId::Note => Some(ColorId::GridLabel),
             ColorId::NoteBg => Some(ColorId::HeaderBg),
+            ColorId::ProgressLine => Some(ColorId::Progress),
             _ => None,
         }
     }
@@ -166,6 +169,19 @@ pub struct ScrollViewport {
 /// Whether the chart draws its legend (the tier swatches and the progress-line
 /// sample under the rows). A caller that draws its own legend asks for `Hidden`
 /// and reads the contents from `legend_spec`.
+/// How the chart draws the progress line. See docs/design/progress-line.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgressLineMode {
+    /// The line as drawn before the modes: through every task's progress.
+    #[default]
+    Shown,
+    /// No line.
+    Hidden,
+    /// Out from the today line to each row that is late or ahead, and back to
+    /// it at the row's bottom edge; on the today line for every other row.
+    ByRow,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LegendMode {
@@ -266,6 +282,27 @@ pub struct ChartOptions {
     /// The weekday labels of the `Day` scale, Monday first; `None` is
     /// `DEFAULT_WEEKDAY_LABELS`.
     pub weekday_labels: Option<[String; 7]>,
+    /// The days the chart shows; `None` shows every task's days. See
+    /// docs/design/view-range.md.
+    pub view: Option<ViewRange>,
+    /// How the progress line is drawn; `Shown` is the line as before.
+    pub progress_line: ProgressLineMode,
+}
+
+/// The days a chart shows, `from` through `to`, both included. A bar that runs
+/// past either end is cut there and marked; a task wholly outside is drawn as
+/// its mark alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewRange {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+}
+
+impl ViewRange {
+    /// How many days the view shows.
+    pub fn days(&self) -> i64 {
+        (self.to - self.from).num_days() + 1
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,6 +399,8 @@ pub enum RoundRectSemantic {
     BarProgress,
     /// The dot of a task row whose shape is `point`.
     Point,
+    /// A dot at a bend of the progress line drawn `by_row`.
+    ProgressPoint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -459,6 +498,8 @@ pub enum TextSemantic {
     MonthLabel,
     /// The note right of a bar.
     BarNote,
+    /// The mark of a task that runs on past the days a view shows.
+    Overflow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

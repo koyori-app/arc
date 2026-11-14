@@ -14,7 +14,12 @@ import {
   type TaskHitRegion,
 } from './replayCommands';
 import { resetCanvasElement } from './canvasLifecycle';
-import { buildOptionsJson, type PaletteOverrides } from './options';
+import {
+  buildOptionsJson,
+  type PaletteOverrides,
+  type ProgressLineMode,
+  type ViewRange,
+} from './options';
 import { backingSize, cssPointFromClient } from './canvasScale';
 import {
   chartHeightForRows,
@@ -116,6 +121,10 @@ const props = defineProps<{
   weekendDays?: number[];
   /** Seven labels, Monday first, for the `'day'` scale, such as `['月', …, '日']`. */
   weekdayLabels?: string[];
+  /** The days the chart shows, both included; left out, every task's days. */
+  view?: ViewRange;
+  /** How the progress line is drawn; left out, the line as before. */
+  progressLine?: ProgressLineMode;
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -237,6 +246,8 @@ function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | 
     scale: props.scale,
     weekendDays: props.weekendDays,
     weekdayLabels: props.weekdayLabels,
+    view: props.view,
+    progressLine: props.progressLine,
   });
 }
 
