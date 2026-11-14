@@ -126,3 +126,47 @@ fn rows_without_notes_draw_no_band() {
     let svg = render_svg(TASKS, "[]", s(r#"{"today":"2026-11-07"}"#), s(rows));
     assert!(!svg.contains("note-bg"));
 }
+
+/// SVG の要素から、名の付いた属性の数を読む。
+fn attr_of(element: &str, name: &str) -> f64 {
+    let key = format!(" {name}=\"");
+    let start = element
+        .find(&key)
+        .unwrap_or_else(|| panic!("{name} in {element}"))
+        + key.len();
+    let rest = &element[start..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+}
+
+#[test]
+fn a_note_of_a_dot_starts_at_the_same_place_on_both_entry_points() {
+    // 棒の高さ 120・一日 30 の点に添えの字（菱形なし）
+    let note = "目安を過ぎた";
+    let rows = format!(r#"[{{"kind":"task","task_id":"a","shape":"point","note":"{note}"}}]"#);
+    let options = s(r#"{"row_height_px":120,"bar_height_px":120,"px_per_day":30}"#);
+    let svg = render_svg(TASKS, "[]", options.clone(), s(&rows));
+    let dot = &svg[svg.find(r#"class="bar-point""#).expect("点")..];
+    let dot = &dot[..dot.find('>').unwrap()];
+    let dot_right = attr_of(dot, "x") + attr_of(dot, "width");
+    let text_end = svg.find(&format!(">{note}</text>")).expect("添えの字");
+    let text = &svg[svg[..text_end].rfind("<text").unwrap()..text_end];
+    let svg_x = attr_of(text, "x");
+    assert_eq!(
+        svg_x,
+        dot_right + 6.0,
+        "the note starts the gap past the dot"
+    );
+
+    let canvas: serde_json::Value =
+        serde_json::from_str(&render_canvas_commands(TASKS, "[]", options, s(&rows))).unwrap();
+    let canvas_x = canvas["ops"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{canvas}"))
+        .iter()
+        .filter_map(|op| op.get("DrawText"))
+        .find(|t| t["text"] == note)
+        .expect("canvas の添えの字")["x"]
+        .as_f64()
+        .unwrap();
+    assert_eq!(canvas_x, svg_x);
+}
