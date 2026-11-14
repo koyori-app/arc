@@ -341,3 +341,99 @@ fn a_chart_without_notes_has_no_note_layer() {
     }]);
     assert!(list.layers.iter().all(|l| l.kind != LayerKind::Notes));
 }
+
+fn build_with(rows: Vec<TaskRow>, options: ChartOptions) -> DisplayList {
+    let rows: Vec<GanttRow> = rows.into_iter().map(GanttRow::Task).collect();
+    build_display_list_with_rows(&graph(), Some(&rows), epoch(), &options)
+}
+
+/// `id` の行の点（左の端、右の端）。
+fn dot_span(list: &DisplayList, id: &str) -> (f64, f64) {
+    children_of(list, id)
+        .iter()
+        .find_map(|p| match p {
+            Primitive::RoundRect(r) if r.semantic == RoundRectSemantic::Point => {
+                Some((r.x, r.x + r.width))
+            }
+            _ => None,
+        })
+        .expect("点")
+}
+
+/// 棒の高さと一日の幅の組。棒が日より太い形と、日が棒より広い形。
+fn sizes() -> [(f64, f64); 2] {
+    [(120.0, 30.0), (10.0, 60.0)]
+}
+
+fn sized(bar: f64, px: f64) -> ChartOptions {
+    ChartOptions {
+        bar_height: Some(bar),
+        row_height: Some(bar.max(ROW_H)),
+        px_per_day: Some(px),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_note_of_a_dot_starts_right_of_the_dot_however_tall_the_bar() {
+    // 菱形の無い点に添えの字。字は描いた点の右の端から NOTE_GAP_PX 先で始まる
+    for (bar, px) in sizes() {
+        let list = build_with(
+            vec![TaskRow {
+                shape: BarShape::Point,
+                note: Some("目安を過ぎた".to_string()),
+                ..row("a")
+            }],
+            sized(bar, px),
+        );
+        let (_, dot_right) = dot_span(&list, "a");
+        let x = note_x_of(&list, "a");
+        assert_eq!(x, dot_right + NOTE_GAP_PX, "bar {bar}, day {px}");
+        let widest = right_edges(&list)
+            .into_iter()
+            .map(|(_, r)| r)
+            .fold(0.0, f64::max);
+        assert!(widest <= list.viewport.width, "bar {bar}, day {px}");
+    }
+}
+
+#[test]
+fn a_note_of_a_dot_clears_both_the_dot_and_its_diamond() {
+    for (bar, px) in sizes() {
+        // 菱形が点と同じ日（3 日目）に在る形と、次の日に在る形
+        for deadline in [3, 4] {
+            let list = build_with(
+                vec![TaskRow {
+                    shape: BarShape::Point,
+                    hard_deadline: Some(day(deadline)),
+                    note: Some("目安を過ぎた".to_string()),
+                    ..row("a")
+                }],
+                sized(bar, px),
+            );
+            let (_, dot_right) = dot_span(&list, "a");
+            let diamond_cx = LABEL_W + deadline as f64 * px + px / 2.0;
+            let (diamond_left, diamond_right) = (
+                diamond_cx - HARD_DEADLINE_HALF_PX,
+                diamond_cx + HARD_DEADLINE_HALF_PX,
+            );
+            let note = notes_of(&list).remove(0);
+            let x = note.x;
+            let w = super::text_metrics::text_width_weighted_px(
+                &note.content,
+                note.font_size.unwrap(),
+                note.font_weight,
+            );
+            // 字は点の右の端から NOTE_GAP_PX 先より左へは来ず、菱形とも重ならぬ
+            assert!(
+                x >= dot_right + NOTE_GAP_PX,
+                "bar {bar}, day {px}, deadline {deadline}: the note starts at {x}, the dot ends at {dot_right}"
+            );
+            assert!(
+                x >= diamond_right || x + w <= diamond_left,
+                "bar {bar}, day {px}, deadline {deadline}: the note {x}..{} runs over the diamond {diamond_left}..{diamond_right}",
+                x + w
+            );
+        }
+    }
+}

@@ -245,7 +245,7 @@ pub fn build_display_list_with_rows(
                 // note of a task that ended before it: a task late against its
                 // dates is mostly one whose bar is already behind the view.
                 if let Some(m) = marks {
-                    let g = MarkGeometry::of(task, m, &axis, epoch, view_days);
+                    let g = MarkGeometry::of(task, m, &axis, epoch, view_days, bar_h);
                     if let Some(dx) = g.diamond_cx {
                         let tier = ProgressTier::from_pct(task.progress_pct.clamp(0, 100));
                         children.push(hard_deadline_prim(dx, cy, tier));
@@ -295,7 +295,8 @@ pub fn build_display_list_with_rows(
         };
 
         let mut children = Vec::new();
-        let marks_geometry = marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, view_days));
+        let marks_geometry =
+            marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, view_days, bar_h));
 
         if let Some(MarkGeometry {
             point_cx: Some(cx), ..
@@ -303,7 +304,7 @@ pub fn build_display_list_with_rows(
         {
             // A task with only a deadline: a dot on its last day, no bar.
             let state = marks.and_then(|m| m.state);
-            let d = bar_h / 2.0;
+            let d = 2.0 * point_radius(bar_h);
             children.push(Primitive::RoundRect(RoundRectPrim {
                 x: cx - d / 2.0,
                 y: y + (bar_h - d) / 2.0,
@@ -837,7 +838,9 @@ pub(crate) fn chart_width_for(
             &axis,
             options,
         ))
-        .max(marks_right_edge(tasks, rows, epoch, &axis, view_days))
+        .max(marks_right_edge(
+            tasks, rows, epoch, &axis, view_days, bar_h,
+        ))
 }
 
 /// The days the grid draws a line on. A view draws none on the day past its
@@ -1154,6 +1157,13 @@ fn task_row_of<'a>(rows: Option<&'a [GanttRow]>, slot: &super::rows::Slot) -> Op
     }
 }
 
+/// The radius of a `point` row's dot: a quarter of the bar, so the dot is half
+/// the bar across. Drawing the dot and placing its note both read this, so a
+/// note starts right of the dot however tall the bar or narrow the day.
+fn point_radius(bar_h: f64) -> f64 {
+    bar_h / 4.0
+}
+
 /// Where a task row's marks sit across the chart. Drawing and the width both
 /// read this, so a note cannot run past the chart.
 #[derive(Debug, Clone, Copy)]
@@ -1174,6 +1184,7 @@ impl MarkGeometry {
         axis: &XAxis,
         epoch: NaiveDate,
         view_days: Option<i64>,
+        bar_h: f64,
     ) -> Self {
         let start = task.start_days(epoch);
         let end = task.end_days(epoch);
@@ -1191,7 +1202,7 @@ impl MarkGeometry {
             .filter(|d| view_days.is_none_or(|days| (*d - epoch).num_days() < days))
             .map(|d| axis.day_x(epoch, d) + axis.px_per_day / 2.0);
         let bar_right = match point_cx {
-            Some(cx) => cx + axis.px_per_day / 4.0,
+            Some(cx) => cx + point_radius(bar_h),
             None => axis.x(end).max(axis.x(start)),
         };
         // A bar a view cuts ends at the view's last day.
@@ -1275,6 +1286,7 @@ fn marks_right_edge(
     epoch: NaiveDate,
     axis: &XAxis,
     view_days: Option<i64>,
+    bar_h: f64,
 ) -> f64 {
     let Some(rows) = rows else {
         return 0.0;
@@ -1289,7 +1301,7 @@ fn marks_right_edge(
             GanttRow::Group { .. } => None,
         })
         .map(|(row, task)| {
-            let g = MarkGeometry::of(task, row, axis, epoch, view_days);
+            let g = MarkGeometry::of(task, row, axis, epoch, view_days, bar_h);
             let diamond = g.diamond_cx.map_or(0.0, |c| c + HARD_DEADLINE_HALF_PX);
             // A task wholly outside a view: its note only before it, right of
             // the mark at the view's first day.
