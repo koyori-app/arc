@@ -242,7 +242,7 @@ pub fn build_display_list_with_rows(
 
         let mut children = Vec::new();
         let marks = task_row_of(rows, &plan.slots[slot_index]);
-        let marks_geometry = marks.map(|m| MarkGeometry::of(task, m, &axis, epoch));
+        let marks_geometry = marks.map(|m| MarkGeometry::of(task, m, &axis, epoch, bar_h));
 
         if let Some(MarkGeometry {
             point_cx: Some(cx), ..
@@ -250,7 +250,7 @@ pub fn build_display_list_with_rows(
         {
             // A task with only a deadline: a dot on its last day, no bar.
             let state = marks.and_then(|m| m.state);
-            let d = bar_h / 2.0;
+            let d = 2.0 * point_radius(bar_h);
             children.push(Primitive::RoundRect(RoundRectPrim {
                 x: cx - d / 2.0,
                 y: y + (bar_h - d) / 2.0,
@@ -706,7 +706,7 @@ pub(crate) fn chart_width_for(
         .max(legend_edge)
         .max(diamond_edge)
         .max(labels_right_edge(tasks, epoch, total_days, &axis, options))
-        .max(marks_right_edge(tasks, rows, epoch, &axis))
+        .max(marks_right_edge(tasks, rows, epoch, &axis, bar_h))
 }
 
 /// The days the chart spans: through the last task's end, and through the
@@ -732,6 +732,13 @@ fn task_row_of<'a>(rows: Option<&'a [GanttRow]>, slot: &super::rows::Slot) -> Op
     }
 }
 
+/// The radius of a `point` row's dot: a quarter of the bar, so the dot is half
+/// the bar across. Drawing the dot and placing its note both read this, so a
+/// note starts right of the dot however tall the bar or narrow the day.
+fn point_radius(bar_h: f64) -> f64 {
+    bar_h / 4.0
+}
+
 /// Where a task row's marks sit across the chart. Drawing and the width both
 /// read this, so a note cannot run past the chart.
 #[derive(Debug, Clone, Copy)]
@@ -746,7 +753,7 @@ struct MarkGeometry {
 }
 
 impl MarkGeometry {
-    fn of(task: &GanttTask, row: &TaskRow, axis: &XAxis, epoch: NaiveDate) -> Self {
+    fn of(task: &GanttTask, row: &TaskRow, axis: &XAxis, epoch: NaiveDate, bar_h: f64) -> Self {
         let start = task.start_days(epoch);
         let end = task.end_days(epoch);
         // The middle of the span's last day; a span of no days is its start day.
@@ -762,7 +769,7 @@ impl MarkGeometry {
             .filter(|d| *d >= epoch)
             .map(|d| axis.day_x(epoch, d) + axis.px_per_day / 2.0);
         let bar_right = match point_cx {
-            Some(cx) => cx + axis.px_per_day / 4.0,
+            Some(cx) => cx + point_radius(bar_h),
             None => axis.x(end).max(axis.x(start)),
         };
         Self {
@@ -840,6 +847,7 @@ fn marks_right_edge(
     rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     axis: &XAxis,
+    bar_h: f64,
 ) -> f64 {
     let Some(rows) = rows else {
         return 0.0;
@@ -854,7 +862,7 @@ fn marks_right_edge(
             GanttRow::Group { .. } => None,
         })
         .map(|(row, task)| {
-            let g = MarkGeometry::of(task, row, axis, epoch);
+            let g = MarkGeometry::of(task, row, axis, epoch, bar_h);
             let diamond = g.diamond_cx.map_or(0.0, |c| c + HARD_DEADLINE_HALF_PX);
             let note = row.note.as_deref().map_or(0.0, |n| {
                 text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None)
