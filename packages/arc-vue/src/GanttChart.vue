@@ -111,7 +111,10 @@ const props = defineProps<{
   pxPerDay?: number;
   /**
    * What the date header marks: `'week'` (the default), `'day'` (every day's
-   * number and weekday, for a header tall enough for both), or `'month'`.
+   * number and weekday, and the month above the first day of each), or
+   * `'month'`. With `'day'` and no `headerHeight`, the header is 48 px, room
+   * for its three tiers. A `headerHeight` below 48 leaves the months out rather
+   * than draw them over the days.
    */
   scale?: 'week' | 'day' | 'month';
   /** Weekday numbers drawn as weekend bands, 0 for Monday to 6 for Sunday. */
@@ -213,6 +216,7 @@ const chartHeight = computed(() => {
   return chartHeightForRows(props.rows, props.tasks.length, props.legend, {
     rowHeight: props.rowHeight,
     headerHeight: props.headerHeight,
+    scale: props.scale,
   });
 });
 
