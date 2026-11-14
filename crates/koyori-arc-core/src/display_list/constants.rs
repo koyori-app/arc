@@ -25,6 +25,10 @@ pub const NOTE_BAND_PAD_PX: f64 = 2.0;
 pub const DEFAULT_WEEKDAY_LABELS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 pub const LABEL_W: f64 = 120.0;
 pub const HEADER_H: f64 = 30.0;
+/// The header of the `Day` scale when the caller sets no height: room for its
+/// three tiers, the month at the top and the day and weekday at the foot
+/// (docs/design/day-scale.md, 3.1). `HEADER_H` would set the day over the month.
+pub const DAY_SCALE_HEADER_H: f64 = 48.0;
 pub const ARROW_LEAD: f64 = 13.0;
 pub const ARROW_CURVE: f64 = 4.0;
 pub const ARROW_HEAD: f64 = 4.0;

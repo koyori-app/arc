@@ -46,6 +46,8 @@ export const EMPTY_SVG_MARKUP =
  * Reproduced where:
  * - `ROW_H`, `HEADER_H`, `LEGEND_H`, `CHART_BOTTOM_PADDING_PX` — the chart
  *   height `chartHeightForTaskCount()` reserves before Wasm answers.
+ * - `DAY_SCALE_HEADER_H` — the header `chartHeightForRows()` reserves for the
+ *   `'day'` scale when no height is set, the one the crate draws it with.
  * - `ROW_H`, `LABEL_W`, `BAR_H` — the loading skeleton's row metrics, which
  *   stand in for real rows and must line up with them.
  * - `HIDDEN_LABELS_LEFT_PX` — the skeleton's left margin with the title column
@@ -54,6 +56,7 @@ export const EMPTY_SVG_MARKUP =
 export const RUST_LAYOUT = {
   ROW_H: 40,
   HEADER_H: 30,
+  DAY_SCALE_HEADER_H: 48,
   LEGEND_H: 40,
   CHART_BOTTOM_PADDING_PX: 10,
   LABEL_W: 120,
