@@ -6,6 +6,7 @@ use chrono::NaiveDate;
 use super::build::{build_display_list, build_display_list_with_rows};
 use super::constants::*;
 use super::right_edge_tests::right_edges;
+use super::text_metrics::text_width_weighted_px;
 use super::types::*;
 use crate::graph::{BarState, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 
@@ -137,6 +138,65 @@ fn a_bar_running_past_both_ends_is_cut_and_marked_inside_each_edge() {
     assert_eq!(marks[1].anchor, Some(TextAnchor::End));
     // 切った棒は進みの字を描かぬ
     assert!(texts(c, TextSemantic::ProgressPercent).is_empty());
+}
+
+fn overflow_bands(children: &[Primitive]) -> Vec<RectPrim> {
+    children
+        .iter()
+        .filter_map(|p| match p {
+            Primitive::Rect(r) if r.semantic == RectSemantic::OverflowBackground => Some(r.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_marks_of_a_cut_bar_sit_on_bands_of_the_ground_drawn_over_the_bar() {
+    let list = build(&graph(), Some(view()));
+    let c = children_of(&list, "cut");
+    let marks = texts(c, TextSemantic::Overflow);
+    let bands = overflow_bands(c);
+    assert_eq!(bands.len(), 2);
+    for (band, mark) in bands.iter().zip(&marks) {
+        // 添えの字の帯と同じ地の色で、字の幅の見積もりの左右に余白を足す
+        assert_eq!(band.fill, ColorId::NoteBg);
+        let w = text_width_weighted_px(&mark.content, mark.font_size.unwrap(), None);
+        let left = match mark.anchor {
+            Some(TextAnchor::End) => mark.x - w,
+            _ => mark.x,
+        };
+        assert_eq!(band.x, left - NOTE_BAND_PAD_PX, "{}", mark.content);
+        assert_eq!(band.width, w + 2.0 * NOTE_BAND_PAD_PX, "{}", mark.content);
+        assert_eq!(band.y + band.height / 2.0, mark.y, "{}", mark.content);
+        assert_eq!(
+            band.height,
+            mark.font_size.unwrap() + 2.0 * NOTE_BAND_PAD_PX
+        );
+    }
+    // 帯は棒と進みの後、字の前に描く（棒と進みが字の下に透けぬ）
+    let progress = c
+        .iter()
+        .position(|p| matches!(p, Primitive::RoundRect(r) if r.semantic == RoundRectSemantic::BarProgress))
+        .expect("進み");
+    let first_band = c
+        .iter()
+        .position(
+            |p| matches!(p, Primitive::Rect(r) if r.semantic == RectSemantic::OverflowBackground),
+        )
+        .unwrap();
+    let first_mark = c
+        .iter()
+        .position(|p| matches!(p, Primitive::Text(t) if t.semantic == TextSemantic::Overflow))
+        .unwrap();
+    assert!(progress < first_band && first_band + 1 == first_mark);
+}
+
+#[test]
+fn a_task_wholly_outside_the_view_draws_its_mark_without_a_band() {
+    let list = build(&graph(), Some(view()));
+    for id in ["later", "earlier"] {
+        assert!(overflow_bands(children_of(&list, id)).is_empty(), "{id}");
+    }
 }
 
 #[test]

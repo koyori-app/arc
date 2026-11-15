@@ -384,14 +384,14 @@ pub fn build_display_list_with_rows(
             let cy = y + bar_h / 2.0;
             if shown.cut_left {
                 let mark = Placement::Before(task.start);
-                children.push(Primitive::Text(overflow_mark(
+                children.extend(overflow_mark_with_band(overflow_mark(
                     &mark, task.start, &axis, total_days, cy,
                 )));
             }
             if shown.cut_right {
                 let last = last_day(task, epoch);
                 let mark = Placement::After(last);
-                children.push(Primitive::Text(overflow_mark(
+                children.extend(overflow_mark_with_band(overflow_mark(
                     &mark, last, &axis, total_days, cy,
                 )));
             }
@@ -1057,6 +1057,30 @@ fn overflow_mark(
     }
 }
 
+/// The mark at an edge the view cuts a bar, on a band of the chart's ground
+/// as a note is, so the bar and its progress do not run under the text. The
+/// band takes the mark's width from the same estimate a note's band does.
+fn overflow_mark_with_band(mark: TextPrim) -> [Primitive; 2] {
+    let width = text_width_weighted_px(&mark.content, GRID_LABEL_FONT_PX, None);
+    let height = GRID_LABEL_FONT_PX + 2.0 * NOTE_BAND_PAD_PX;
+    let left = match mark.anchor {
+        Some(TextAnchor::End) => mark.x - width,
+        _ => mark.x,
+    };
+    [
+        Primitive::Rect(RectPrim {
+            x: left - NOTE_BAND_PAD_PX,
+            y: mark.y - height / 2.0,
+            width: width + 2.0 * NOTE_BAND_PAD_PX,
+            height,
+            fill: ColorId::NoteBg,
+            rx: Some(NOTE_BAND_PAD_PX),
+            semantic: RectSemantic::OverflowBackground,
+        }),
+        Primitive::Text(mark),
+    ]
+}
+
 /// The mark of a task wholly outside the view, in the warn colour when its
 /// row is in the warn state.
 fn outside_mark(
@@ -1548,7 +1572,7 @@ fn day_texts(
             x: mid,
             y: header_h - 16.0,
             content: day.day().to_string(),
-            fill: None,
+            fill: Some(ColorId::DayNumber),
             font_size: Some(GRID_LABEL_FONT_PX),
             font_weight: None,
             anchor: Some(TextAnchor::Middle),

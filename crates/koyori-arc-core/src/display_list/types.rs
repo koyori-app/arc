@@ -46,6 +46,11 @@ pub enum ColorId {
     NoteBg,
     /// The progress line drawn `by_row`, and the dots at its bends.
     ProgressLine,
+    /// The day's number in the `Day` scale's header. It has no entry in the
+    /// standard palette and no fallback: until a caller sets it, the number is
+    /// drawn with no colour of its own, as it was before it had a name (see
+    /// `Palette::get`).
+    DayNumber,
 }
 
 impl ColorId {
@@ -97,6 +102,17 @@ impl Palette {
         match self.colors.iter().find(|(cid, _)| *cid == id) {
             Some((_, color)) => color.as_str(),
             None => self.resolve(id.fallback().expect("palette entry")),
+        }
+    }
+
+    /// The colour of `id` through its fallbacks, or `None` when neither the
+    /// palette nor a fallback has one. A text whose colour is `None` here is
+    /// drawn with no colour of its own (the SVG's inherited fill, the canvas's
+    /// default text colour).
+    pub fn get(&self, id: ColorId) -> Option<&str> {
+        match self.colors.iter().find(|(cid, _)| *cid == id) {
+            Some((_, color)) => Some(color.as_str()),
+            None => self.get(id.fallback()?),
         }
     }
 
@@ -380,6 +396,8 @@ pub enum RectSemantic {
     Weekend,
     /// The band under a note.
     NoteBackground,
+    /// The band under the mark at an edge the view cuts a bar.
+    OverflowBackground,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
