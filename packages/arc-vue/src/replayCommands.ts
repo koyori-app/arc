@@ -24,7 +24,8 @@ export type ColorIdName =
   | 'HardDeadline'
   | 'Note'
   | 'NoteBg'
-  | 'ProgressLine';
+  | 'ProgressLine'
+  | 'DayNumber';
 
 export interface CommandBuffer {
   viewport_width: number;
@@ -100,6 +101,7 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'Note',
   'NoteBg',
   'ProgressLine',
+  'DayNumber',
 ];
 
 /**

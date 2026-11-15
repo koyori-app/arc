@@ -21,7 +21,7 @@ pub fn build_command_buffer(list: &DisplayList) -> CommandBuffer {
     let mut ops = Vec::new();
     for layer in &list.layers {
         for prim in &layer.primitives {
-            collect_draw_ops(prim, &mut ops);
+            collect_draw_ops(prim, &list.palette, &mut ops);
         }
     }
 
@@ -59,10 +59,19 @@ fn color_id_tag(id: ColorId) -> u8 {
         ColorId::Note => 21,
         ColorId::NoteBg => 22,
         ColorId::ProgressLine => 23,
+        ColorId::DayNumber => 24,
     }
 }
 
-fn collect_draw_ops(prim: &Primitive, ops: &mut Vec<DrawOp>) {
+/// A text's colour tag: 255, the default text colour, when the text has no
+/// colour or its colour has no entry in the palette and no fallback.
+fn text_color_tag(fill: Option<ColorId>, palette: &Palette) -> u8 {
+    fill.filter(|id| palette.get(*id).is_some())
+        .map(color_id_tag)
+        .unwrap_or(255)
+}
+
+fn collect_draw_ops(prim: &Primitive, palette: &Palette, ops: &mut Vec<DrawOp>) {
     match prim {
         Primitive::Rect(r) => {
             ops.push(DrawOp::FillRect {
@@ -123,7 +132,7 @@ fn collect_draw_ops(prim: &Primitive, ops: &mut Vec<DrawOp>) {
                 x: t.x,
                 y: t.y,
                 text: t.content.clone(),
-                color_id: t.fill.map(color_id_tag).unwrap_or(255),
+                color_id: text_color_tag(t.fill, palette),
                 anchor: anchor.unwrap_or(0),
                 size: t.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX),
                 weight: t.font_weight.unwrap_or(DEFAULT_FONT_WEIGHT),
@@ -134,7 +143,7 @@ fn collect_draw_ops(prim: &Primitive, ops: &mut Vec<DrawOp>) {
                 task_id: g.task_id.clone(),
             });
             for child in &g.children {
-                collect_draw_ops(child, ops);
+                collect_draw_ops(child, palette, ops);
             }
             ops.push(DrawOp::GroupEnd);
         }

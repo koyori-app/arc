@@ -117,4 +117,31 @@ describe('palette overrides', () => {
     );
     expect(fills).toEqual(['#fef3c7', '#111111', '#222222']);
   });
+
+  it('draw a day number in the DayNumber colour, and with the default text colour without one', () => {
+    const fills: string[] = [];
+    const canvas = document.createElement('canvas');
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_t, key) => (key === 'canvas' ? canvas : () => {}),
+        set: (_t, key, value) => {
+          if (key === 'fillStyle') fills.push(value as string);
+          return true;
+        },
+      },
+    ) as unknown as CanvasRenderingContext2D;
+    const text = (color_id: number) => ({
+      DrawText: { x: 0, y: 0, text: '2', color_id, anchor: 1, size: 11, weight: 400 },
+    });
+    // The crate writes 24 only when the palette has DayNumber, and 255 otherwise.
+    const buffer: CommandBuffer = {
+      viewport_width: 10,
+      viewport_height: 10,
+      ops: [text(255), text(24)] as CommandBuffer['ops'],
+      palette: { colors: [['DayNumber', '#e5e7eb']] as CommandBuffer['palette']['colors'] },
+    };
+    replayCommands(ctx, buffer);
+    expect(fills).toEqual(['#374151', '#e5e7eb']);
+  });
 });

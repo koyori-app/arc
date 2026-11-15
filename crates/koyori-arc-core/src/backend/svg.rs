@@ -46,6 +46,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 RectSemantic::GroupRow => Some("group-row"),
                 RectSemantic::Weekend => Some("weekend"),
                 RectSemantic::NoteBackground => Some("note-bg"),
+                RectSemantic::OverflowBackground => Some("overflow-bg"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(
@@ -205,8 +206,8 @@ fn render_text(svg: &mut String, t: &TextPrim, palette: &Palette) {
         };
         svg.push_str(&format!(r#" text-anchor="{anchor}""#));
     }
-    if let Some(fill) = t.fill {
-        svg.push_str(&format!(r#" fill="{}""#, palette.resolve(fill)));
+    if let Some(fill) = t.fill.and_then(|id| palette.get(id)) {
+        svg.push_str(&format!(r#" fill="{fill}""#));
     }
     if let Some(size) = t.font_size {
         svg.push_str(&format!(r#" font-size="{size}""#));
