@@ -110,6 +110,20 @@ pub const LABEL_HIT_W: f64 = 100.0;
 pub const ROW_LABEL_MAX_W_PX: f64 = LABEL_W - LABEL_GAP_PX - ROW_LABEL_LEFT_MARGIN_PX;
 /// Step by which a dependency arrow backs off from its blocker's centre.
 pub const DEP_BACKOFF_STEP_PX: f64 = 10.0;
+/// A styled edge leaves the blocker's bar this far in from the bar's end
+/// (docs/design/dependency-states.md).
+pub const DEP_EXIT_INSET_PX: f64 = 8.0;
+/// The radius of a styled edge's corners.
+pub const DEP_CORNER_PX: f64 = 4.0;
+/// How far left of the blocked bar a styled edge turns back when the blocked
+/// bar starts before the edge leaves the blocker.
+pub const DEP_DETOUR_PX: f64 = 12.0;
+/// The gap between a styled edge's tip and the bar it points at.
+pub const DEP_TIP_GAP_PX: f64 = 2.0;
+/// The dash of a `delayed` edge.
+pub const DEP_DELAYED_DASH: &str = "4,3";
+/// The gap between a stand-in end's label and the edge.
+pub const DEP_LABEL_GAP_PX: f64 = 4.0;
 /// Legend geometry. Text is laid out by its estimated width (see `text_metrics`),
 /// so these are the only numbers the legend spends besides the glyph widths.
 pub const LEGEND_LEFT_PAD_PX: f64 = 8.0;

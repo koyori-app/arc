@@ -30,6 +30,7 @@ fn two_task_graph() -> GanttGraph {
         deps: vec![GanttDep {
             blocker_task_id: "task-1".to_string(),
             blocked_task_id: "task-2".to_string(),
+            ..Default::default()
         }],
     }
 }

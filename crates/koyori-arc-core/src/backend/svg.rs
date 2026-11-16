@@ -1,4 +1,4 @@
-use crate::display_list::constants::DEFAULT_FONT_SIZE_PX;
+use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEP_DELAYED_DASH};
 use crate::display_list::types::*;
 use crate::display_list::DisplayList;
 
@@ -88,11 +88,15 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
         }
         Primitive::Path(p) => {
             svg.push_str(&format!(
-                r#"<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round"/>"#,
+                r#"<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{width}" stroke-linecap="round" stroke-linejoin="round""#,
                 d = p.d,
                 stroke = palette.resolve(p.stroke),
                 width = p.stroke_width,
             ));
+            if p.semantic == PathSemantic::DelayedDependencyArrow {
+                push_dash(svg, Some(DEP_DELAYED_DASH));
+            }
+            svg.push_str("/>");
         }
         Primitive::Polyline(p) => {
             svg.push_str(&format!(

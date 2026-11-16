@@ -30,6 +30,7 @@ fn dep(blocker: &str, blocked: &str) -> GanttDep {
     GanttDep {
         blocker_task_id: blocker.to_string(),
         blocked_task_id: blocked.to_string(),
+        ..Default::default()
     }
 }
 

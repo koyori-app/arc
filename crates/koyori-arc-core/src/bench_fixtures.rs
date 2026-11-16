@@ -108,6 +108,7 @@ pub fn generate_sparse_deps(tasks: &[GanttTask]) -> Vec<GanttDep> {
         .map(|w| GanttDep {
             blocker_task_id: w[0].id.clone(),
             blocked_task_id: w[1].id.clone(),
+            ..Default::default()
         })
         .collect()
 }
@@ -124,12 +125,14 @@ pub fn generate_dense_deps(tasks: &[GanttTask]) -> Vec<GanttDep> {
             deps.push(GanttDep {
                 blocker_task_id: blocker.id.clone(),
                 blocked_task_id: task.id.clone(),
+                ..Default::default()
             });
         }
         if i % 10 == 0 {
             deps.push(GanttDep {
                 blocker_task_id: tasks[0].id.clone(),
                 blocked_task_id: task.id.clone(),
+                ..Default::default()
             });
         }
     }

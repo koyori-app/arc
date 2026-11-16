@@ -187,6 +187,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 ```
 
 - `tasks_json` / `deps_json`: 上記構造体配列の JSON 文字列
+  - `deps_json` の各辺は、書かずともよい鍵 `state`（`normal`・`done`・`delayed`）・`note`（阻まれる棒の右の字、200 字まで）・`blocker_at`・`blocked_at`（端が図に棒を持たぬ時の代わり。`{row, day, label}` で使う側の群れの行のその日の点、`{edge: start|end, label}` で図の左か右の端）を持てる。鍵のある辺は、阻む棒の終わりの手前から下ろして阻まれる行の中ほどで右へ折れる道を、棒の下・群れの帯の上に描く。色は `Dep`・`DepDone`・`DepDelayed`（落ち先は `Dep`）、`delayed` は破線。鍵の無い辺は今までどおり（docs/design/dependency-states.md）
 - `options_json`: 描画の設定の JSON object の字。省略可
   - `today`: 今日マーカー用の ISO 8601 の日付（例: `"2026-06-16"`）または日時（例: `"2026-06-16T09:00:00+09:00"`）の字。読めない字は断る（上の「日付と日時の字」）
   - `tz_offset_minutes`: 日時の字を直す時差（UTC から東へ何分か。JST は `540`）。省略は「書かれた日をそのまま取る」で、`0` とは違う（上の「時差の指定」）
@@ -267,7 +268,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
   - 左ラベル: 長タイトルはラベル欄の幅（112px）に収まるまで切り `…` を付ける（全文は `<title>` で参照可）。幅は字ごとの見積もりで、和文は 1 字 12px、英数字は 12px の 0.3〜0.85 倍。字数でもバイト数でもない
 - ゼロ期間タスク: `◇` ダイヤモンドマーカー（`<polygon class="bar-milestone bar-tier-...">`）
 - `end < start` ガード: `end` を `start` に切る（幅 0 扱い）。幅 0 のタスクは `◇` で描くので、`end < start` でもタスクは消えない。進捗の点も `start` より左へ出ない
-- 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）
+- 依存関係: frappe-gantt 互換の角丸エルボー矢印（`<path>` + オープンシェブロン）。鍵のある辺は状態ごとの色と破線（docs/design/dependency-states.md）
 - 進捗ステータスライン: 全タスクの進捗ポイントを結ぶ赤破線ジグザグ（`class="progress-status-line"`）— **設計意図どおり温存**
   - **1 タスク = 1 代表点**: `(progress_x, y_mid)`。`progress_x = start + (end - start) × progress`、`y_mid = (y_top + y_bottom) / 2`
   - **点の順は行の順**: 代表点は入力の順でなく、行（上から下）の順に結ぶ。依存で行が入れ替わっても、線は上から下へ単調に進む

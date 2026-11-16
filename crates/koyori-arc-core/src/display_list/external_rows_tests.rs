@@ -259,10 +259,12 @@ fn a_dependency_on_a_task_left_out_draws_no_arrow() {
         GanttDep {
             blocker_task_id: "a".to_string(),
             blocked_task_id: "d".to_string(),
+            ..Default::default()
         },
         GanttDep {
             blocker_task_id: "a".to_string(),
             blocked_task_id: "b".to_string(),
+            ..Default::default()
         },
     ];
     let list = build_display_list_with_rows(&g, Some(&[t("a"), t("d")]), epoch(), &today_options());

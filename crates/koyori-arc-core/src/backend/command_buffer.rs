@@ -50,4 +50,12 @@ pub enum DrawOp {
         task_id: Option<String>,
     },
     GroupEnd,
+    /// A dashed path: a styled dependency edge in the `delayed` state. Added
+    /// last, so the ops before it keep their place in every serialised form.
+    StrokeDashedPath {
+        d: String,
+        color_id: u8,
+        width: f64,
+        dash: String,
+    },
 }
