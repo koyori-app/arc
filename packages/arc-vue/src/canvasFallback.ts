@@ -110,3 +110,14 @@ export function skeletonLabelWidthPx(rowLabels?: 'shown' | 'hidden', barHeight?:
   const halfBar = (barHeight ?? RUST_LAYOUT.BAR_H) / 2;
   return rowLabels === 'hidden' ? halfBar : Math.max(RUST_LAYOUT.LABEL_W, halfBar);
 }
+
+/**
+ * The loading skeleton's bar height: the chart's bar, `barHeight` when it is
+ * set and `BAR_H` otherwise, as the crate's `RowPlan` reads it. The crate
+ * refuses a bar taller than a task row (`bar_height_px … is taller than a task
+ * row`), and the skeleton has no error to show while it loads, so it holds the
+ * bar to the row (`rowHeight`, or `ROW_H`) instead of drawing past it.
+ */
+export function skeletonBarHeightPx(barHeight?: number, rowHeight?: number): number {
+  return Math.min(barHeight ?? RUST_LAYOUT.BAR_H, rowHeight ?? RUST_LAYOUT.ROW_H);
+}
