@@ -56,3 +56,28 @@ describe("the loading skeleton's label column", () => {
     );
   });
 });
+
+async function skeletonBarHeight(props: Record<string, unknown>): Promise<string> {
+  const wrapper = mount(GanttChart, { props: { tasks, deviceTier: 'high', ...props } });
+  await flushPromises();
+  const skeleton = wrapper.find('.koyori-gantt-skeleton');
+  expect(skeleton.exists()).toBe(true);
+  return (skeleton.element as HTMLElement).style.getPropertyValue('--koyori-skeleton-bar-h');
+}
+
+describe("the loading skeleton's bar", () => {
+  it('is BAR_H tall without barHeight', async () => {
+    expect(await skeletonBarHeight({})).toBe(`${RUST_LAYOUT.BAR_H}px`);
+  });
+
+  it('follows the bar height the caller set, as the chart does', async () => {
+    expect(await skeletonBarHeight({ barHeight: 30 })).toBe('30px');
+    expect(await skeletonBarHeight({ barHeight: 120, rowHeight: 140 })).toBe('120px');
+  });
+
+  it('is never taller than its row (the chart refuses such a bar)', async () => {
+    // 行より高い棒を core は断る。骨組みは断れぬゆえ、行の高さで止める
+    expect(await skeletonBarHeight({ barHeight: 120 })).toBe(`${RUST_LAYOUT.ROW_H}px`);
+    expect(await skeletonBarHeight({ barHeight: 120, rowHeight: 60 })).toBe('60px');
+  });
+});

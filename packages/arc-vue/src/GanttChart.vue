@@ -25,6 +25,7 @@ import {
   chartHeightForRows,
   isCanvasCapacityError,
   resolveCanvasFailure,
+  skeletonBarHeightPx,
   skeletonLabelWidthPx,
 } from './canvasFallback';
 import {
@@ -50,7 +51,11 @@ const skeletonRowH = computed(() => `${props.rowHeight ?? RUST_LAYOUT.ROW_H}px`)
 const skeletonLabelW = computed(
   () => `${skeletonLabelWidthPx(props.rowLabels, props.barHeight)}px`,
 );
-const skeletonBarH = `${RUST_LAYOUT.BAR_H}px`;
+// The skeleton's bar is the chart's bar (`barHeight`, held to the row as the
+// crate holds it), set inline for the same reason as the label width.
+const skeletonBarH = computed(
+  () => `${skeletonBarHeightPx(props.barHeight, props.rowHeight)}px`,
+);
 
 const props = defineProps<{
   tasks: GanttTask[];
@@ -586,7 +591,7 @@ function onCanvasClick(e: MouseEvent) {
     <div
       v-if="!ready"
       class="koyori-gantt-skeleton"
-      :style="{ '--koyori-skeleton-label-w': skeletonLabelW }"
+      :style="{ '--koyori-skeleton-label-w': skeletonLabelW, '--koyori-skeleton-bar-h': skeletonBarH }"
       aria-hidden="true"
     >
       <div v-for="task in props.tasks" :key="task.id" class="koyori-gantt-skeleton-row">
@@ -677,7 +682,7 @@ function onCanvasClick(e: MouseEvent) {
   flex-shrink: 0;
 }
 .koyori-gantt-skeleton-bar {
-  height: v-bind(skeletonBarH);
+  height: var(--koyori-skeleton-bar-h);
   min-width: var(--koyori-skeleton-bar-min-w);
   max-width: calc(
     100% - var(--koyori-skeleton-label-w) - var(--koyori-skeleton-gap)

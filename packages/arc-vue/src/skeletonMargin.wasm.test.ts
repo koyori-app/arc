@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import init, { render_svg } from '@koyori-app/arc';
-import { skeletonLabelWidthPx } from './canvasFallback';
+import { skeletonBarHeightPx, skeletonLabelWidthPx } from './canvasFallback';
 import { buildOptionsJson } from './options';
 import type { GanttTask } from './types.ts';
 
@@ -49,5 +49,24 @@ describe('the skeleton\'s label column, against the real Wasm', () => {
     });
     const svg = render_svg(JSON.stringify(tasks), '[]', options);
     expect(firstBarLeft(svg)).toBe(skeletonLabelWidthPx(rowLabels, barHeight));
+  });
+});
+
+function firstBarHeight(svg: string): number {
+  const match = /<rect class="bar-bg"[^>]*\bheight="([\d.]+)"/.exec(svg);
+  if (!match) throw new Error(`no bar: ${svg.slice(0, 120)}`);
+  return Number(match[1]);
+}
+
+describe("the skeleton's bar, against the real Wasm", () => {
+  it.each([
+    [undefined, undefined],
+    [30, undefined],
+    [120, 140],
+    [12, 72],
+  ] as const)('is as tall as the chart\'s bar (bar %s, row %s)', (barHeight, rowHeight) => {
+    const options = buildOptionsJson({ barHeightPx: barHeight, rowHeightPx: rowHeight });
+    const svg = render_svg(JSON.stringify(tasks), '[]', options);
+    expect(firstBarHeight(svg)).toBe(skeletonBarHeightPx(barHeight, rowHeight));
   });
 });
