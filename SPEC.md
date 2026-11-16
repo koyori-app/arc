@@ -246,6 +246,7 @@ pub fn render_canvas_commands(tasks_json: &str, deps_json: &str, options_json: O
 - 型 `PaletteOverrides` と `ColorIdName` は `index.ts` から出す
 - `pxPerDay`、`scale`（`'week'`、`'day'`、`'month'`）、`weekendDays`、`weekdayLabels`: `options_json` の同じ名の鍵に渡す。型 `Scale` は `index.ts` から出す
 - `view`（`{ from, to }`）: `options_json` の `view` に渡す。型 `ViewRange` は `index.ts` から出す
+- `scrollContainer`（`HTMLElement` か `window`）: 図を置く使い手のスクロール域。渡すと図は自分のスクロール域を持たず（低性能の端末でも `min(70vh, 600px)` の縛りを付けず）、行の高さのまま使い手の域で一緒に送られる。低性能の端末では、使い手の域の見える分の行だけを描く（`scroll_viewport` を域の位置から求める）。渡さぬ図は今までどおり
 - `progressLine`（`'shown'`、`'hidden'`、`'by_row'`）: `options_json` の `progress_line` に渡す。型 `ProgressLineMode` は `index.ts` から出す
 
 ## SVG 出力仕様
