@@ -345,3 +345,19 @@ fn the_new_keys_are_refused_where_the_chart_cannot_draw_them() {
         "parse error",
     );
 }
+
+#[test]
+fn an_edge_whose_ends_land_on_the_same_row_is_not_drawn() {
+    // 両端とも同じ畳んだ群れの見出しの行（4）へ引き込む: 同じ行に潰れた線になるので描かぬ
+    let deps = r#"[{"blocker_task_id":"x","blocked_task_id":"y","state":"normal","blocker_at":{"row":4,"day":"2026-11-03","label":"DSK-1"},"blocked_at":{"row":4,"day":"2026-11-10","label":"DSK-2"}}]"#;
+    let svg = svg(deps);
+    assert!(svg_paths(&svg).is_empty(), "{svg}");
+    assert!(!texts(&svg).iter().any(|t| t.starts_with("DSK-")));
+    let ops = canvas(deps)["ops"].as_array().unwrap().clone();
+    assert!(!ops
+        .iter()
+        .any(|op| op["StrokePath"].is_object() || op["StrokeDashedPath"].is_object()));
+    // 別の行へ引く辺は描く（試験が描かぬ図を見ておるだけでないことの確かめ）
+    let other = r#"[{"blocker_task_id":"x","blocked_task_id":"y","state":"normal","blocker_at":{"row":0,"day":"2026-11-03"},"blocked_at":{"row":4,"day":"2026-11-10"}}]"#;
+    assert_eq!(svg_paths(&self::svg(other)).len(), 1);
+}
