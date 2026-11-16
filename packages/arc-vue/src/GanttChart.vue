@@ -205,9 +205,12 @@ function syncScrollViewport(el?: HTMLElement | null) {
   clientHeight.value = scrollEl.clientHeight;
 }
 
-// The caller's area scrolls the chart, so its scroll (and the window's resize,
-// which moves and resizes the view) re-reads the window, once a frame.
+// The caller's area scrolls the chart, so its scroll re-reads the window, once
+// a frame, and so does a change of the view's size: the window's resize for the
+// window, and a ResizeObserver for an element, whose size can change with the
+// window still (a split pane widened, say).
 let outerFrame = 0;
+let outerResize: ResizeObserver | null = null;
 function scheduleOuterSync() {
   if (outerFrame) return;
   const run = () => {
@@ -222,6 +225,8 @@ function detachOuter(container: HTMLElement | Window | null) {
   if (container && typeof window !== 'undefined') {
     window.removeEventListener('resize', scheduleOuterSync);
   }
+  outerResize?.disconnect();
+  outerResize = null;
 }
 watch(
   outerScroll,
@@ -231,6 +236,12 @@ watch(
     container.addEventListener('scroll', scheduleOuterSync, { passive: true });
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', scheduleOuterSync, { passive: true });
+    }
+    // Without a ResizeObserver (server rendering, an old browser), the window's
+    // resize is all there is to go on.
+    if (!(typeof window !== 'undefined' && container === window) && typeof ResizeObserver !== 'undefined') {
+      outerResize = new ResizeObserver(scheduleOuterSync);
+      outerResize.observe(container as HTMLElement);
     }
     scheduleOuterSync();
   },
@@ -413,9 +424,12 @@ function renderCanvasFallback(failure: RenderFailure) {
       fallbackSvg = render_svg(
         JSON.stringify(props.tasks),
         JSON.stringify(props.deps ?? []),
+        // In the chart's own area the fallback scrolls inside min(70vh, 600px),
+        // so it draws at most that much; in the caller's area it scrolls with
+        // the area, and draws the area's whole view.
         chartOptionsJson({
           scroll_y: scrollY.value,
-          client_height: Math.min(clientHeight.value, 600),
+          client_height: outerScroll.value ? clientHeight.value : Math.min(clientHeight.value, 600),
         }),
         ...rowsArgs.value,
       );
@@ -669,7 +683,7 @@ function onCanvasClick(e: MouseEvent) {
     ref="scrollRef"
     class="koyori-gantt-scroll"
     :class="{
-      'koyori-gantt-scroll--virtual': (requestedVirtualization && !outerScroll) || canvasFailure,
+      'koyori-gantt-scroll--virtual': (requestedVirtualization || canvasFailure) && !outerScroll,
     }"
     @scroll="onScroll"
   >

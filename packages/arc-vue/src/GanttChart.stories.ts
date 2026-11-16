@@ -405,3 +405,17 @@ export const ScrollContainerWithList: Story = {
     `,
   }),
 };
+
+// canvas の容量（一辺 16384px）を越える図は SVG へ落ちる。外の域があれば、落ちた先も内側の縛りを持たず、外の域で送る。
+// 範囲の長い課題を一つ混ぜて、図の幅を上限より広げる。
+export const ScrollContainerCanvasFallback: Story = {
+  ...ScrollContainerWithList,
+  args: {
+    ...ScrollContainerWithList.args,
+    backend: 'canvas',
+    tasks: [
+      ...scrollTasks,
+      { id: 'far', title: 'Long tail', progress_pct: 0, start: '2026-06-01', end: '2028-03-01' },
+    ],
+  },
+};
