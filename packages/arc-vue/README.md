@@ -61,6 +61,7 @@ interface GanttDep {
 | `legend` | `'shown' \| 'hidden'` | `'hidden'` leaves the colour legend out (see `loadLegendSpec`). |
 | `backend` | `'svg' \| 'canvas'` | Defaults to `svg`. |
 | `deviceTier` | `'low' \| 'high'` | Overrides the detected device tier (useful for visual tests). |
+| `scrollContainer` | `HTMLElement \| Window` | The caller's scroll area the chart sits in. Given, the chart keeps no scroll area of its own (no `min(70vh, 600px)` cap on a low-tier device): the caller's area scrolls it together with what sits beside it, such as the caller's own task list, and a low-tier chart still draws only the rows inside that area's view. |
 
 The `taskClick` event receives the clicked `GanttTask`.
 

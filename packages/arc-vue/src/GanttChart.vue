@@ -134,6 +134,15 @@ const props = defineProps<{
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
   deviceTier?: 'low' | 'high';
+  /**
+   * The caller's scroll area the chart sits in (an element, or `window`), for a
+   * chart that scrolls together with something beside it, such as the caller's
+   * own task list. Given, the chart keeps no scroll area of its own: it is as
+   * tall as its rows, the caller's area scrolls it, and on a low-tier device the
+   * rows it draws are the ones inside that area's view. Left out, a low-tier
+   * chart scrolls inside its own area of at most `min(70vh, 600px)`, as before.
+   */
+  scrollContainer?: HTMLElement | Window | null;
 }>();
 
 const emit = defineEmits<{
@@ -170,12 +179,84 @@ const emptySvgMarkup = ref(EMPTY_SVG_MARKUP);
 
 const useCanvas = computed(() => props.backend === 'canvas');
 
+const outerScroll = computed(() => props.scrollContainer ?? null);
+
+/**
+ * The window of rows to draw, in the chart's own y: from the top of the
+ * caller's view (or the chart's top, whichever is lower) for the height of that
+ * view. A chart below the view's top starts at its own top; the rows past the
+ * view's bottom are drawn too, which costs a few rows and never leaves a gap.
+ */
+function outerViewport(container: HTMLElement | Window, chart: HTMLElement) {
+  const chartTop = chart.getBoundingClientRect().top;
+  const isWindow = typeof window !== 'undefined' && container === window;
+  const viewTop = isWindow ? 0 : (container as HTMLElement).getBoundingClientRect().top + (container as HTMLElement).clientTop;
+  const viewHeight = isWindow ? window.innerHeight : (container as HTMLElement).clientHeight;
+  return { scrollY: Math.max(0, viewTop - chartTop), clientHeight: viewHeight };
+}
+
 function syncScrollViewport(el?: HTMLElement | null) {
+  const container = outerScroll.value;
+  if (container) {
+    if (!scrollRef.value) return;
+    const view = outerViewport(container, scrollRef.value);
+    scrollY.value = view.scrollY;
+    clientHeight.value = view.clientHeight;
+    return;
+  }
   const scrollEl = el ?? scrollRef.value;
   if (!scrollEl) return;
   scrollY.value = scrollEl.scrollTop;
   clientHeight.value = scrollEl.clientHeight;
 }
+
+// The caller's area scrolls the chart, so its scroll re-reads the window, once
+// a frame, and so does a change of the view's size: the window's resize for the
+// window, and a ResizeObserver for an element, whose size can change with the
+// window still (a split pane widened, say).
+let outerFrame = 0;
+let outerResize: ResizeObserver | null = null;
+function scheduleOuterSync() {
+  if (outerFrame) return;
+  const run = () => {
+    outerFrame = 0;
+    syncScrollViewport();
+  };
+  if (typeof requestAnimationFrame === 'function') outerFrame = requestAnimationFrame(run);
+  else run();
+}
+function detachOuter(container: HTMLElement | Window | null) {
+  container?.removeEventListener('scroll', scheduleOuterSync);
+  if (container && typeof window !== 'undefined') {
+    window.removeEventListener('resize', scheduleOuterSync);
+  }
+  outerResize?.disconnect();
+  outerResize = null;
+}
+watch(
+  outerScroll,
+  (container, previous) => {
+    detachOuter(previous ?? null);
+    if (!container) return;
+    container.addEventListener('scroll', scheduleOuterSync, { passive: true });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', scheduleOuterSync, { passive: true });
+    }
+    // Without a ResizeObserver (server rendering, an old browser), the window's
+    // resize is all there is to go on.
+    if (!(typeof window !== 'undefined' && container === window) && typeof ResizeObserver !== 'undefined') {
+      outerResize = new ResizeObserver(scheduleOuterSync);
+      outerResize.observe(container as HTMLElement);
+    }
+    scheduleOuterSync();
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  detachOuter(outerScroll.value);
+  if (outerFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(outerFrame);
+  outerFrame = 0;
+});
 
 onMounted(async () => {
   await init();
@@ -348,9 +429,12 @@ function renderCanvasFallback(failure: RenderFailure) {
       fallbackSvg = render_svg(
         JSON.stringify(props.tasks),
         JSON.stringify(props.deps ?? []),
+        // In the chart's own area the fallback scrolls inside min(70vh, 600px),
+        // so it draws at most that much; in the caller's area it scrolls with
+        // the area, and draws the area's whole view.
         chartOptionsJson({
           scroll_y: scrollY.value,
-          client_height: Math.min(clientHeight.value, 600),
+          client_height: outerScroll.value ? clientHeight.value : Math.min(clientHeight.value, 600),
         }),
         ...rowsArgs.value,
       );
@@ -603,7 +687,9 @@ function onCanvasClick(e: MouseEvent) {
     v-else
     ref="scrollRef"
     class="koyori-gantt-scroll"
-    :class="{ 'koyori-gantt-scroll--virtual': requestedVirtualization || canvasFailure }"
+    :class="{
+      'koyori-gantt-scroll--virtual': (requestedVirtualization || canvasFailure) && !outerScroll,
+    }"
     @scroll="onScroll"
   >
     <div v-if="displayError" class="koyori-gantt-error" role="alert">

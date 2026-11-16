@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite';
 import { action } from 'storybook/actions';
+import { ref } from 'vue';
 import GanttChart from './GanttChart.vue';
 import type { GanttDep, GanttTask } from './types.ts';
 
@@ -359,4 +360,62 @@ export const ProgressLineByRowCanvas: Story = {
 export const MonthScale: Story = {
   args: { ...vrtArgs, tasks, deps, today: '2026-06-06', scale: 'month', pxPerDay: 8 },
   render: Default.render,
+};
+
+// 使う側の一覧と図を、一つの縦のスクロール域に並べる。低性能の端末の形でも、図は内側のスクロール域を持たず、
+// 域の見える分の行だけを描き、各行は一覧の同じ行と並ぶ。
+const scrollTasks: GanttTask[] = Array.from({ length: 200 }, (_, i) => ({
+  id: `s${i}`,
+  title: `Task ${i + 1}`,
+  progress_pct: (i * 17) % 100,
+  start: `2026-06-${String(1 + (i % 14)).padStart(2, '0')}`,
+  end: `2026-06-${String(5 + (i % 14)).padStart(2, '0')}`,
+}));
+
+export const ScrollContainerWithList: Story = {
+  args: {
+    deviceTier: 'low',
+    tasks: scrollTasks,
+    rowLabels: 'hidden',
+    legend: 'hidden',
+    rowHeight: 40,
+    barHeight: 16,
+  },
+  render: (args) => ({
+    components: { GanttChart },
+    setup() {
+      const area = ref<HTMLElement | null>(null);
+      return { args, area };
+    },
+    template: `
+      <div ref="area" data-testid="scroll-area" style="height: 400px; overflow: auto; display: flex; border: 1px solid #e5e7eb;">
+        <ol style="flex: none; width: 160px; margin: 0; padding: 0; list-style: none; border-right: 1px solid #e5e7eb;">
+          <li style="height: 30px;"></li>
+          <li
+            v-for="t in args.tasks"
+            :key="t.id"
+            :data-row="t.id"
+            style="height: 40px; display: flex; align-items: center; padding: 0 8px; font: 12px sans-serif; border-top: 1px solid #f3f4f6; box-sizing: border-box;"
+          >{{ t.title }}</li>
+        </ol>
+        <div style="flex: 1; min-width: 0;">
+          <GanttChart v-bind="args" :scroll-container="area" />
+        </div>
+      </div>
+    `,
+  }),
+};
+
+// canvas の容量（一辺 16384px）を越える図は SVG へ落ちる。外の域があれば、落ちた先も内側の縛りを持たず、外の域で送る。
+// 範囲の長い課題を一つ混ぜて、図の幅を上限より広げる。
+export const ScrollContainerCanvasFallback: Story = {
+  ...ScrollContainerWithList,
+  args: {
+    ...ScrollContainerWithList.args,
+    backend: 'canvas',
+    tasks: [
+      ...scrollTasks,
+      { id: 'far', title: 'Long tail', progress_pct: 0, start: '2026-06-01', end: '2028-03-01' },
+    ],
+  },
 };
