@@ -572,7 +572,15 @@ pub fn build_display_list_with_rows(
                 curve_y = if from_is_below_to { -curve } else { curve };
             }
             let down_2 = end_y - curve_y;
-            let left = to_x - ROW_PADDING;
+            // The detour runs `ROW_PADDING` left of the blocked bar and turns a
+            // curve further left. A bar on the first day of a chart without the
+            // title column starts half a bar from the left edge, so the detour
+            // is held inside the chart: it turns no further left than x = 0, and
+            // the head, which opens `ARROW_HEAD` back from its tip, ends no
+            // further left than the turn. A chart whose detour fits is drawn as
+            // it was.
+            let left = (to_x - ROW_PADDING).max(curve.max(ARROW_HEAD));
+            let end_x = end_x.max(left);
             let neg_curve = -curve;
             format!(
                 "M {start_x} {start_y} v {down_1} a {curve} {curve} 0 0 1 {neg_curve} {curve} H {left} a {curve} {curve} 0 0 {clockwise} {neg_curve} {curve_y} V {down_2} a {curve} {curve} 0 0 {clockwise} {curve} {curve_y} L {end_x} {end_y} m -{ARROW_HEAD} -{ARROW_HEAD} l {ARROW_HEAD} {ARROW_HEAD} l -{ARROW_HEAD} {ARROW_HEAD}"
