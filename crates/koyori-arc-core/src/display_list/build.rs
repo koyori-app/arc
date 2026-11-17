@@ -1459,7 +1459,6 @@ fn by_row_progress_line(
     progress_line_by_row(&line_rows, today_x)
 }
 
-/// The chart's first day: the view's, or the one the caller passed.
 /// The chart's first day: the view's, or, without a view, the earlier of the
 /// first task's start (`epoch`) and the first day a styled edge's row point
 /// stands on, so the point is on the chart as a task's bar is.
