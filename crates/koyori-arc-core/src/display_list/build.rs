@@ -75,14 +75,14 @@ pub fn build_display_list_with_rows(
         weekend,
         ..
     } = *options;
-    let epoch = chart_epoch(epoch, options);
+    let epoch = chart_epoch(epoch, &graph.deps, options);
     let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
     let header_h = plan.header_h;
     let bar_h = plan.bar_h;
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
 
-    let total_days = chart_days(&graph.tasks, rows, epoch, options);
+    let total_days = chart_days(&graph.tasks, &graph.deps, rows, epoch, options);
     let view_days = options.view.map(|_| total_days);
     // The x where the days a view shows end; past it only marks and notes.
     let days_right = axis.x(total_days as f64);
@@ -506,20 +506,7 @@ pub fn build_display_list_with_rows(
     });
 
     // Dependencies layer
-    // First occurrence wins for a repeated id, the same rule `layout::assign_rows`
-    // uses to place the dependency edges. `collect()` into a map keeps the last
-    // one, which would draw an arrow from a different bar than the row it was
-    // laid out for.
-    let mut row_map: HashMap<&str, usize> = HashMap::new();
-    for (i, t) in graph.tasks.iter().enumerate() {
-        if let Some(slot) = plan.slot_of_task[i] {
-            row_map.entry(t.id.as_str()).or_insert(slot);
-        }
-    }
-    let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
-    for t in &graph.tasks {
-        task_map.entry(t.id.as_str()).or_insert(t);
-    }
+    let (task_map, row_map) = task_maps(&graph.tasks, &plan);
 
     let mut dep_prims = Vec::new();
     let mut link_prims = Vec::new();
@@ -863,10 +850,10 @@ pub(crate) fn chart_width_for(
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> f64 {
-    let epoch = chart_epoch(epoch, options);
+    let epoch = chart_epoch(epoch, deps, options);
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
-    let total_days = chart_days(tasks, rows, epoch, options);
+    let total_days = chart_days(tasks, deps, rows, epoch, options);
     let view_days = options.view.map(|_| total_days);
     // A chart that draws a column for every day (the `Day` scale, or weekend
     // bands) holds up the column of a milestone on its last day as well.
@@ -911,7 +898,7 @@ pub(crate) fn chart_width_for(
             tasks, rows, epoch, &axis, view_days, bar_h,
         ))
         .max(dep_notes_right_edge(
-            tasks, deps, rows, epoch, &axis, view_days, bar_h,
+            tasks, deps, rows, epoch, &axis, view_days, bar_h, options, total_days,
         ))
 }
 
@@ -1006,8 +993,32 @@ fn dep_notes<'a>(
     out
 }
 
-/// The furthest right the notes of styled edges, and the labels at their
-/// stand-in rows, reach, with the right padding past them.
+/// The task of each id and the slot it is drawn on. First occurrence wins for
+/// a repeated id, the same rule `layout::assign_rows` uses to place the
+/// dependency edges. `collect()` into a map keeps the last one, which would
+/// draw an arrow from a different bar than the row it was laid out for.
+fn task_maps<'a>(
+    tasks: &'a [GanttTask],
+    plan: &RowPlan,
+) -> (HashMap<&'a str, &'a GanttTask>, HashMap<&'a str, usize>) {
+    let mut row_map: HashMap<&str, usize> = HashMap::new();
+    for (i, t) in tasks.iter().enumerate() {
+        if let Some(slot) = plan.slot_of_task[i] {
+            row_map.entry(t.id.as_str()).or_insert(slot);
+        }
+    }
+    let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
+    for t in tasks {
+        task_map.entry(t.id.as_str()).or_insert(t);
+    }
+    (task_map, row_map)
+}
+
+/// The furthest right the notes of styled edges, and their routes, arrow
+/// heads and labels, reach, with the right padding past them. The routes are
+/// the ones drawn (`styled_link`), every edge and not only those in the row
+/// window, so the width does not change as the chart scrolls.
+#[allow(clippy::too_many_arguments)]
 fn dep_notes_right_edge(
     tasks: &[GanttTask],
     deps: &[GanttDep],
@@ -1016,26 +1027,34 @@ fn dep_notes_right_edge(
     axis: &XAxis,
     view_days: Option<i64>,
     bar_h: f64,
+    options: &ChartOptions,
+    total_days: i64,
 ) -> f64 {
     let notes = dep_notes(tasks, deps, rows, epoch, axis, view_days, bar_h)
         .iter()
         .map(|n| text_right_edge(n.x, None, n.text, GRID_LABEL_FONT_PX, None))
         .fold(0.0, f64::max);
-    let labels = deps
-        .iter()
-        .filter_map(|d| match &d.blocked_at {
-            Some(DepEnd::Row {
-                day,
-                label: Some(l),
-                ..
-            }) => {
-                let x = axis.x((*day - epoch).num_days() as f64) + ARROW_HEAD + DEP_LABEL_GAP_PX;
-                Some(text_right_edge(x, None, l, GRID_LABEL_FONT_PX, None))
-            }
-            _ => None,
-        })
-        .fold(0.0, f64::max);
-    let edge = notes.max(labels);
+    let links = if deps.iter().any(GanttDep::is_styled) {
+        let plan = RowPlan::new(tasks, deps, rows, options);
+        let (task_map, row_map) = task_maps(tasks, &plan);
+        let ctx = LinkContext {
+            plan: &plan,
+            axis,
+            epoch,
+            bar_h: plan.bar_h,
+            view_days,
+            days_right: axis.x(total_days as f64),
+            row_window: None,
+        };
+        deps.iter()
+            .filter(|d| d.is_styled())
+            .filter_map(|d| styled_link(&ctx, d, &task_map, &row_map))
+            .map(|link| link.right)
+            .fold(0.0, f64::max)
+    } else {
+        0.0
+    };
+    let edge = notes.max(links);
     if edge > 0.0 {
         edge + CHART_RIGHT_PADDING_PX
     } else {
@@ -1047,6 +1066,8 @@ fn dep_notes_right_edge(
 struct StyledLink {
     path: Primitive,
     labels: Vec<Primitive>,
+    /// The furthest right the route, its arrow head and its labels reach.
+    right: f64,
 }
 
 /// What every styled edge reads off the chart.
@@ -1101,7 +1122,25 @@ fn link_end(
     match at {
         Some(DepEnd::Row { row, day, label }) => {
             let slot = ctx.plan.slots.iter().position(|s| s.row == Some(*row))?;
-            let x = ctx.axis.x((*day - ctx.epoch).num_days() as f64);
+            let days = (*day - ctx.epoch).num_days();
+            // A view that does not show the day: the edge stands in at that
+            // side, as a stand-in edge does (`DepEnd::Edge`).
+            if let Some(view_days) = ctx.view_days {
+                let edge = if days < 0 {
+                    Some(DepEdge::Start)
+                } else if days >= view_days {
+                    Some(DepEdge::End)
+                } else {
+                    None
+                };
+                if let Some(edge) = edge {
+                    return Some(LinkEnd::Edge {
+                        edge,
+                        label: label.clone(),
+                    });
+                }
+            }
+            let x = ctx.axis.x(days as f64);
             Some(LinkEnd::Point {
                 slot,
                 x,
@@ -1282,6 +1321,15 @@ fn styled_link(
     };
     let (tx, ty) = *points.last()?;
     let head = if tip_right { -ARROW_HEAD } else { ARROW_HEAD };
+    let right = points
+        .iter()
+        .map(|&(x, _)| x)
+        .chain([tx + head])
+        .chain(labels.iter().filter_map(|p| match p {
+            Primitive::Rect(r) => Some(r.x + r.width),
+            _ => None,
+        }))
+        .fold(f64::NEG_INFINITY, f64::max);
     let d = format!(
         "{} M {} {} L {tx} {ty} L {} {}",
         rounded_path(&points),
@@ -1302,6 +1350,7 @@ fn styled_link(
             },
         }),
         labels,
+        right,
     })
 }
 
@@ -1411,20 +1460,39 @@ fn by_row_progress_line(
 }
 
 /// The chart's first day: the view's, or the one the caller passed.
-fn chart_epoch(epoch: NaiveDate, options: &ChartOptions) -> NaiveDate {
-    options.view.map_or(epoch, |v| v.from)
+/// The chart's first day: the view's, or, without a view, the earlier of the
+/// first task's start (`epoch`) and the first day a styled edge's row point
+/// stands on, so the point is on the chart as a task's bar is.
+fn chart_epoch(epoch: NaiveDate, deps: &[GanttDep], options: &ChartOptions) -> NaiveDate {
+    options.view.map_or_else(
+        || dep_row_days(deps).fold(epoch, NaiveDate::min),
+        |v| v.from,
+    )
 }
 
-/// The days the chart spans: the view's, or every task's and deadline's.
+/// The days the row points of styled edges stand on (`DepEnd::Row`).
+fn dep_row_days(deps: &[GanttDep]) -> impl Iterator<Item = NaiveDate> + '_ {
+    deps.iter()
+        .flat_map(|d| [d.blocker_at.as_ref(), d.blocked_at.as_ref()])
+        .flatten()
+        .filter_map(|at| match at {
+            DepEnd::Row { day, .. } => Some(*day),
+            DepEnd::Edge { .. } => None,
+        })
+}
+
+/// The days the chart spans: the view's, or every task's, deadline's and
+/// styled edge row point's.
 fn chart_days(
     tasks: &[GanttTask],
+    deps: &[GanttDep],
     rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> i64 {
     match options.view {
         Some(view) => view.days(),
-        None => span_days(tasks, rows, epoch),
+        None => span_days(tasks, deps, rows, epoch),
     }
 }
 
@@ -1673,10 +1741,17 @@ fn task_tooltip(task: &GanttTask) -> String {
     )
 }
 
-/// The days the chart spans: through the last task's end, and through the
-/// last hard deadline a task row gives, so its diamond is on the chart. A chart
-/// without marks spans what it spanned before them.
-fn span_days(tasks: &[GanttTask], rows: Option<&[GanttRow]>, epoch: NaiveDate) -> i64 {
+/// The days the chart spans: through the last task's end, through the last
+/// hard deadline a task row gives, so its diamond is on the chart, and through
+/// the last day a styled edge's row point stands on. A chart without marks or
+/// row points spans what it spanned before them.
+fn span_days(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+) -> i64 {
+    let points = dep_row_days(deps).map(|d| (d - epoch).num_days() + 1);
     let deadlines = rows
         .into_iter()
         .flatten()
@@ -1685,7 +1760,9 @@ fn span_days(tasks: &[GanttTask], rows: Option<&[GanttRow]>, epoch: NaiveDate) -
             GanttRow::Group { .. } => None,
         })
         .map(|d| (d - epoch).num_days() + 1);
-    deadlines.fold(total_days_of(tasks, epoch), i64::max)
+    deadlines
+        .chain(points)
+        .fold(total_days_of(tasks, epoch), i64::max)
 }
 
 /// The task row drawn on `slot`, when the caller's row list gives one.

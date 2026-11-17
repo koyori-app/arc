@@ -273,23 +273,142 @@ fn an_edge_from_a_task_before_the_days_comes_in_from_the_left_edge() {
     assert!(texts(&svg).contains(&"OPS-1 10/20".to_string()));
 }
 
+/// SVG の幅（`width="…"`）。
+fn svg_width(svg: &str) -> f64 {
+    svg.split("width=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+/// 字 `text` の下の帯（`<rect>`）の右端。
+fn band_right(svg: &str, text: &str) -> f64 {
+    let at = svg
+        .find(&format!(">{text}<"))
+        .unwrap_or_else(|| panic!("no {text}"));
+    let rect = &svg[svg[..at].rfind("<rect ").unwrap()..at];
+    let attr = |name: &str| -> f64 {
+        rect.split(&format!(" {name}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    attr("x") + attr("width")
+}
+
 #[test]
 fn every_point_of_every_styled_edge_stays_inside_the_chart() {
+    // 代わりの端に加え、課題の日の範囲より前と後の日を指す行の点を、両側と字の有無で並べる
     let deps = r#"[
         {"blocker_task_id":"a","blocked_task_id":"c","state":"normal"},
         {"blocker_task_id":"x","blocked_task_id":"a","blocker_at":{"edge":"start"}},
-        {"blocker_task_id":"b","blocked_task_id":"y","blocked_at":{"edge":"end"}}
+        {"blocker_task_id":"b","blocked_task_id":"y","blocked_at":{"edge":"end"}},
+        {"blocker_task_id":"p","blocked_task_id":"c","blocker_at":{"row":4,"day":"2026-10-01","label":"OPS-1 10/1"}},
+        {"blocker_task_id":"q","blocked_task_id":"b","blocker_at":{"row":0,"day":"2026-10-15"}},
+        {"blocker_task_id":"b","blocked_task_id":"r","blocked_at":{"row":0,"day":"2026-12-20","label":"OPS-2 12/20"}},
+        {"blocker_task_id":"a","blocked_task_id":"t","blocked_at":{"row":4,"day":"2026-12-31"}},
+        {"blocker_task_id":"u","blocked_task_id":"a","blocker_at":{"row":4,"day":"2026-12-10","label":"OPS-3 阻む側の長い字をここまで書き足して右へ伸ばす"}},
+        {"blocker_task_id":"c","blocked_task_id":"v","blocked_at":{"row":0,"day":"2026-09-20","label":"OPS-4 9/20"}}
     ]"#;
-    for (_, _, d) in svg_paths(&render_svg(
-        TASKS,
-        deps,
-        s(r#"{"legend":"hidden","row_labels":"hidden"}"#),
-        s(ROWS),
-    )) {
-        for (x, _) in route(&d) {
-            assert!(x >= 0.0, "{d}");
+    // view の無い図と、課題の一部だけを映す view の図
+    for options in [
+        r#"{"legend":"hidden","row_labels":"hidden"}"#,
+        r#"{"legend":"hidden","row_labels":"hidden","view":{"from":"2026-11-04","to":"2026-11-10"}}"#,
+    ] {
+        let svg = render_svg(TASKS, deps, s(options), s(ROWS));
+        let width = svg_width(&svg);
+        let paths = svg_paths(&svg);
+        assert_eq!(paths.len(), 9, "{options}");
+        for (_, _, d) in paths {
+            for (x, _) in route(&d) {
+                assert!(x >= 0.0 && x <= width, "{options} {width} {d}");
+            }
+        }
+        for label in ["OPS-1 10/1", "OPS-2 12/20", "OPS-4 9/20"] {
+            if svg.contains(&format!(">{label}<")) {
+                assert!(band_right(&svg, label) <= width, "{options} {label}");
+            }
         }
     }
+}
+
+#[test]
+fn a_row_point_past_every_task_widens_a_chart_without_a_view() {
+    // 全課題の終わり（11/13）より後の 12/20 の点も、課題の日と同じく図の日に入る
+    let deps = r#"[
+        {"blocker_task_id":"b","blocked_task_id":"r","blocked_at":{"row":4,"day":"2026-12-20"}},
+        {"blocker_task_id":"a","blocked_task_id":"y","blocked_at":{"edge":"end"}}
+    ]"#;
+    let svg = svg(deps);
+    let paths = svg_paths(&svg);
+    assert_eq!(paths.len(), 2);
+    let (tx, ty) = *route(&paths[0].2).last().unwrap();
+    // 11/2 から 48 日目の左
+    assert_eq!((tx, ty), (day_x(48.0), row_mid(4)), "{}", paths[0].2);
+    // 図の日（右の端の代わりが引かれる所）も、その日まで延びる
+    let (days_right, _) = *route(&paths[1].2).last().unwrap();
+    assert!(days_right > tx, "{days_right} {tx}");
+    assert!(svg_width(&svg) > tx, "{}", svg_width(&svg));
+    // 前の側も同じ。10/1 の点は図の始まりを 10/1 へ寄せ、x は題の列の右に来る
+    let before = render_svg(
+        TASKS,
+        r#"[{"blocker_task_id":"p","blocked_task_id":"c","blocker_at":{"row":4,"day":"2026-10-01"}}]"#,
+        s(OPTIONS),
+        s(ROWS),
+    );
+    let route_before = route(&svg_paths(&before)[0].2);
+    assert_eq!(route_before[0], (LABEL_W, row_mid(4)), "{route_before:?}");
+}
+
+#[test]
+fn a_long_label_at_the_blockers_row_point_widens_the_chart() {
+    let label = "OPS-3 阻む側の長い字をここまで書き足して右へ伸ばす";
+    let deps = format!(
+        r#"[{{"blocker_task_id":"u","blocked_task_id":"b","blocker_at":{{"row":4,"day":"2026-11-12","label":"{label}"}}}}]"#
+    );
+    let svg = svg(&deps);
+    assert!(
+        band_right(&svg, label) <= svg_width(&svg),
+        "{} {}",
+        band_right(&svg, label),
+        svg_width(&svg)
+    );
+}
+
+#[test]
+fn a_row_point_outside_a_view_stands_in_at_that_edge() {
+    // view が映すのは 11/4〜11/10。前の日の点は左の端から、後の日の点は右の端まで、
+    // 代わりの端（edge）と同じ道で引く
+    let options = r#"{"legend":"hidden","view":{"from":"2026-11-04","to":"2026-11-10"}}"#;
+    let deps = r#"[
+        {"blocker_task_id":"p","blocked_task_id":"c","blocker_at":{"row":4,"day":"2026-10-01","label":"OPS-1 10/1"}},
+        {"blocker_task_id":"c","blocked_task_id":"r","blocked_at":{"row":0,"day":"2026-12-20","label":"OPS-2 12/20"}},
+        {"blocker_task_id":"x","blocked_task_id":"c","blocker_at":{"edge":"start"}},
+        {"blocker_task_id":"c","blocked_task_id":"y","blocked_at":{"edge":"end"}}
+    ]"#;
+    let svg = render_svg(TASKS, deps, s(options), s(ROWS));
+    let paths = svg_paths(&svg);
+    assert_eq!(paths.len(), 4, "{svg}");
+    let routes: Vec<Vec<(f64, f64)>> = paths.iter().map(|(_, _, d)| route(d)).collect();
+    // 前の日の点は、左の端の代わりと同じ道（c の行に沿う）
+    assert_eq!(routes[0], routes[2]);
+    assert_eq!(routes[0][0], (LABEL_W, row_mid(3)), "{:?}", routes[0]);
+    // 後の日の点は、右の端の代わりと同じ道
+    assert_eq!(routes[1], routes[3]);
+    let width = svg_width(&svg);
+    assert!(routes[1].last().unwrap().0 <= width);
+    // 字は端に描く
+    assert!(texts(&svg).contains(&"OPS-1 10/1".to_string()));
+    assert!(texts(&svg).contains(&"OPS-2 12/20".to_string()));
+    assert!(band_right(&svg, "OPS-2 12/20") <= width);
 }
 
 #[test]
