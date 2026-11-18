@@ -298,6 +298,7 @@ fn an_arrow_whose_end_the_view_does_not_show_is_left_out() {
         GanttDep {
             blocker_task_id: "earlier".to_string(),
             blocked_task_id: "inside".to_string(),
+            ..Default::default()
         },
     ];
     let arrows = |list: &DisplayList| {

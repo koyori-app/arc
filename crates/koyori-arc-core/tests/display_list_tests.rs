@@ -34,6 +34,7 @@ fn two_task_graph() -> GanttGraph {
         deps: vec![GanttDep {
             blocker_task_id: "task-1".to_string(),
             blocked_task_id: "task-2".to_string(),
+            ..Default::default()
         }],
     }
 }
@@ -357,6 +358,7 @@ fn reversed_two_task_graph() -> GanttGraph {
         deps: vec![GanttDep {
             blocker_task_id: "task-1".to_string(),
             blocked_task_id: "task-2".to_string(),
+            ..Default::default()
         }],
     }
 }
@@ -397,18 +399,22 @@ fn cycle_downstream_graph() -> GanttGraph {
             GanttDep {
                 blocker_task_id: "a".to_string(),
                 blocked_task_id: "b".to_string(),
+                ..Default::default()
             },
             GanttDep {
                 blocker_task_id: "b".to_string(),
                 blocked_task_id: "c".to_string(),
+                ..Default::default()
             },
             GanttDep {
                 blocker_task_id: "c".to_string(),
                 blocked_task_id: "a".to_string(),
+                ..Default::default()
             },
             GanttDep {
                 blocker_task_id: "b".to_string(),
                 blocked_task_id: "d".to_string(),
+                ..Default::default()
             },
         ],
     }

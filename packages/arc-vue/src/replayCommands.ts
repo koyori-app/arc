@@ -25,7 +25,9 @@ export type ColorIdName =
   | 'Note'
   | 'NoteBg'
   | 'ProgressLine'
-  | 'DayNumber';
+  | 'DayNumber'
+  | 'DepDone'
+  | 'DepDelayed';
 
 export interface CommandBuffer {
   viewport_width: number;
@@ -61,7 +63,8 @@ export type DrawOp =
       };
     }
   | { GroupStart: { task_id: string | null } }
-  | 'GroupEnd';
+  | 'GroupEnd'
+  | { StrokeDashedPath: { d: string; color_id: number; width: number; dash: string } };
 
 export interface TaskHitRegion {
   taskId: string;
@@ -102,6 +105,8 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'NoteBg',
   'ProgressLine',
   'DayNumber',
+  'DepDone',
+  'DepDelayed',
 ];
 
 /**
@@ -121,6 +126,8 @@ const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
   Note: 'GridLabel',
   NoteBg: 'HeaderBg',
   ProgressLine: 'Progress',
+  DepDone: 'Dep',
+  DepDelayed: 'Dep',
 };
 
 function paletteColor(buffer: CommandBuffer, name: ColorIdName): string | undefined {
@@ -279,6 +286,14 @@ export function replayCommands(
       applyStrokeStyle(ctx, buffer, color_id, width, null);
       const path = new Path2D(d);
       ctx.stroke(path);
+      continue;
+    }
+
+    if ('StrokeDashedPath' in op) {
+      const { d, color_id, width, dash } = op.StrokeDashedPath;
+      applyStrokeStyle(ctx, buffer, color_id, width, dash);
+      ctx.stroke(new Path2D(d));
+      ctx.setLineDash([]);
       continue;
     }
 

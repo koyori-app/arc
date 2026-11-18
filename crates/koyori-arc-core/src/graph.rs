@@ -24,12 +24,106 @@ pub struct GanttTask {
 }
 
 /// Mirrors `task_relations` entity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// An edge with none of the optional keys is drawn as dependency arrows were
+/// before them. One with any of them is a *styled* edge
+/// (docs/design/dependency-states.md): drawn under the bars from the end of the
+/// blocker's bar down to the blocked row and right into the blocked bar, in the
+/// colour of its state, with its note right of the blocked bar, and with an end
+/// the chart does not draw replaced by the stand-in the caller gives.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GanttDep {
     /// `task_relations.blocker_task_id`
     pub blocker_task_id: String,
     /// `task_relations.blocked_task_id`
     pub blocked_task_id: String,
+    /// The edge's state: its colour, and a dashed line for `delayed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<DepState>,
+    /// Text drawn right of the blocked bar, such as `REL-17 待ち`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Where the edge starts when the blocker has no bar on the chart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocker_at: Option<DepEnd>,
+    /// Where the edge ends when the blocked task has no bar on the chart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_at: Option<DepEnd>,
+}
+
+impl GanttDep {
+    /// An edge from `blocker` to `blocked` with none of the optional keys.
+    pub fn new(blocker: impl Into<String>, blocked: impl Into<String>) -> Self {
+        Self {
+            blocker_task_id: blocker.into(),
+            blocked_task_id: blocked.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Whether the edge gives any of the optional keys, and so is drawn in
+    /// the styled form.
+    pub fn is_styled(&self) -> bool {
+        self.state.is_some()
+            || self.note.is_some()
+            || self.blocker_at.is_some()
+            || self.blocked_at.is_some()
+    }
+}
+
+/// The state an edge is drawn in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DepState {
+    /// The blocker is not done and the blocked task has not reached its start.
+    Normal,
+    /// The blocker is done.
+    Done,
+    /// The blocker is not done though the blocked task's start has come: a
+    /// dashed line in the warning colour.
+    Delayed,
+}
+
+/// The stand-in for an end of an edge the chart does not draw.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DepEnd {
+    /// A point on one of the caller's rows (`row` counts the rows of
+    /// `rows_json` from 0), on `day`: the header row of a collapsed group the
+    /// task is in. `label` is drawn beside the point, such as the task's key.
+    Row {
+        row: usize,
+        #[serde(deserialize_with = "crate::date_input::deserialize_date")]
+        day: NaiveDate,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    /// An edge of the chart: the task lies outside the days or the filter the
+    /// chart shows. The edge is drawn along the drawn end's row to this edge,
+    /// and `label` is drawn at it, such as the task's key and start.
+    Edge {
+        edge: DepEdge,
+        #[serde(default)]
+        label: Option<String>,
+    },
+}
+
+impl DepEnd {
+    pub fn label(&self) -> Option<&str> {
+        match self {
+            DepEnd::Row { label, .. } | DepEnd::Edge { label, .. } => label.as_deref(),
+        }
+    }
+}
+
+/// Which edge of the chart a stand-in end lies at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DepEdge {
+    /// The left edge: before the first day the chart shows.
+    Start,
+    /// The right edge: after the last day the chart shows.
+    End,
 }
 
 /// One row of a chart whose rows the caller lays out

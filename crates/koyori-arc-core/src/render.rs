@@ -18,7 +18,7 @@ use crate::display_list::{
 use crate::error::{
     RenderError, CODE_CANVAS_CAPACITY, CODE_INPUT_LIMIT, CODE_PARSE_ERROR, CODE_SERIALIZE_ERROR,
 };
-use crate::graph::{parse_tasks_json, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
+use crate::graph::{parse_tasks_json, DepEnd, GanttDep, GanttGraph, GanttRow, GanttTask, TaskRow};
 
 /// Upper bounds enforced at Wasm entry points to limit memory/CPU abuse.
 pub const MAX_TASKS: usize = 10_000;
@@ -201,7 +201,7 @@ fn canvas_graph_limit_error(
     // The days are checked first, so a chart of a plausible length reaches the
     // exact width. A label can run past the days, so the days alone under-count.
     let epoch = tasks.iter().map(|t| t.start).min().unwrap_or_default();
-    let width_px = chart_width_for(tasks, rows, epoch, shape);
+    let width_px = chart_width_for(tasks, deps, rows, epoch, shape);
     if width_px > MAX_CANVAS_SIDE_PX as f64 {
         return Some(RenderError::new(
             CODE_CANVAS_CAPACITY,
@@ -629,6 +629,63 @@ impl ResolvedOptions {
 /// refused when it is too large, cannot be read, names a task that is not in
 /// `tasks`, lists a task twice, or asks for a height that is not a number above
 /// 0 and at most `MAX_SIZE_PX`.
+/// Refuses the keys a styled dependency edge gives that the chart cannot draw
+/// (docs/design/dependency-states.md): a note or label longer than a row's
+/// note may be, a stand-in row the caller's rows do not have or that is not a
+/// group row, and a stand-in day farther from the first task than a task's
+/// dates may be.
+fn dep_marks_error(
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    tasks: &[GanttTask],
+) -> Option<RenderError> {
+    let deps_error =
+        |m: String| RenderError::new(CODE_PARSE_ERROR, format!("parse error: deps: {m}"));
+    let first = tasks.iter().map(|t| t.start).min();
+    for dep in deps {
+        let edge = format!("`{}` → `{}`", dep.blocker_task_id, dep.blocked_task_id);
+        let texts = [
+            dep.note.as_deref(),
+            dep.blocker_at.as_ref().and_then(|a| a.label()),
+            dep.blocked_at.as_ref().and_then(|a| a.label()),
+        ];
+        if texts
+            .iter()
+            .flatten()
+            .any(|t| t.chars().count() > MAX_NOTE_CHARS)
+        {
+            return Some(deps_error(format!(
+                "note or label of {edge}: more than {MAX_NOTE_CHARS} characters"
+            )));
+        }
+        for at in [&dep.blocker_at, &dep.blocked_at].into_iter().flatten() {
+            if let DepEnd::Row { row, day, .. } = at {
+                match rows.and_then(|r| r.get(*row)) {
+                    Some(GanttRow::Group { .. }) => {}
+                    Some(GanttRow::Task(_)) => {
+                        return Some(deps_error(format!(
+                            "row {row} of {edge}: expected a group row"
+                        )))
+                    }
+                    None => {
+                        return Some(deps_error(format!(
+                            "row {row} of {edge}: no such row in rows"
+                        )))
+                    }
+                }
+                if let Some(first) = first {
+                    if (*day - first).num_days().abs() > MAX_DATE_SPAN_DAYS {
+                        return Some(deps_error(format!(
+                            "day of {edge}: more than {MAX_DATE_SPAN_DAYS} days from the first task"
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_rows_json(
     rows_json: Option<&str>,
     tasks: &[GanttTask],
@@ -752,6 +809,9 @@ fn prepare_svg_input(
         return Err(err);
     }
     let rows = parse_rows_json(rows_json, &tasks)?;
+    if let Some(err) = dep_marks_error(&deps, rows.as_deref(), &tasks) {
+        return Err(err);
+    }
     if let Some(err) = bar_height_error(rows.as_deref(), &resolved.shape()) {
         return Err(err);
     }
@@ -975,6 +1035,9 @@ pub fn render_canvas_commands(
         Ok(rows) => rows,
         Err(err) => return err.to_json(),
     };
+    if let Some(err) = dep_marks_error(&deps, rows.as_deref(), &tasks) {
+        return err.to_json();
+    }
     let shape = resolved.shape();
     if let Some(err) = bar_height_error(rows.as_deref(), &shape) {
         return err.to_json();
@@ -1042,6 +1105,7 @@ mod tests {
         let deps = vec![GanttDep {
             blocker_task_id: "task-1".to_string(),
             blocked_task_id: "task-2".to_string(),
+            ..Default::default()
         }];
         (tasks, deps)
     }
@@ -1102,6 +1166,7 @@ mod tests {
         let deps = vec![GanttDep {
             blocker_task_id: "t1".to_string(),
             blocked_task_id: "t2".to_string(),
+            ..Default::default()
         }];
         let svg = render(&tasks, &deps, &ChartOptions::default());
         let path = svg
@@ -1356,6 +1421,7 @@ mod tests {
             .map(|i| GanttDep {
                 blocker_task_id: "t0".to_string(),
                 blocked_task_id: format!("t{i}"),
+                ..Default::default()
             })
             .collect();
         let json = render_canvas_commands(

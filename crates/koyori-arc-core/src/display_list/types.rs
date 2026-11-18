@@ -51,6 +51,13 @@ pub enum ColorId {
     /// drawn with no colour of its own, as it was before it had a name (see
     /// `Palette::get`).
     DayNumber,
+    /// A styled dependency edge whose blocker is done. Not in the standard
+    /// palette: it falls back to `Dep`.
+    DepDone,
+    /// A styled dependency edge whose blocked task's start has come while its
+    /// blocker is not done, and that edge's note. Not in the standard palette:
+    /// it falls back to `Dep`.
+    DepDelayed,
 }
 
 impl ColorId {
@@ -67,6 +74,7 @@ impl ColorId {
             ColorId::Note => Some(ColorId::GridLabel),
             ColorId::NoteBg => Some(ColorId::HeaderBg),
             ColorId::ProgressLine => Some(ColorId::Progress),
+            ColorId::DepDone | ColorId::DepDelayed => Some(ColorId::Dep),
             _ => None,
         }
     }
@@ -359,6 +367,10 @@ pub enum LayerKind {
     /// The notes of task rows with their bands, over the today line and the
     /// grid. Only a chart with a note has this layer.
     Notes,
+    /// The styled dependency edges, under the bars and over the group bands.
+    /// Only a chart with a styled edge has this layer. Added last, so the
+    /// kinds before it keep their place in every serialised form.
+    DependencyLinks,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -455,6 +467,10 @@ pub enum PathSemantic {
     DependencyArrow,
     /// The outline of a bar whose task row gives a state.
     BarOutline,
+    /// A styled dependency edge in the `delayed` state, drawn dashed
+    /// (`DEP_DELAYED_DASH`). Added last, so the variants before it keep their
+    /// place in every serialised form.
+    DelayedDependencyArrow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

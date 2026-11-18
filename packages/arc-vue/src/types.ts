@@ -58,4 +58,28 @@ export interface GanttDep {
   blocker_task_id: string;
   /** `task_relations.blocked_task_id` */
   blocked_task_id: string;
+  /**
+   * The edge's state. Given (or any key below), the edge is drawn in the
+   * styled form under the bars: `'done'` in `DepDone`, `'delayed'` dashed in
+   * `DepDelayed`, `'normal'` in `Dep` (docs/design/dependency-states.md).
+   */
+  state?: DepState;
+  /** Text drawn right of the blocked bar, after the row's own note. */
+  note?: string;
+  /** Where the edge starts when the blocker has no bar on the chart. */
+  blocker_at?: DepEnd;
+  /** Where the edge ends when the blocked task has no bar on the chart. */
+  blocked_at?: DepEnd;
 }
+
+/** The state a styled dependency edge is drawn in. */
+export type DepState = 'normal' | 'done' | 'delayed';
+
+/**
+ * The stand-in for an end of an edge the chart does not draw: a point on one
+ * of the caller's group rows (`row` counts the rows from 0) on `day`, or an
+ * edge of the chart for a task outside the days or the filter it shows.
+ */
+export type DepEnd =
+  | { row: number; day: string; label?: string }
+  | { edge: 'start' | 'end'; label?: string };

@@ -1,4 +1,4 @@
-use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEFAULT_FONT_WEIGHT};
+use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEFAULT_FONT_WEIGHT, DEP_DELAYED_DASH};
 use crate::display_list::types::*;
 use crate::display_list::DisplayList;
 
@@ -60,6 +60,8 @@ fn color_id_tag(id: ColorId) -> u8 {
         ColorId::NoteBg => 22,
         ColorId::ProgressLine => 23,
         ColorId::DayNumber => 24,
+        ColorId::DepDone => 25,
+        ColorId::DepDelayed => 26,
     }
 }
 
@@ -102,11 +104,20 @@ fn collect_draw_ops(prim: &Primitive, palette: &Palette, ops: &mut Vec<DrawOp>) 
             });
         }
         Primitive::Path(p) => {
-            ops.push(DrawOp::StrokePath {
-                d: p.d.clone(),
-                color_id: color_id_tag(p.stroke),
-                width: p.stroke_width,
-            });
+            if p.semantic == PathSemantic::DelayedDependencyArrow {
+                ops.push(DrawOp::StrokeDashedPath {
+                    d: p.d.clone(),
+                    color_id: color_id_tag(p.stroke),
+                    width: p.stroke_width,
+                    dash: DEP_DELAYED_DASH.to_string(),
+                });
+            } else {
+                ops.push(DrawOp::StrokePath {
+                    d: p.d.clone(),
+                    color_id: color_id_tag(p.stroke),
+                    width: p.stroke_width,
+                });
+            }
         }
         Primitive::Polyline(p) => {
             ops.push(DrawOp::StrokePolyline {

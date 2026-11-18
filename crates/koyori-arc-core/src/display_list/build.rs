@@ -1,7 +1,10 @@
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashMap;
 
-use crate::graph::{BarShape, BarState, GanttGraph, GanttRow, GanttTask, TaskRow};
+use crate::graph::{
+    BarShape, BarState, DepEdge, DepEnd, DepState, GanttDep, GanttGraph, GanttRow, GanttTask,
+    TaskRow,
+};
 use crate::progress::{by_row_bend, progress_line, progress_line_by_row};
 
 use super::constants::*;
@@ -72,14 +75,14 @@ pub fn build_display_list_with_rows(
         weekend,
         ..
     } = *options;
-    let epoch = chart_epoch(epoch, options);
+    let epoch = chart_epoch(epoch, &graph.deps, options);
     let plan = RowPlan::new(&graph.tasks, &graph.deps, rows, options);
     let header_h = plan.header_h;
     let bar_h = plan.bar_h;
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
 
-    let total_days = chart_days(&graph.tasks, rows, epoch, options);
+    let total_days = chart_days(&graph.tasks, &graph.deps, rows, epoch, options);
     let view_days = options.view.map(|_| total_days);
     // The x where the days a view shows end; past it only marks and notes.
     let days_right = axis.x(total_days as f64);
@@ -88,7 +91,7 @@ pub fn build_display_list_with_rows(
     // The legend's width does not depend on how many days there are, so a short
     // span would otherwise leave it running past the right edge of the viewBox.
     let legend = (legend_mode == LegendMode::Shown).then(legend_layout);
-    let chart_w = chart_width_for(&graph.tasks, rows, epoch, options);
+    let chart_w = chart_width_for(&graph.tasks, &graph.deps, rows, epoch, options);
     let chart_h = chart_height_of(&plan, legend_mode);
 
     let viewport = Viewport {
@@ -503,23 +506,27 @@ pub fn build_display_list_with_rows(
     });
 
     // Dependencies layer
-    // First occurrence wins for a repeated id, the same rule `layout::assign_rows`
-    // uses to place the dependency edges. `collect()` into a map keeps the last
-    // one, which would draw an arrow from a different bar than the row it was
-    // laid out for.
-    let mut row_map: HashMap<&str, usize> = HashMap::new();
-    for (i, t) in graph.tasks.iter().enumerate() {
-        if let Some(slot) = plan.slot_of_task[i] {
-            row_map.entry(t.id.as_str()).or_insert(slot);
-        }
-    }
-    let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
-    for t in &graph.tasks {
-        task_map.entry(t.id.as_str()).or_insert(t);
-    }
+    let (task_map, row_map) = task_maps(&graph.tasks, &plan);
 
     let mut dep_prims = Vec::new();
+    let mut link_prims = Vec::new();
+    let link_ctx = LinkContext {
+        plan: &plan,
+        axis: &axis,
+        epoch,
+        bar_h,
+        view_days,
+        days_right,
+        row_window,
+    };
     for dep in &graph.deps {
+        if dep.is_styled() {
+            if let Some(link) = styled_link(&link_ctx, dep, &task_map, &row_map) {
+                link_prims.push(link.path);
+                note_prims.extend(link.labels);
+            }
+            continue;
+        }
         let Some(from_t) = task_map.get(dep.blocker_task_id.as_str()) else {
             continue;
         };
@@ -610,6 +617,46 @@ pub fn build_display_list_with_rows(
         kind: LayerKind::Dependencies,
         primitives: dep_prims,
     });
+    // The styled edges run under the bars and over the group bands. No styled
+    // edge, no layer: a chart without one is the chart drawn before them.
+    if !link_prims.is_empty() {
+        let at = layers
+            .iter()
+            .position(|l| l.kind == LayerKind::Bars)
+            .unwrap_or(layers.len());
+        layers.insert(
+            at,
+            Layer {
+                kind: LayerKind::DependencyLinks,
+                primitives: link_prims,
+            },
+        );
+    }
+    // The notes of styled edges, right of the blocked bar after its own note.
+    for n in dep_notes(
+        &graph.tasks,
+        &graph.deps,
+        rows,
+        epoch,
+        &axis,
+        view_days,
+        bar_h,
+    ) {
+        let Some(&slot) = row_map.get(n.task_id) else {
+            continue;
+        };
+        if !row_in_window(slot, row_window) {
+            continue;
+        }
+        let cy = plan.bar_top(&plan.slots[slot]) + bar_h / 2.0;
+        note_prims.extend(colored_note_with_band(
+            n.x,
+            cy,
+            n.text,
+            None,
+            dep_color(n.state),
+        ));
+    }
 
     // Today marker. A view shows `from` through `to`, so its today is read by
     // the date: the x of the day right after `to` is the view's right edge,
@@ -798,14 +845,15 @@ pub(crate) fn chart_height_of(plan: &RowPlan, legend: LegendMode) -> f64 {
 /// the rows in the window, or the width would change as the chart scrolls.
 pub(crate) fn chart_width_for(
     tasks: &[GanttTask],
+    deps: &[GanttDep],
     rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> f64 {
-    let epoch = chart_epoch(epoch, options);
+    let epoch = chart_epoch(epoch, deps, options);
     let axis = XAxis::of(options);
     let label_w = axis.label_w;
-    let total_days = chart_days(tasks, rows, epoch, options);
+    let total_days = chart_days(tasks, deps, rows, epoch, options);
     let view_days = options.view.map(|_| total_days);
     // A chart that draws a column for every day (the `Day` scale, or weekend
     // bands) holds up the column of a milestone on its last day as well.
@@ -849,6 +897,514 @@ pub(crate) fn chart_width_for(
         .max(marks_right_edge(
             tasks, rows, epoch, &axis, view_days, bar_h,
         ))
+        .max(dep_notes_right_edge(
+            tasks, deps, rows, epoch, &axis, view_days, bar_h, options, total_days,
+        ))
+}
+
+/// The colour a styled edge and its note are drawn in.
+fn dep_color(state: Option<DepState>) -> ColorId {
+    match state {
+        None | Some(DepState::Normal) => ColorId::Dep,
+        Some(DepState::Done) => ColorId::DepDone,
+        Some(DepState::Delayed) => ColorId::DepDelayed,
+    }
+}
+
+/// A styled edge's note, where it starts.
+struct DepNote<'a> {
+    task_id: &'a str,
+    x: f64,
+    text: &'a str,
+    state: Option<DepState>,
+}
+
+/// Where the notes of styled edges go: right of the blocked bar, after the
+/// row's own note (and its diamond), one after another for a bar several
+/// edges block, so no two notes run over each other. Only a blocked task the
+/// chart shows gets its edges' notes. Drawing and the chart's width both read
+/// this, so the width cannot disagree with what is drawn.
+fn dep_notes<'a>(
+    tasks: &'a [GanttTask],
+    deps: &'a [GanttDep],
+    rows: Option<&'a [GanttRow]>,
+    epoch: NaiveDate,
+    axis: &XAxis,
+    view_days: Option<i64>,
+    bar_h: f64,
+) -> Vec<DepNote<'a>> {
+    let mut by_id: HashMap<&str, &GanttTask> = HashMap::new();
+    for t in tasks {
+        by_id.entry(t.id.as_str()).or_insert(t);
+    }
+    let mut row_of: HashMap<&str, &TaskRow> = HashMap::new();
+    for r in rows.unwrap_or(&[]) {
+        if let GanttRow::Task(row) = r {
+            row_of.entry(row.task_id.as_str()).or_insert(row);
+        }
+    }
+    let mut next_x: HashMap<&str, f64> = HashMap::new();
+    let mut out = Vec::new();
+    for dep in deps {
+        let (Some(text), true) = (dep.note.as_deref(), dep.blocked_at.is_none()) else {
+            continue;
+        };
+        let id = dep.blocked_task_id.as_str();
+        let Some(task) = by_id.get(id) else {
+            continue;
+        };
+        let row = row_of.get(id).copied();
+        if !matches!(
+            Placement::of(task, row, epoch, view_days),
+            Placement::Shown(_)
+        ) {
+            continue;
+        }
+        let x = *next_x.entry(id).or_insert_with(|| match row {
+            Some(row) => {
+                let g = MarkGeometry::of(task, row, axis, epoch, view_days, bar_h);
+                match row.note.as_deref() {
+                    Some(n) => {
+                        text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None) + NOTE_GAP_PX
+                    }
+                    None => g.note_x,
+                }
+            }
+            None => {
+                let right = if is_zero_duration(task) {
+                    axis.x(task.start_days(epoch)) + bar_h / 2.0
+                } else {
+                    axis.x(task.end_days(epoch))
+                };
+                right + NOTE_GAP_PX
+            }
+        });
+        next_x.insert(
+            id,
+            text_right_edge(x, None, text, GRID_LABEL_FONT_PX, None) + NOTE_GAP_PX,
+        );
+        out.push(DepNote {
+            task_id: id,
+            x,
+            text,
+            state: dep.state,
+        });
+    }
+    out
+}
+
+/// The task of each id and the slot it is drawn on. First occurrence wins for
+/// a repeated id, the same rule `layout::assign_rows` uses to place the
+/// dependency edges. `collect()` into a map keeps the last one, which would
+/// draw an arrow from a different bar than the row it was laid out for.
+fn task_maps<'a>(
+    tasks: &'a [GanttTask],
+    plan: &RowPlan,
+) -> (HashMap<&'a str, &'a GanttTask>, HashMap<&'a str, usize>) {
+    let mut row_map: HashMap<&str, usize> = HashMap::new();
+    for (i, t) in tasks.iter().enumerate() {
+        if let Some(slot) = plan.slot_of_task[i] {
+            row_map.entry(t.id.as_str()).or_insert(slot);
+        }
+    }
+    let mut task_map: HashMap<&str, &GanttTask> = HashMap::new();
+    for t in tasks {
+        task_map.entry(t.id.as_str()).or_insert(t);
+    }
+    (task_map, row_map)
+}
+
+/// The furthest right the notes of styled edges, and their routes, arrow
+/// heads and labels, reach, with the right padding past them. The routes are
+/// the ones drawn (`styled_link`), every edge and not only those in the row
+/// window, so the width does not change as the chart scrolls.
+#[allow(clippy::too_many_arguments)]
+fn dep_notes_right_edge(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+    axis: &XAxis,
+    view_days: Option<i64>,
+    bar_h: f64,
+    options: &ChartOptions,
+    total_days: i64,
+) -> f64 {
+    let notes = dep_notes(tasks, deps, rows, epoch, axis, view_days, bar_h)
+        .iter()
+        .map(|n| text_right_edge(n.x, None, n.text, GRID_LABEL_FONT_PX, None))
+        .fold(0.0, f64::max);
+    let links = if deps.iter().any(GanttDep::is_styled) {
+        let plan = RowPlan::new(tasks, deps, rows, options);
+        let (task_map, row_map) = task_maps(tasks, &plan);
+        let ctx = LinkContext {
+            plan: &plan,
+            axis,
+            epoch,
+            bar_h: plan.bar_h,
+            view_days,
+            days_right: axis.x(total_days as f64),
+            row_window: None,
+        };
+        deps.iter()
+            .filter(|d| d.is_styled())
+            .filter_map(|d| styled_link(&ctx, d, &task_map, &row_map))
+            .map(|link| link.right)
+            .fold(0.0, f64::max)
+    } else {
+        0.0
+    };
+    let edge = notes.max(links);
+    if edge > 0.0 {
+        edge + CHART_RIGHT_PADDING_PX
+    } else {
+        0.0
+    }
+}
+
+/// What a styled edge draws.
+struct StyledLink {
+    path: Primitive,
+    labels: Vec<Primitive>,
+    /// The furthest right the route, its arrow head and its labels reach.
+    right: f64,
+}
+
+/// What every styled edge reads off the chart.
+struct LinkContext<'a> {
+    plan: &'a RowPlan,
+    axis: &'a XAxis,
+    epoch: NaiveDate,
+    bar_h: f64,
+    view_days: Option<i64>,
+    days_right: f64,
+    row_window: Option<(usize, usize)>,
+}
+
+/// An end of a styled edge, as the chart draws it.
+enum LinkEnd {
+    /// A task's bar: its slot, its left and right, and the top of the bar.
+    Bar {
+        slot: usize,
+        left: f64,
+        right: f64,
+        top: f64,
+    },
+    /// A point on a row: a stand-in for a task in a collapsed group.
+    Point {
+        slot: usize,
+        x: f64,
+        label: Option<String>,
+    },
+    /// An edge of the chart, for a task outside what the chart shows.
+    Edge {
+        edge: DepEdge,
+        label: Option<String>,
+    },
+}
+
+impl LinkEnd {
+    fn slot(&self) -> Option<usize> {
+        match self {
+            LinkEnd::Bar { slot, .. } | LinkEnd::Point { slot, .. } => Some(*slot),
+            LinkEnd::Edge { .. } => None,
+        }
+    }
+}
+
+fn link_end(
+    ctx: &LinkContext,
+    task_id: &str,
+    at: Option<&DepEnd>,
+    task_map: &HashMap<&str, &GanttTask>,
+    row_map: &HashMap<&str, usize>,
+) -> Option<LinkEnd> {
+    match at {
+        Some(DepEnd::Row { row, day, label }) => {
+            let slot = ctx.plan.slots.iter().position(|s| s.row == Some(*row))?;
+            let days = (*day - ctx.epoch).num_days();
+            // A view that does not show the day: the edge stands in at that
+            // side, as a stand-in edge does (`DepEnd::Edge`).
+            if let Some(view_days) = ctx.view_days {
+                let edge = if days < 0 {
+                    Some(DepEdge::Start)
+                } else if days >= view_days {
+                    Some(DepEdge::End)
+                } else {
+                    None
+                };
+                if let Some(edge) = edge {
+                    return Some(LinkEnd::Edge {
+                        edge,
+                        label: label.clone(),
+                    });
+                }
+            }
+            let x = ctx.axis.x(days as f64);
+            Some(LinkEnd::Point {
+                slot,
+                x,
+                label: label.clone(),
+            })
+        }
+        Some(DepEnd::Edge { edge, label }) => Some(LinkEnd::Edge {
+            edge: *edge,
+            label: label.clone(),
+        }),
+        None => {
+            let task = task_map.get(task_id)?;
+            let slot = *row_map.get(task_id)?;
+            let placement = Placement::of(task, None, ctx.epoch, ctx.view_days);
+            let Placement::Shown(shown) = placement else {
+                return None;
+            };
+            let left = ctx.axis.x(shown.start);
+            let right = if is_zero_duration(task) {
+                left
+            } else {
+                ctx.axis.x(shown.end)
+            };
+            let top = ctx.plan.bar_top(&ctx.plan.slots[slot]);
+            Some(LinkEnd::Bar {
+                slot,
+                left,
+                right,
+                top,
+            })
+        }
+    }
+}
+
+/// A styled edge (docs/design/dependency-states.md): from just inside the end
+/// of the blocker's bar straight down (or up) to the middle of the blocked row,
+/// and right into the blocked bar. A blocked bar that starts before the edge
+/// leaves turns back along the blocked row's near border and comes in from the
+/// left. A stand-in row point stands for a bar; a stand-in edge draws the edge
+/// along the drawn end's row to that edge, with the label there.
+fn styled_link(
+    ctx: &LinkContext,
+    dep: &GanttDep,
+    task_map: &HashMap<&str, &GanttTask>,
+    row_map: &HashMap<&str, usize>,
+) -> Option<StyledLink> {
+    let from = link_end(
+        ctx,
+        &dep.blocker_task_id,
+        dep.blocker_at.as_ref(),
+        task_map,
+        row_map,
+    )?;
+    let to = link_end(
+        ctx,
+        &dep.blocked_task_id,
+        dep.blocked_at.as_ref(),
+        task_map,
+        row_map,
+    )?;
+    let (from_slot, to_slot) = (from.slot(), to.slot());
+    let in_window = match (from_slot, to_slot) {
+        (Some(a), Some(b)) => dep_incident_to_window(a, b, ctx.row_window),
+        (Some(a), None) | (None, Some(a)) => row_in_window(a, ctx.row_window),
+        (None, None) => false,
+    };
+    if !in_window || (from_slot.is_some() && from_slot == to_slot) {
+        return None;
+    }
+    let slot_mid = |slot: usize| {
+        let s = &ctx.plan.slots[slot];
+        s.y_top + s.height / 2.0
+    };
+    let left_edge = ctx.axis.label_w;
+    let right_edge = ctx.days_right;
+    let color = dep_color(dep.state);
+    let mut labels = Vec::new();
+    let (points, tip_right) = match (&from, &to) {
+        (LinkEnd::Edge { .. }, LinkEnd::Edge { .. }) => return None,
+        // The blocked task lies outside: along the blocker's row to the edge.
+        (_, LinkEnd::Edge { edge, label }) => {
+            let slot = from_slot?;
+            let y = slot_mid(slot);
+            let (x0, x1) = match (&from, edge) {
+                (LinkEnd::Bar { right, .. }, DepEdge::End) => (*right, right_edge),
+                (LinkEnd::Bar { left, .. }, DepEdge::Start) => (*left, left_edge),
+                (LinkEnd::Point { x, .. }, DepEdge::End) => (*x, right_edge),
+                (LinkEnd::Point { x, .. }, DepEdge::Start) => (*x, left_edge),
+                (LinkEnd::Edge { .. }, _) => return None,
+            };
+            if let Some(text) = label {
+                let (lx, anchor) = match edge {
+                    DepEdge::End => (x1 - ARROW_HEAD - DEP_LABEL_GAP_PX, TextAnchor::End),
+                    DepEdge::Start => (x1 + ARROW_HEAD + DEP_LABEL_GAP_PX, TextAnchor::Start),
+                };
+                labels.extend(link_label(lx, y - GRID_LABEL_FONT_PX, text, anchor, color));
+            }
+            (vec![(x0, y), (x1, y)], *edge == DepEdge::End)
+        }
+        // The blocker lies outside: from the edge along the blocked row.
+        (LinkEnd::Edge { edge, label }, _) => {
+            let slot = to_slot?;
+            let y = slot_mid(slot);
+            let x0 = match edge {
+                DepEdge::Start => left_edge,
+                DepEdge::End => right_edge,
+            };
+            let x1 = match &to {
+                LinkEnd::Bar { left, .. } => *left - DEP_TIP_GAP_PX,
+                LinkEnd::Point { x, .. } => *x,
+                LinkEnd::Edge { .. } => return None,
+            };
+            if let Some(text) = label {
+                let (lx, anchor) = match edge {
+                    DepEdge::Start => (x0 + DEP_LABEL_GAP_PX, TextAnchor::Start),
+                    DepEdge::End => (x0 - DEP_LABEL_GAP_PX, TextAnchor::End),
+                };
+                labels.extend(link_label(lx, y - GRID_LABEL_FONT_PX, text, anchor, color));
+            }
+            (vec![(x0, y), (x1, y)], x1 >= x0)
+        }
+        _ => {
+            let (from_slot, to_slot) = (from_slot?, to_slot?);
+            let down = to_slot > from_slot;
+            let (sx, sy) = match &from {
+                LinkEnd::Bar {
+                    left, right, top, ..
+                } => {
+                    let x = (*right - DEP_EXIT_INSET_PX)
+                        .max(*left + (*right - *left).min(DEP_EXIT_INSET_PX) / 2.0);
+                    (x, if down { *top + ctx.bar_h } else { *top })
+                }
+                LinkEnd::Point { x, .. } => (*x, slot_mid(from_slot)),
+                LinkEnd::Edge { .. } => return None,
+            };
+            let ey = slot_mid(to_slot);
+            let ex = match &to {
+                LinkEnd::Bar { left, .. } => *left - DEP_TIP_GAP_PX,
+                LinkEnd::Point { x, .. } => *x,
+                LinkEnd::Edge { .. } => return None,
+            };
+            if let LinkEnd::Point {
+                label: Some(text), ..
+            } = &to
+            {
+                labels.extend(link_label(
+                    ex + ARROW_HEAD + DEP_LABEL_GAP_PX,
+                    ey,
+                    text,
+                    TextAnchor::Start,
+                    color,
+                ));
+            }
+            if let LinkEnd::Point {
+                label: Some(text),
+                x,
+                ..
+            } = &from
+            {
+                labels.extend(link_label(
+                    *x + DEP_LABEL_GAP_PX,
+                    sy - GRID_LABEL_FONT_PX,
+                    text,
+                    TextAnchor::Start,
+                    color,
+                ));
+            }
+            let points = if ex - DEP_EXIT_INSET_PX >= sx {
+                vec![(sx, sy), (sx, ey), (ex, ey)]
+            } else {
+                let s = &ctx.plan.slots[to_slot];
+                let border = if down { s.y_top } else { s.y_bottom() };
+                let back = (ex - DEP_DETOUR_PX).max(DEP_CORNER_PX);
+                vec![(sx, sy), (sx, border), (back, border), (back, ey), (ex, ey)]
+            };
+            (points, true)
+        }
+    };
+    let (tx, ty) = *points.last()?;
+    let head = if tip_right { -ARROW_HEAD } else { ARROW_HEAD };
+    let right = points
+        .iter()
+        .map(|&(x, _)| x)
+        .chain([tx + head])
+        .chain(labels.iter().filter_map(|p| match p {
+            Primitive::Rect(r) => Some(r.x + r.width),
+            _ => None,
+        }))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let d = format!(
+        "{} M {} {} L {tx} {ty} L {} {}",
+        rounded_path(&points),
+        tx + head,
+        ty - ARROW_HEAD,
+        tx + head,
+        ty + ARROW_HEAD,
+    );
+    Some(StyledLink {
+        path: Primitive::Path(PathPrim {
+            d,
+            stroke: color,
+            stroke_width: 1.5,
+            semantic: if dep.state == Some(DepState::Delayed) {
+                PathSemantic::DelayedDependencyArrow
+            } else {
+                PathSemantic::DependencyArrow
+            },
+        }),
+        labels,
+        right,
+    })
+}
+
+/// An orthogonal polyline as a path with its corners rounded by
+/// `DEP_CORNER_PX` (less where a leg is too short for it).
+fn rounded_path(points: &[(f64, f64)]) -> String {
+    let mut d = String::new();
+    let Some(&(x0, y0)) = points.first() else {
+        return d;
+    };
+    d.push_str(&format!("M {x0} {y0}"));
+    for i in 1..points.len() {
+        let (x, y) = points[i];
+        let Some(&(nx, ny)) = points.get(i + 1) else {
+            d.push_str(&format!(" L {x} {y}"));
+            break;
+        };
+        let (px, py) = points[i - 1];
+        let len_in = (x - px).abs() + (y - py).abs();
+        let len_out = (nx - x).abs() + (ny - y).abs();
+        let r = DEP_CORNER_PX.min(len_in / 2.0).min(len_out / 2.0);
+        let (ix, iy) = (x - sign(x - px) * r, y - sign(y - py) * r);
+        let (ox, oy) = (x + sign(nx - x) * r, y + sign(ny - y) * r);
+        d.push_str(&format!(" L {ix} {iy} Q {x} {y} {ox} {oy}"));
+    }
+    d
+}
+
+/// -1, 0 or 1 by the sign of `v`. `f64::signum` gives 1 for 0, which would
+/// bend a straight leg sideways.
+fn sign(v: f64) -> f64 {
+    if v > 0.0 {
+        1.0
+    } else if v < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+/// A label at a styled edge's stand-in end, on a band of the chart's ground.
+fn link_label(x: f64, cy: f64, text: &str, anchor: TextAnchor, color: ColorId) -> [Primitive; 2] {
+    let w = text_width_weighted_px(text, GRID_LABEL_FONT_PX, None);
+    let left = match anchor {
+        TextAnchor::End => x - w,
+        TextAnchor::Middle => x - w / 2.0,
+        TextAnchor::Start => x,
+    };
+    let [band, mut label] = colored_note_with_band(left, cy, text, None, color);
+    if let Primitive::Text(t) = &mut label {
+        t.x = x;
+        t.anchor = Some(anchor);
+    }
+    [band, label]
 }
 
 /// The days the grid draws a line on. A view draws none on the day past its
@@ -903,21 +1459,39 @@ fn by_row_progress_line(
     progress_line_by_row(&line_rows, today_x)
 }
 
-/// The chart's first day: the view's, or the one the caller passed.
-fn chart_epoch(epoch: NaiveDate, options: &ChartOptions) -> NaiveDate {
-    options.view.map_or(epoch, |v| v.from)
+/// The chart's first day: the view's, or, without a view, the earlier of the
+/// first task's start (`epoch`) and the first day a styled edge's row point
+/// stands on, so the point is on the chart as a task's bar is.
+fn chart_epoch(epoch: NaiveDate, deps: &[GanttDep], options: &ChartOptions) -> NaiveDate {
+    options.view.map_or_else(
+        || dep_row_days(deps).fold(epoch, NaiveDate::min),
+        |v| v.from,
+    )
 }
 
-/// The days the chart spans: the view's, or every task's and deadline's.
+/// The days the row points of styled edges stand on (`DepEnd::Row`).
+fn dep_row_days(deps: &[GanttDep]) -> impl Iterator<Item = NaiveDate> + '_ {
+    deps.iter()
+        .flat_map(|d| [d.blocker_at.as_ref(), d.blocked_at.as_ref()])
+        .flatten()
+        .filter_map(|at| match at {
+            DepEnd::Row { day, .. } => Some(*day),
+            DepEnd::Edge { .. } => None,
+        })
+}
+
+/// The days the chart spans: the view's, or every task's, deadline's and
+/// styled edge row point's.
 fn chart_days(
     tasks: &[GanttTask],
+    deps: &[GanttDep],
     rows: Option<&[GanttRow]>,
     epoch: NaiveDate,
     options: &ChartOptions,
 ) -> i64 {
     match options.view {
         Some(view) => view.days(),
-        None => span_days(tasks, rows, epoch),
+        None => span_days(tasks, deps, rows, epoch),
     }
 }
 
@@ -1166,10 +1740,17 @@ fn task_tooltip(task: &GanttTask) -> String {
     )
 }
 
-/// The days the chart spans: through the last task's end, and through the
-/// last hard deadline a task row gives, so its diamond is on the chart. A chart
-/// without marks spans what it spanned before them.
-fn span_days(tasks: &[GanttTask], rows: Option<&[GanttRow]>, epoch: NaiveDate) -> i64 {
+/// The days the chart spans: through the last task's end, through the last
+/// hard deadline a task row gives, so its diamond is on the chart, and through
+/// the last day a styled edge's row point stands on. A chart without marks or
+/// row points spans what it spanned before them.
+fn span_days(
+    tasks: &[GanttTask],
+    deps: &[GanttDep],
+    rows: Option<&[GanttRow]>,
+    epoch: NaiveDate,
+) -> i64 {
+    let points = dep_row_days(deps).map(|d| (d - epoch).num_days() + 1);
     let deadlines = rows
         .into_iter()
         .flatten()
@@ -1178,7 +1759,9 @@ fn span_days(tasks: &[GanttTask], rows: Option<&[GanttRow]>, epoch: NaiveDate) -
             GanttRow::Group { .. } => None,
         })
         .map(|d| (d - epoch).num_days() + 1);
-    deadlines.fold(total_days_of(tasks, epoch), i64::max)
+    deadlines
+        .chain(points)
+        .fold(total_days_of(tasks, epoch), i64::max)
 }
 
 /// The task row drawn on `slot`, when the caller's row list gives one.
@@ -1276,6 +1859,21 @@ fn note_x_beside(
     } else {
         x
     }
+}
+
+/// A note at `x` in `color`, and the band under it, as a row's note is drawn.
+fn colored_note_with_band(
+    x: f64,
+    cy: f64,
+    note: &str,
+    _state: Option<BarState>,
+    color: ColorId,
+) -> [Primitive; 2] {
+    let [band, mut text] = note_with_band(x, cy, note, None);
+    if let Primitive::Text(t) = &mut text {
+        t.fill = Some(color);
+    }
+    [band, text]
 }
 
 /// A row's note at `x` and the band under it. The band takes the note's width

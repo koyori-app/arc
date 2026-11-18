@@ -19,6 +19,7 @@ impl RenderBackend for CountingBackend {
                 LayerKind::Background
                 | LayerKind::Grid
                 | LayerKind::Dependencies
+                | LayerKind::DependencyLinks
                 | LayerKind::Bars
                 | LayerKind::ProgressLine
                 | LayerKind::TodayMarker
