@@ -960,16 +960,19 @@ fn dep_notes<'a>(
         ) {
             continue;
         }
-        let x = *next_x.entry(id).or_insert_with(|| match row {
-            Some(row) => {
-                let g = MarkGeometry::of(task, row, axis, epoch, view_days, bar_h);
-                match row.note.as_deref() {
-                    Some(n) => {
-                        text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None) + NOTE_GAP_PX
-                    }
-                    None => g.note_x,
+        let geometry = row.map(|row| {
+            (
+                row,
+                MarkGeometry::of(task, row, axis, epoch, view_days, bar_h),
+            )
+        });
+        let start = *next_x.entry(id).or_insert_with(|| match &geometry {
+            Some((row, g)) => match row.note.as_deref() {
+                Some(n) => {
+                    text_right_edge(g.note_x, None, n, GRID_LABEL_FONT_PX, None) + NOTE_GAP_PX
                 }
-            }
+                None => g.note_x,
+            },
             None => {
                 let right = if is_zero_duration(task) {
                     axis.x(task.start_days(epoch)) + bar_h / 2.0
@@ -979,6 +982,12 @@ fn dep_notes<'a>(
                 right + NOTE_GAP_PX
             }
         });
+        // The row's own note avoided the diamond by its own width only. The
+        // edge's note avoids it by its own, once: past the diamond, it stays.
+        let x = match &geometry {
+            Some((_, g)) => note_x_from(start, Some(text), g.diamond_cx, g.point_cx),
+            None => start,
+        };
         next_x.insert(
             id,
             text_right_edge(x, None, text, GRID_LABEL_FONT_PX, None) + NOTE_GAP_PX,
@@ -1843,7 +1852,12 @@ fn note_x_beside(
     diamond_cx: Option<f64>,
     point_cx: Option<f64>,
 ) -> f64 {
-    let x = bar_right + NOTE_GAP_PX;
+    note_x_from(bar_right + NOTE_GAP_PX, note, diamond_cx, point_cx)
+}
+
+/// Where a note that would start at `x` starts: at `x`, or right of the hard
+/// deadline's diamond when the note would run over it (`note_x_beside`).
+fn note_x_from(x: f64, note: Option<&str>, diamond_cx: Option<f64>, point_cx: Option<f64>) -> f64 {
     let Some(c) = diamond_cx else {
         return x;
     };
