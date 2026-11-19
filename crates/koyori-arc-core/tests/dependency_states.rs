@@ -480,3 +480,148 @@ fn an_edge_whose_ends_land_on_the_same_row_is_not_drawn() {
     let other = r#"[{"blocker_task_id":"x","blocked_task_id":"y","state":"normal","blocker_at":{"row":0,"day":"2026-11-03"},"blocked_at":{"row":4,"day":"2026-11-10"}}]"#;
     assert_eq!(svg_paths(&self::svg(other)).len(), 1);
 }
+
+/// 字 `text` の下の帯（`<rect>`）の左端と右端。
+fn band_of(svg: &str, text: &str) -> (f64, f64) {
+    let at = svg
+        .find(&format!(">{text}<"))
+        .unwrap_or_else(|| panic!("no {text}"));
+    let rect = &svg[svg[..at].rfind("<rect ").unwrap()..at];
+    let attr = |name: &str| -> f64 {
+        rect.split(&format!(" {name}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    (attr("x"), attr("x") + attr("width"))
+}
+
+/// 厳守の期限の菱形（`class="hard-deadline"` の `<polygon>`）の左端と右端。一つだけを見る。
+fn diamond_of(svg: &str) -> (f64, f64) {
+    let tags: Vec<&str> = svg
+        .split("<polygon ")
+        .skip(1)
+        .filter(|t| t.split('>').next().unwrap().contains("hard-deadline"))
+        .collect();
+    assert_eq!(tags.len(), 1, "diamonds: {}", tags.len());
+    let points = tags[0]
+        .split("points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let xs: Vec<f64> = points
+        .split_whitespace()
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+    (
+        xs.iter().cloned().fold(f64::INFINITY, f64::min),
+        xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+    )
+}
+
+/// b（11/9〜11/12、棒の右は 11/13 の頭）の行に、厳守の期限と行の添えを持たせた図。
+fn chart_with_deadline(hard_deadline: &str, row_note: Option<&str>, deps: &str) -> String {
+    let note = row_note.map_or(String::new(), |n| format!(r#","note":"{n}""#));
+    let rows = format!(
+        r#"[{{"kind":"group"}},{{"kind":"task","task_id":"a"}},{{"kind":"task","task_id":"b","hard_deadline":"{hard_deadline}"{note}}},{{"kind":"task","task_id":"c"}},{{"kind":"group"}}]"#
+    );
+    render_svg(TASKS, deps, s(OPTIONS), Some(rows))
+}
+
+const WAITING: &str =
+    r#"[{"blocker_task_id":"a","blocked_task_id":"b","state":"delayed","note":"OPS-9 待ち"}]"#;
+
+#[test]
+fn an_edge_note_moves_past_the_hard_deadline_it_would_run_over() {
+    // 行の添えは無い。菱形（11/14 の真ん中）は、棒の右から始まる辺の添えの字の幅の内に落ちる
+    let svg = chart_with_deadline("2026-11-14", None, WAITING);
+    let (dl, dr) = diamond_of(&svg);
+    let (bl, br) = band_of(&svg, "OPS-9 待ち");
+    assert!(bl >= dr, "band {bl}..{br} runs over the diamond {dl}..{dr}");
+    // 図の幅は、退いた後の字の右端まで数える
+    assert!(br <= svg_width(&svg), "{br} > {}", svg_width(&svg));
+    // SVG と canvas は同じ置き場を描く
+    let svg_x: f64 = {
+        let at = svg.find(">OPS-9 待ち<").unwrap();
+        let tag = &svg[svg[..at].rfind("<text ").unwrap()..at];
+        tag.split(" x=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    let canvas = canvas_with_deadline("2026-11-14", None, WAITING);
+    let canvas_x = canvas["ops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        // 欄を持たぬ命令（字だけの命令）は飛ばす
+        .filter_map(|op| op.as_object())
+        .flat_map(|fields| fields.values())
+        .find(|inner| inner["text"] == "OPS-9 待ち")
+        .and_then(|inner| inner["x"].as_f64())
+        .expect("canvas text op");
+    assert_eq!(canvas_x, svg_x);
+}
+
+#[test]
+fn an_edge_note_after_the_rows_own_note_moves_past_the_diamond_once() {
+    // 行の添え（短い）は菱形（11/15）の手前で終わり、続く辺の添えが菱形に掛かる。辺の添えだけが退く
+    let svg = chart_with_deadline("2026-11-15", Some("短い"), WAITING);
+    let (dl, dr) = diamond_of(&svg);
+    let (rl, rr) = band_of(&svg, "短い");
+    let (bl, br) = band_of(&svg, "OPS-9 待ち");
+    assert!(
+        rr <= dl,
+        "the row's note {rl}..{rr} moved: diamond {dl}..{dr}"
+    );
+    assert!(bl >= dr, "band {bl}..{br} runs over the diamond {dl}..{dr}");
+    assert!(br <= svg_width(&svg));
+    // 行の添えが既に菱形を越えておれば、辺の添えはその後ろに続き、もう一度は退かない
+    let long_row_note = "目安を過ぎて遅れておる長い添えの字";
+    let svg = chart_with_deadline("2026-11-14", Some(long_row_note), WAITING);
+    let (_, dr) = diamond_of(&svg);
+    let (rl, rr) = band_of(&svg, long_row_note);
+    let (bl, _) = band_of(&svg, "OPS-9 待ち");
+    assert!(
+        rl >= dr,
+        "the row's note {rl} should be past the diamond {dr}"
+    );
+    assert!(
+        bl - rr < 12.0,
+        "the edge's note {bl} moved again after the row's note {rr}"
+    );
+}
+
+#[test]
+fn a_chart_without_edge_notes_draws_its_row_notes_where_it_did() {
+    // 辺の添えを持たぬ図は、行の添えの置き場が変わらない（菱形を避けるのは行の添えの幅だけ）
+    let plain = chart_with_deadline(
+        "2026-11-15",
+        Some("短い"),
+        r#"[{"blocker_task_id":"a","blocked_task_id":"b","state":"delayed"}]"#,
+    );
+    let none = chart_with_deadline("2026-11-15", Some("短い"), "[]");
+    assert_eq!(band_of(&plain, "短い"), band_of(&none, "短い"));
+}
+
+fn canvas_with_deadline(
+    hard_deadline: &str,
+    row_note: Option<&str>,
+    deps: &str,
+) -> serde_json::Value {
+    let note = row_note.map_or(String::new(), |n| format!(r#","note":"{n}""#));
+    let rows = format!(
+        r#"[{{"kind":"group"}},{{"kind":"task","task_id":"a"}},{{"kind":"task","task_id":"b","hard_deadline":"{hard_deadline}"{note}}},{{"kind":"task","task_id":"c"}},{{"kind":"group"}}]"#
+    );
+    serde_json::from_str(&render_canvas_commands(TASKS, deps, s(OPTIONS), Some(rows))).unwrap()
+}
