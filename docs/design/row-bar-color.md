@@ -102,7 +102,7 @@ display list を組む所で同じ `is_css_color` を通すので、native の�
 - arc-vue: prop `rowColorProgress`（型 `RowColorProgress`）と `rowColorPercent`（型 `RowColorPercent`）。
 - 知らぬ値は断る。`null` は既定と同じ。
 - 行ごとではなく図ごとに選ぶ。一つの図の中で棒の読み方が行ごとに違うと、読み手が迷うからである。
-- `row_color_percent` の既定は仮置きである。描いた像を見て決め直すことがある。
+- `row_color_percent` の既定は `"halo"` とする。色を渡した行でも割合が棒の中で読め、縁取りの上の字はどの色の棒でも同じ対比（既定の二色で 10.31）になるからである（4.3）。
 
 ## 4. 描き方
 
