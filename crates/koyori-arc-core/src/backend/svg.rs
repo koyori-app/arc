@@ -1,4 +1,6 @@
-use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEP_DELAYED_DASH};
+use crate::display_list::constants::{
+    DEFAULT_FONT_SIZE_PX, DEP_DELAYED_DASH, ROW_COLOR_HALO_PX, ROW_COLOR_REST_OPACITY,
+};
 use crate::display_list::types::*;
 use crate::display_list::DisplayList;
 
@@ -47,6 +49,9 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 RectSemantic::Weekend => Some("weekend"),
                 RectSemantic::NoteBackground => Some("note-bg"),
                 RectSemantic::OverflowBackground => Some("overflow-bg"),
+                RectSemantic::RowProgressTrack => Some("row-progress-track"),
+                RectSemantic::RowProgress => Some("row-progress"),
+                RectSemantic::ColoredBarRest => Some("bar-bg"),
                 RectSemantic::HeaderBackground | RectSemantic::LegendSwatch => None,
             };
             push_rect(
@@ -55,6 +60,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 (r.x, r.y, r.width, r.height),
                 r.rx,
                 palette.resolve(r.fill),
+                (r.semantic == RectSemantic::ColoredBarRest).then_some(ROW_COLOR_REST_OPACITY),
             );
         }
         Primitive::RoundRect(r) => {
@@ -71,6 +77,7 @@ fn render_primitive(svg: &mut String, prim: &Primitive, palette: &Palette) {
                 (r.x, r.y, r.width, r.height),
                 Some(r.rx),
                 palette.resolve(r.fill),
+                None,
             );
         }
         Primitive::Line(l) => {
@@ -168,6 +175,7 @@ fn push_rect(
     geom: (f64, f64, f64, f64),
     rx: Option<f64>,
     fill: &str,
+    opacity: Option<f64>,
 ) {
     let (x, y, width, height) = geom;
     svg.push_str("<rect");
@@ -180,7 +188,11 @@ fn push_rect(
     if let Some(rx) = rx {
         svg.push_str(&format!(r#" rx="{rx}""#));
     }
-    svg.push_str(&format!(r#" fill="{fill}"/>"#));
+    svg.push_str(&format!(r#" fill="{fill}""#));
+    if let Some(opacity) = opacity {
+        svg.push_str(&format!(r#" fill-opacity="{opacity}""#));
+    }
+    svg.push_str("/>");
 }
 
 fn push_dash(svg: &mut String, dash: Option<&str>) {
@@ -212,6 +224,13 @@ fn render_text(svg: &mut String, t: &TextPrim, palette: &Palette) {
     }
     if let Some(fill) = t.fill.and_then(|id| palette.get(id)) {
         svg.push_str(&format!(r#" fill="{fill}""#));
+    }
+    if t.semantic == TextSemantic::ColoredBarPercent {
+        if let Some(color) = palette.get(ColorId::ColoredBarHalo) {
+            svg.push_str(&format!(
+                r#" stroke="{color}" stroke-width="{ROW_COLOR_HALO_PX}" stroke-linejoin="round" paint-order="stroke""#,
+            ));
+        }
     }
     if let Some(size) = t.font_size {
         svg.push_str(&format!(r#" font-size="{size}""#));

@@ -10,8 +10,8 @@ use crate::display_list::legend::legend_spec;
 use crate::display_list::rows::RowPlan;
 use crate::display_list::{
     types::{
-        BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, ProgressLineMode, Scale,
-        ViewRange, WeekendDays,
+        BarAlign, ChartOptions, ColorId, LabelMode, LegendMode, Palette, ProgressLineMode,
+        RowColorPercent, RowColorProgress, Scale, ViewRange, WeekendDays,
     },
     DisplayList, ScrollViewport,
 };
@@ -273,6 +273,8 @@ struct WireOptions {
     weekday_labels: Option<[String; 7]>,
     view: Option<ViewRange>,
     progress_line: ProgressLineMode,
+    row_color_progress: RowColorProgress,
+    row_color_percent: RowColorPercent,
 }
 
 /// Every key `options_json` may carry. A key outside this list is refused so
@@ -295,6 +297,8 @@ const OPTION_KEYS: &[&str] = &[
     "weekday_labels",
     "view",
     "progress_line",
+    "row_color_progress",
+    "row_color_percent",
 ];
 
 fn options_error(message: impl std::fmt::Display) -> RenderError {
@@ -324,6 +328,8 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
         weekday_labels: None,
         view: None,
         progress_line: ProgressLineMode::Shown,
+        row_color_progress: RowColorProgress::Shade,
+        row_color_percent: RowColorPercent::Halo,
     };
     let Some(json) = options_json else {
         return Ok(wire);
@@ -413,6 +419,28 @@ fn parse_wire_options(options_json: Option<&str>) -> Result<WireOptions, RenderE
                     }
                 }
             }
+            "row_color_progress" => {
+                wire.row_color_progress = match value.as_str() {
+                    Some("shade") => RowColorProgress::Shade,
+                    Some("line") => RowColorProgress::Line,
+                    _ => {
+                        return Err(options_error(
+                            "row_color_progress: expected \"shade\" or \"line\"",
+                        ))
+                    }
+                }
+            }
+            "row_color_percent" => {
+                wire.row_color_percent = match value.as_str() {
+                    Some("halo") => RowColorPercent::Halo,
+                    Some("hidden") => RowColorPercent::Hidden,
+                    _ => {
+                        return Err(options_error(
+                            "row_color_percent: expected \"halo\" or \"hidden\"",
+                        ))
+                    }
+                }
+            }
             "bar_align" => {
                 wire.bar_align = match value.as_str() {
                     Some("middle") => BarAlign::Middle,
@@ -456,7 +484,7 @@ fn parse_palette(value: serde_json::Value) -> Result<Vec<(ColorId, String)>, Ren
         let id: ColorId = serde_json::from_value(serde_json::Value::String(name.clone()))
             .map_err(|_| options_error(format!("palette: unknown colour name `{name}`")))?;
         let color = match color.as_str() {
-            Some(c) if is_css_color(c) => c.to_string(),
+            Some(c) if crate::css_color::is_css_color(c) => c.to_string(),
             _ => {
                 return Err(options_error(format!(
                     "palette: `{name}`: expected a CSS colour (#hex, rgb()/hsl()/oklch(), or var(--name))"
@@ -466,36 +494,6 @@ fn parse_palette(value: serde_json::Value) -> Result<Vec<(ColorId, String)>, Ren
         palette.push((id, color));
     }
     Ok(palette)
-}
-
-/// The colour forms `palette` takes: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`;
-/// `var(--name)` with a name of letters, digits, `-` and `_`; and `rgb()`,
-/// `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()` whose arguments are
-/// digits, lower-case letters, `.`, `,`, `%`, `/`, `+`, `-` and spaces. None
-/// of these can close an attribute or open another.
-fn is_css_color(c: &str) -> bool {
-    if c.is_empty() || c.chars().count() > MAX_COLOR_CHARS {
-        return false;
-    }
-    if let Some(hex) = c.strip_prefix('#') {
-        return matches!(hex.len(), 3 | 4 | 6 | 8) && hex.chars().all(|ch| ch.is_ascii_hexdigit());
-    }
-    if let Some(name) = c.strip_prefix("var(--").and_then(|r| r.strip_suffix(')')) {
-        return !name.is_empty()
-            && name
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
-    }
-    for f in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab("] {
-        if let Some(args) = c.strip_prefix(f).and_then(|r| r.strip_suffix(')')) {
-            return args.chars().all(|ch| {
-                ch.is_ascii_digit()
-                    || ch.is_ascii_lowercase()
-                    || matches!(ch, '.' | ',' | '%' | '/' | '+' | '-' | ' ')
-            });
-        }
-    }
-    false
 }
 
 /// `weekend_days` is an array of weekday numbers, 0 for Monday to 6 for
@@ -607,6 +605,8 @@ impl ResolvedOptions {
             weekday_labels: self.wire.weekday_labels.clone(),
             view: self.wire.view,
             progress_line: self.wire.progress_line,
+            row_color_progress: self.wire.row_color_progress,
+            row_color_percent: self.wire.row_color_percent,
             ..Default::default()
         }
     }
@@ -723,9 +723,20 @@ fn parse_rows_json(
             task_id,
             note,
             hard_deadline,
+            color,
             ..
         }) = row
         {
+            // The colour is written into SVG attributes and canvas styles, so
+            // it takes only the forms `palette` takes.
+            if color
+                .as_deref()
+                .is_some_and(|c| !crate::css_color::is_css_color(c))
+            {
+                return Err(rows_error(format!(
+                    "color of `{task_id}`: expected a CSS colour (#hex, rgb()/hsl()/oklch(), or var(--name))"
+                )));
+            }
             if note
                 .as_ref()
                 .is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS)

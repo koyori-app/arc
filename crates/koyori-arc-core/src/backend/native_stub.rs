@@ -1,4 +1,6 @@
-use crate::display_list::constants::{DEFAULT_FONT_SIZE_PX, DEFAULT_FONT_WEIGHT};
+use crate::display_list::constants::{
+    DEFAULT_FONT_SIZE_PX, DEFAULT_FONT_WEIGHT, ROW_COLOR_HALO_PX, ROW_COLOR_REST_OPACITY,
+};
 use crate::display_list::types::*;
 use crate::display_list::DisplayList;
 
@@ -24,12 +26,12 @@ pub fn build_native_draw_list(list: &DisplayList) -> NativeDrawList {
         }
     }
 
-    let palette_refs: Vec<(u8, String)> = list
+    let palette_refs: Vec<(u16, String)> = list
         .palette
         .colors
         .iter()
         .enumerate()
-        .map(|(i, (_, hex))| (i as u8, hex.clone()))
+        .map(|(i, (_, hex))| (i as u16, hex.clone()))
         .collect();
 
     NativeDrawList {
@@ -40,41 +42,13 @@ pub fn build_native_draw_list(list: &DisplayList) -> NativeDrawList {
     }
 }
 
-fn color_id_tag(id: ColorId) -> u8 {
-    match id {
-        ColorId::BarBg => 0,
-        ColorId::TierLow => 1,
-        ColorId::TierMid => 2,
-        ColorId::TierHigh => 3,
-        ColorId::TierDone => 4,
-        ColorId::Dep => 5,
-        ColorId::Progress => 6,
-        ColorId::Grid => 7,
-        ColorId::Today => 8,
-        ColorId::HeaderBg => 9,
-        ColorId::GridLabel => 10,
-        ColorId::ProgressTextOnFg => 11,
-        ColorId::ProgressTextOnBg => 12,
-        ColorId::GroupRow => 13,
-        ColorId::Weekend => 14,
-        ColorId::BarStroke => 15,
-        ColorId::DoneBg => 16,
-        ColorId::DoneStroke => 17,
-        ColorId::WarnBg => 18,
-        ColorId::WarnStroke => 19,
-        ColorId::HardDeadline => 20,
-        ColorId::Note => 21,
-        ColorId::NoteBg => 22,
-        ColorId::ProgressLine => 23,
-        ColorId::DayNumber => 24,
-        ColorId::DepDone => 25,
-        ColorId::DepDelayed => 26,
-    }
+fn color_id_tag(id: ColorId) -> u16 {
+    id.tag()
 }
 
 /// A text's colour tag: 255, the default text colour, when the text has no
 /// colour or its colour has no entry in the palette and no fallback.
-fn text_color_tag(fill: Option<ColorId>, palette: &Palette) -> u8 {
+fn text_color_tag(fill: Option<ColorId>, palette: &Palette) -> u16 {
     fill.filter(|id| palette.get(*id).is_some())
         .map(color_id_tag)
         .unwrap_or(255)
@@ -82,6 +56,17 @@ fn text_color_tag(fill: Option<ColorId>, palette: &Palette) -> u8 {
 
 fn collect_native_ops(prim: &Primitive, palette: &Palette, ops: &mut Vec<NativeDrawOp>) {
     match prim {
+        Primitive::Rect(r) if r.semantic == RectSemantic::ColoredBarRest => {
+            ops.push(NativeDrawOp::FillRectAlpha {
+                x: r.x,
+                y: r.y,
+                w: r.width,
+                h: r.height,
+                color_id: color_id_tag(r.fill),
+                radius: r.rx.unwrap_or(0.0),
+                alpha: ROW_COLOR_REST_OPACITY,
+            });
+        }
         Primitive::Rect(r) => {
             ops.push(NativeDrawOp::FillRect {
                 x: r.x,
@@ -137,15 +122,33 @@ fn collect_native_ops(prim: &Primitive, palette: &Palette, ops: &mut Vec<NativeD
                 TextAnchor::Middle => 1,
                 TextAnchor::End => 2,
             });
-            ops.push(NativeDrawOp::DrawText {
-                x: t.x,
-                y: t.y,
-                text: t.content.clone(),
-                color_id: text_color_tag(t.fill, palette),
-                anchor: anchor.unwrap_or(0),
-                size: t.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX),
-                weight: t.font_weight.unwrap_or(DEFAULT_FONT_WEIGHT),
-            });
+            let color_id = text_color_tag(t.fill, palette);
+            let anchor = anchor.unwrap_or(0);
+            let size = t.font_size.unwrap_or(DEFAULT_FONT_SIZE_PX);
+            let weight = t.font_weight.unwrap_or(DEFAULT_FONT_WEIGHT);
+            if t.semantic == TextSemantic::ColoredBarPercent {
+                ops.push(NativeDrawOp::DrawHaloText {
+                    x: t.x,
+                    y: t.y,
+                    text: t.content.clone(),
+                    color_id,
+                    anchor,
+                    size,
+                    weight,
+                    halo_color_id: text_color_tag(Some(ColorId::ColoredBarHalo), palette),
+                    halo_width: ROW_COLOR_HALO_PX,
+                });
+            } else {
+                ops.push(NativeDrawOp::DrawText {
+                    x: t.x,
+                    y: t.y,
+                    text: t.content.clone(),
+                    color_id,
+                    anchor,
+                    size,
+                    weight,
+                });
+            }
         }
         Primitive::Group(g) => {
             ops.push(NativeDrawOp::GroupStart {

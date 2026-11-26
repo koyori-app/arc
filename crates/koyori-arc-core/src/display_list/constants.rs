@@ -149,3 +149,17 @@ pub const DEFAULT_FONT_WEIGHT: u16 = 400;
 pub const ROW_BUFFER: u32 = 2;
 /// Phase 1 DOM_CAP design target (§6.5.3).
 pub const DOM_CAP: u32 = 500;
+
+/// The opacity of the part of a coloured bar past its progress, drawn
+/// `RowColorProgress::Shade` (docs/design/row-bar-color.md, 4.2).
+pub const ROW_COLOR_REST_OPACITY: f64 = 0.35;
+/// The height of the progress line under a coloured bar drawn
+/// `RowColorProgress::Line`.
+pub const ROW_PROGRESS_LINE_PX: f64 = 3.0;
+/// The gap between a coloured bar and the progress line under it.
+pub const ROW_PROGRESS_LINE_GAP_PX: f64 = 2.0;
+/// The whole width of the halo round the percent label inside a coloured bar,
+/// half of it outside the glyphs.
+pub const ROW_COLOR_HALO_PX: f64 = 3.0;
+/// The ring of the outline's colour round the dot of a coloured `point` row.
+pub const ROW_COLOR_RING_PX: f64 = 1.0;
