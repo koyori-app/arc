@@ -18,6 +18,8 @@ import {
   buildOptionsJson,
   type PaletteOverrides,
   type ProgressLineMode,
+  type RowColorPercent,
+  type RowColorProgress,
   type ViewRange,
 } from './options';
 import { backingSize, cssPointFromClient } from './canvasScale';
@@ -130,6 +132,18 @@ const props = defineProps<{
   view?: ViewRange;
   /** How the progress line is drawn; left out, the line as before. */
   progressLine?: ProgressLineMode;
+  /**
+   * How a bar whose row gives a `color` shows its progress: `'shade'` (the
+   * default) the colour over the progress and faint over the rest, `'line'`
+   * the whole bar in the colour and the progress as a line under it.
+   */
+  rowColorProgress?: RowColorProgress;
+  /**
+   * How a bar whose row gives a `color` shows its percent label: `'halo'` (the
+   * default) inside the bar over a band of `ColoredBarHalo` (palette names
+   * `ColoredBarText` and `ColoredBarHalo`), `'hidden'` not at all.
+   */
+  rowColorPercent?: RowColorPercent;
   /** Render backend — default `svg` preserves existing DOM projection. */
   backend?: 'svg' | 'canvas';
   /** Override auto-detected device tier (VRT / Storybook should pin this). */
@@ -334,6 +348,8 @@ function chartOptionsJson(scroll: { scroll_y: number; client_height: number } | 
     weekdayLabels: props.weekdayLabels,
     view: props.view,
     progressLine: props.progressLine,
+    rowColorProgress: props.rowColorProgress,
+    rowColorPercent: props.rowColorPercent,
   });
 }
 
@@ -550,7 +566,7 @@ watch(pixelRatio, () => {
 });
 
 /**
- * A palette colour written as `var(--name)` is read off the canvas's computed
+ * A palette colour, or a row's `color`, written as `var(--name)` is read off the canvas's computed
  * style once, when the canvas is painted; the SVG path writes it as it is and
  * the browser follows the token. So while the canvas paints a palette that
  * names a `var()`, watch what a theme switch usually changes and paint again:
@@ -563,8 +579,12 @@ watch(pixelRatio, () => {
  * object, paints with the value it has now. Paints are gathered into one frame.
  */
 const rootRef = ref<HTMLElement | null>(null);
-const paletteNamesVar = computed(() =>
-  Object.values(props.palette ?? {}).some((c) => typeof c === 'string' && c.includes('var(')),
+const namesVar = (c: unknown) => typeof c === 'string' && c.includes('var(');
+// A row's `color` is a palette colour too, added by the chart.
+const paletteNamesVar = computed(
+  () =>
+    Object.values(props.palette ?? {}).some(namesVar) ||
+    (props.rows ?? []).some((r) => r.kind === 'task' && namesVar(r.color)),
 );
 const paintsTokenColors = computed(
   () => useCanvas.value && !canvasFallbackSvg.value && paletteNamesVar.value,

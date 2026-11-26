@@ -220,6 +220,9 @@ pub fn build_display_list_with_rows(
         primitives: grid_prims,
     });
 
+    // The colours task rows give their bars, as palette entries.
+    let row_colors = RowColors::of(rows);
+
     // Bars layer (row-virtualized when scroll_viewport is set)
     let mut bar_prims = Vec::new();
     let mut note_prims = Vec::new();
@@ -291,7 +294,10 @@ pub fn build_display_list_with_rows(
         let tooltip = task_tooltip(task);
         // A bar the view cuts shows no percent: the label sits by the bar's
         // ends, and one of them is out of the view.
-        let percent_labels = if cut {
+        let row_color = row_colors.of_slot(&plan.slots[slot_index]);
+        let percent_labels = if cut
+            || (row_color.is_some() && options.row_color_percent == RowColorPercent::Hidden)
+        {
             LabelMode::Hidden
         } else {
             percent_labels
@@ -318,6 +324,20 @@ pub fn build_display_list_with_rows(
                 tier,
                 semantic: RoundRectSemantic::Point,
             }));
+            // A row's colour fills the dot inside a ring of the outline's.
+            if let Some(color) = row_color {
+                let inner = (d - 2.0 * ROW_COLOR_RING_PX).max(0.0);
+                children.push(Primitive::RoundRect(RoundRectPrim {
+                    x: cx - inner / 2.0,
+                    y: y + (bar_h - inner) / 2.0,
+                    width: inner,
+                    height: inner,
+                    fill: color,
+                    rx: inner / 2.0,
+                    tier,
+                    semantic: RoundRectSemantic::Point,
+                }));
+            }
         } else if is_zero_duration(task) {
             let cx = x;
             let cy = y + bar_h / 2.0;
@@ -329,8 +349,13 @@ pub fn build_display_list_with_rows(
                     (cx, cy + half),
                     (cx - half, cy),
                 ],
-                fill: tier_fill_color(tier),
-                stroke: ColorId::BarBg,
+                // A row's colour fills the diamond and outlines it in the
+                // state's colour, so a pale colour keeps its shape.
+                fill: row_color.unwrap_or(tier_fill_color(tier)),
+                stroke: match row_color {
+                    Some(_) => outline_color(marks.and_then(|m| m.state)),
+                    None => ColorId::BarBg,
+                },
                 stroke_width: 1.0,
                 tier,
                 semantic: PolygonSemantic::Milestone,
@@ -350,7 +375,21 @@ pub fn build_display_list_with_rows(
                 }));
             }
         } else {
-            if w > 0.0 {
+            if let (true, Some(color)) = (w > 0.0, row_color) {
+                let state = marks.and_then(|m| m.state);
+                children.extend(colored_bar(ColoredBar {
+                    x,
+                    y,
+                    w,
+                    prog_w,
+                    bar_h,
+                    slot_bottom: plan.slots[slot_index].y_bottom(),
+                    color,
+                    state,
+                    tier,
+                    progress: options.row_color_progress,
+                }));
+            } else if w > 0.0 {
                 let state = marks.and_then(|m| m.state);
                 children.push(Primitive::Rect(RectPrim {
                     x,
@@ -399,7 +438,16 @@ pub fn build_display_list_with_rows(
                 )));
             }
             if percent_labels == LabelMode::Shown {
-                let label = percent_label(task, epoch, &axis, bar_h);
+                let mut label = percent_label(task, epoch, &axis, bar_h);
+                // Inside a coloured bar the label reads over a halo, whatever
+                // the colour; beside it the label is on the chart's ground.
+                let semantic = match (row_color, label.anchor) {
+                    (Some(_), Some(TextAnchor::Middle)) => {
+                        label.fill = ColorId::ColoredBarText;
+                        TextSemantic::ColoredBarPercent
+                    }
+                    _ => TextSemantic::ProgressPercent,
+                };
                 children.push(Primitive::Text(TextPrim {
                     x: label.x,
                     y: y + bar_h / 2.0,
@@ -409,7 +457,7 @@ pub fn build_display_list_with_rows(
                     font_weight: Some(PROGRESS_LABEL_FONT_WEIGHT),
                     anchor: label.anchor,
                     baseline: TextBaseline::Middle,
-                    semantic: TextSemantic::ProgressPercent,
+                    semantic,
                 }));
             }
         }
@@ -791,7 +839,7 @@ pub fn build_display_list_with_rows(
 
     DisplayList {
         viewport,
-        palette: Palette::standard(),
+        palette: row_colors.palette(),
         layers,
         metadata: ChartMetadata {
             title: "Gantt chart".to_string(),
@@ -888,7 +936,7 @@ pub(crate) fn chart_width_for(
         .max(legend_edge)
         .max(diamond_edge)
         .max(labels_right_edge(
-            &whole_in_view(tasks, epoch, view_days),
+            &without_hidden_percent(whole_in_view(tasks, epoch, view_days), rows, options),
             epoch,
             total_days,
             &axis,
@@ -1973,6 +2021,192 @@ fn bar_fill_color(state: Option<BarState>) -> ColorId {
         Some(BarState::Done) => ColorId::DoneBg,
         Some(BarState::Warn) => ColorId::WarnBg,
     }
+}
+
+/// `tasks` less those whose row has a colour, when such rows draw no percent
+/// label: their labels hold up no width.
+fn without_hidden_percent(
+    tasks: Vec<GanttTask>,
+    rows: Option<&[GanttRow]>,
+    options: &ChartOptions,
+) -> Vec<GanttTask> {
+    if options.row_color_percent != RowColorPercent::Hidden {
+        return tasks;
+    }
+    let Some(rows) = rows else {
+        return tasks;
+    };
+    let colored: std::collections::HashSet<&str> = rows
+        .iter()
+        .filter_map(|r| match r {
+            GanttRow::Task(t) if row_color_value(t).is_some() => Some(t.task_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    if colored.is_empty() {
+        return tasks;
+    }
+    tasks
+        .into_iter()
+        .filter(|t| !colored.contains(t.id.as_str()))
+        .collect()
+}
+
+/// A task row's colour when it is one the chart may write: the Wasm entry
+/// points refuse any other, and here a native caller's is drawn as none.
+fn row_color_value(row: &TaskRow) -> Option<&str> {
+    row.color
+        .as_deref()
+        .filter(|c| crate::css_color::is_css_color(c))
+}
+
+/// The colours a chart's task rows give their bars. The `n`th distinct colour,
+/// in row order, is `ColorId::Row(n)`; it is added to the end of the standard
+/// palette, so a chart with no coloured row has the standard palette as it is.
+struct RowColors {
+    /// The colour of each row of the caller's list, by row index.
+    by_row: Vec<Option<ColorId>>,
+    entries: Vec<(ColorId, String)>,
+}
+
+impl RowColors {
+    fn of(rows: Option<&[GanttRow]>) -> Self {
+        let mut by_row = Vec::new();
+        let mut entries: Vec<(ColorId, String)> = Vec::new();
+        let mut index_of: HashMap<&str, ColorId> = HashMap::new();
+        for row in rows.unwrap_or(&[]) {
+            let color = match row {
+                GanttRow::Task(t) => row_color_value(t),
+                GanttRow::Group { .. } => None,
+            };
+            let id = color.and_then(|c| {
+                if let Some(id) = index_of.get(c) {
+                    return Some(*id);
+                }
+                if entries.len() >= MAX_ROW_COLORS {
+                    return None;
+                }
+                let id = ColorId::Row(entries.len() as u16);
+                index_of.insert(c, id);
+                entries.push((id, c.to_string()));
+                Some(id)
+            });
+            by_row.push(id);
+        }
+        Self { by_row, entries }
+    }
+
+    fn of_slot(&self, slot: &super::rows::Slot) -> Option<ColorId> {
+        self.by_row.get(slot.row?).copied().flatten()
+    }
+
+    fn palette(&self) -> Palette {
+        let mut palette = Palette::standard();
+        palette.colors.extend(self.entries.iter().cloned());
+        palette
+    }
+}
+
+/// What `colored_bar` draws a bar from.
+struct ColoredBar {
+    x: f64,
+    y: f64,
+    w: f64,
+    prog_w: f64,
+    bar_h: f64,
+    /// The bottom of the bar's row, which the progress line stays inside.
+    slot_bottom: f64,
+    color: ColorId,
+    state: Option<BarState>,
+    tier: ProgressTier,
+    progress: RowColorProgress,
+}
+
+/// A bar a task row gives a colour (docs/design/row-bar-color.md, 4.1 and 4.2):
+/// the colour shaded by the progress, or whole with the progress as a line
+/// under it, and always an outline in the state's colour.
+fn colored_bar(b: ColoredBar) -> Vec<Primitive> {
+    let ColoredBar {
+        x,
+        y,
+        w,
+        prog_w,
+        bar_h,
+        slot_bottom,
+        color,
+        state,
+        tier,
+        progress,
+    } = b;
+    let mut out = Vec::new();
+    match progress {
+        RowColorProgress::Shade => {
+            out.push(Primitive::Rect(RectPrim {
+                x,
+                y,
+                width: w,
+                height: bar_h,
+                fill: color,
+                rx: Some(BAR_CORNER_RADIUS_PX),
+                semantic: RectSemantic::ColoredBarRest,
+            }));
+            if prog_w > 0.0 {
+                out.push(Primitive::RoundRect(RoundRectPrim {
+                    x,
+                    y,
+                    width: prog_w,
+                    height: bar_h,
+                    fill: color,
+                    rx: BAR_CORNER_RADIUS_PX,
+                    tier,
+                    semantic: RoundRectSemantic::BarProgress,
+                }));
+            }
+        }
+        RowColorProgress::Line => {
+            out.push(Primitive::Rect(RectPrim {
+                x,
+                y,
+                width: w,
+                height: bar_h,
+                fill: color,
+                rx: Some(BAR_CORNER_RADIUS_PX),
+                semantic: RectSemantic::BarBackground,
+            }));
+            // Under the bar, kept inside its row; a row with no room under
+            // the bar has the line over the bar's foot.
+            let line_y = (y + bar_h + ROW_PROGRESS_LINE_GAP_PX)
+                .min(slot_bottom - ROW_PROGRESS_LINE_PX)
+                .max(y);
+            out.push(Primitive::Rect(RectPrim {
+                x,
+                y: line_y,
+                width: w,
+                height: ROW_PROGRESS_LINE_PX,
+                fill: ColorId::Grid,
+                rx: None,
+                semantic: RectSemantic::RowProgressTrack,
+            }));
+            if prog_w > 0.0 {
+                out.push(Primitive::Rect(RectPrim {
+                    x,
+                    y: line_y,
+                    width: prog_w,
+                    height: ROW_PROGRESS_LINE_PX,
+                    fill: outline_color(state),
+                    rx: None,
+                    semantic: RectSemantic::RowProgress,
+                }));
+            }
+        }
+    }
+    out.push(Primitive::Path(PathPrim {
+        d: rounded_rect_path(x, y, w, bar_h, BAR_CORNER_RADIUS_PX),
+        stroke: outline_color(state),
+        stroke_width: 1.0,
+        semantic: PathSemantic::BarOutline,
+    }));
+    out
 }
 
 /// The outline of a bar in `state`, and the colour of a dot.

@@ -27,13 +27,21 @@ export type ColorIdName =
   | 'ProgressLine'
   | 'DayNumber'
   | 'DepDone'
-  | 'DepDelayed';
+  | 'DepDelayed'
+  | 'ColoredBarText'
+  | 'ColoredBarHalo';
+
+/**
+ * A palette key: a colour name, or the `n`th colour task rows give their bars
+ * (`ColorId::Row(n)`), which the chart adds after the named colours.
+ */
+export type PaletteKey = ColorIdName | { Row: number };
 
 export interface CommandBuffer {
   viewport_width: number;
   viewport_height: number;
   ops: DrawOp[];
-  palette: { colors: [ColorIdName, string][] };
+  palette: { colors: [PaletteKey, string][] };
   error?: string;
   /** Machine-readable code from `koyori-arc-core`; see `wasmContract.ts`. */
   code?: string;
@@ -64,7 +72,31 @@ export type DrawOp =
     }
   | { GroupStart: { task_id: string | null } }
   | 'GroupEnd'
-  | { StrokeDashedPath: { d: string; color_id: number; width: number; dash: string } };
+  | { StrokeDashedPath: { d: string; color_id: number; width: number; dash: string } }
+  | {
+      FillRectAlpha: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        color_id: number;
+        radius: number;
+        alpha: number;
+      };
+    }
+  | {
+      DrawHaloText: {
+        x: number;
+        y: number;
+        text: string;
+        color_id: number;
+        anchor: number;
+        size: number;
+        weight: number;
+        halo_color_id: number;
+        halo_width: number;
+      };
+    };
 
 export interface TaskHitRegion {
   taskId: string;
@@ -107,7 +139,12 @@ const COLOR_ID_NAMES: ColorIdName[] = [
   'DayNumber',
   'DepDone',
   'DepDelayed',
+  'ColoredBarText',
+  'ColoredBarHalo',
 ];
+
+/** The tag of `ColorId::Row(0)`; `Row(n)` is this plus `n`. */
+const ROW_COLOR_TAG_BASE = 256;
 
 /**
  * Where a colour the palette has no entry for falls back to — the same table
@@ -128,6 +165,8 @@ const COLOR_FALLBACK: Partial<Record<ColorIdName, ColorIdName>> = {
   ProgressLine: 'Progress',
   DepDone: 'Dep',
   DepDelayed: 'Dep',
+  ColoredBarText: 'ProgressTextOnBg',
+  ColoredBarHalo: 'ProgressTextOnFg',
 };
 
 function paletteColor(buffer: CommandBuffer, name: ColorIdName): string | undefined {
@@ -151,6 +190,13 @@ export function resolveCssColor(color: string, el: Element | undefined): string 
 
 function resolveColor(buffer: CommandBuffer, colorId: number, el?: Element): string {
   if (colorId === 255) return '#374151';
+  if (colorId >= ROW_COLOR_TAG_BASE) {
+    const n = colorId - ROW_COLOR_TAG_BASE;
+    const entry = buffer.palette.colors.find(
+      ([id]) => typeof id === 'object' && id !== null && id.Row === n,
+    );
+    return resolveCssColor(entry?.[1] ?? '#000000', el);
+  }
   const name = COLOR_ID_NAMES[colorId];
   if (!name) return '#000000';
   return resolveCssColor(paletteColor(buffer, name) ?? '#000000', el);
@@ -254,6 +300,19 @@ export function replayCommands(
       continue;
     }
 
+    if ('FillRectAlpha' in op) {
+      const { x, y, w, h, color_id, radius, alpha } = op.FillRectAlpha;
+      ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
+      const before = ctx.globalAlpha;
+      ctx.globalAlpha = before * alpha;
+      fillRoundedRect(ctx, x, y, w, h, radius);
+      ctx.globalAlpha = before;
+      if (currentTaskId) {
+        groupBounds = unionRect(groupBounds, x, y, w, h);
+      }
+      continue;
+    }
+
     if ('FillPolygon' in op) {
       const { points, color_id } = op.FillPolygon;
       if (points.length === 0) continue;
@@ -313,17 +372,44 @@ export function replayCommands(
     if ('DrawText' in op) {
       const { x, y, text, color_id, anchor, size, weight } = op.DrawText;
       ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
-      ctx.font = `${weight} ${size}px sans-serif`;
-      ctx.textBaseline = 'alphabetic';
-      if (anchor === 1) ctx.textAlign = 'center';
-      else if (anchor === 2) ctx.textAlign = 'end';
-      else ctx.textAlign = 'start';
+      setTextStyle(ctx, anchor, size, weight);
+      ctx.fillText(text, x, y);
+      ctx.textAlign = 'start';
+      continue;
+    }
+
+    if ('DrawHaloText' in op) {
+      const { x, y, text, color_id, anchor, size, weight, halo_color_id, halo_width } =
+        op.DrawHaloText;
+      setTextStyle(ctx, anchor, size, weight);
+      // The band first, round the glyphs, then the glyphs over it: what SVG's
+      // `paint-order="stroke"` draws.
+      ctx.strokeStyle = resolveColor(buffer, halo_color_id, ctx.canvas);
+      ctx.lineWidth = halo_width;
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([]);
+      ctx.strokeText(text, x, y);
+      ctx.lineJoin = 'miter';
+      ctx.fillStyle = resolveColor(buffer, color_id, ctx.canvas);
       ctx.fillText(text, x, y);
       ctx.textAlign = 'start';
     }
   }
 
   return { hitRegions };
+}
+
+function setTextStyle(
+  ctx: CanvasRenderingContext2D,
+  anchor: number,
+  size: number,
+  weight: number,
+): void {
+  ctx.font = `${weight} ${size}px sans-serif`;
+  ctx.textBaseline = 'alphabetic';
+  if (anchor === 1) ctx.textAlign = 'center';
+  else if (anchor === 2) ctx.textAlign = 'end';
+  else ctx.textAlign = 'start';
 }
 
 export function parseCommandBuffer(json: string): CommandBuffer {

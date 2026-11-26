@@ -167,6 +167,13 @@ pub struct TaskRow {
     /// with only a deadline.
     #[serde(default)]
     pub shape: BarShape,
+    /// The colour of the bar, a CSS colour of the forms `palette` takes. Given,
+    /// it fills the bar in place of the state's fill and the bar always gets an
+    /// outline (docs/design/row-bar-color.md). A colour those forms refuse is
+    /// refused by the Wasm entry points and drawn as no colour by the native
+    /// ones.
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 impl TaskRow {

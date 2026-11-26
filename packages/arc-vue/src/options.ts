@@ -51,6 +51,19 @@ export type Scale = 'week' | 'day' | 'month';
  * each row that is late or ahead and back at its bottom edge.
  */
 export type ProgressLineMode = 'shown' | 'hidden' | 'by_row';
+/**
+ * How a bar a task row gives a `color` shows its progress: `'shade'` (the
+ * default) the colour over the progress and the same colour faint over the
+ * rest, `'line'` the whole bar in the colour and the progress as a thin line
+ * under it. Rows without a colour are drawn as before either way.
+ */
+export type RowColorProgress = 'shade' | 'line';
+/**
+ * How a bar a task row gives a `color` shows its percent label: `'halo'` (the
+ * default) inside the bar over a band, so it reads on any colour, `'hidden'`
+ * not at all. Rows without a colour are drawn as before either way.
+ */
+export type RowColorPercent = 'halo' | 'hidden';
 
 export interface ViewRange {
   from: string;
@@ -77,6 +90,8 @@ export interface ChartOptionsInput {
   weekdayLabels?: string[] | null;
   view?: ViewRange | null;
   progressLine?: ProgressLineMode | null;
+  rowColorProgress?: RowColorProgress | null;
+  rowColorPercent?: RowColorPercent | null;
 }
 
 /**
@@ -101,6 +116,8 @@ export interface ChartOptions {
   weekday_labels?: string[];
   view?: ViewRange;
   progress_line?: ProgressLineMode;
+  row_color_progress?: RowColorProgress;
+  row_color_percent?: RowColorPercent;
 }
 
 export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
@@ -131,5 +148,7 @@ export function buildOptionsJson(input: ChartOptionsInput): string | undefined {
   if (input.weekdayLabels != null) options.weekday_labels = input.weekdayLabels;
   if (input.view != null) options.view = { from: input.view.from, to: input.view.to };
   if (input.progressLine != null) options.progress_line = input.progressLine;
+  if (input.rowColorProgress != null) options.row_color_progress = input.rowColorProgress;
+  if (input.rowColorPercent != null) options.row_color_percent = input.rowColorPercent;
   return Object.keys(options).length === 0 ? undefined : JSON.stringify(options);
 }

@@ -205,6 +205,31 @@ describe('palette の var() を canvas で塗った図が、表示の切り替�
     svg.unmount();
   });
 
+  it('(e) 行の color の var() も見張り、var() を含まぬ色には付けぬ', async () => {
+    // 色の値は偽りの buffer が持つ。ここで見るのは、行の色が見張りを付けるかどうか
+    const tokenRows = await mountChart({
+      backend: 'canvas',
+      rows: [{ kind: 'task', task_id: 't0', color: 'var(--test-bar)' }],
+    });
+    expect(schemeQueries()).toHaveLength(1);
+    expect(observers).toHaveLength(1);
+    setToken('#555555');
+    document.documentElement.classList.add('dark');
+    await settle();
+    expect(fills.at(-1)).toBe('#555555');
+    tokenRows.unmount();
+
+    queries = [];
+    observers = [];
+    const plainRows = await mountChart({
+      backend: 'canvas',
+      rows: [{ kind: 'task', task_id: 't0', color: '#123456' }],
+    });
+    expect(schemeQueries()).toHaveLength(0);
+    expect(observers).toHaveLength(0);
+    plainRows.unmount();
+  });
+
   it('(d) unmount で見張りを外す', async () => {
     const wrapper = await mountChart({ backend: 'canvas', palette: tokenPalette });
     expect(observers).toHaveLength(1);

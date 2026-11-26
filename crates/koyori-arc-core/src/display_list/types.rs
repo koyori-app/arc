@@ -58,9 +58,68 @@ pub enum ColorId {
     /// blocker is not done, and that edge's note. Not in the standard palette:
     /// it falls back to `Dep`.
     DepDelayed,
+    /// The percent label inside a bar a task row gives a colour, drawn over a
+    /// halo (docs/design/row-bar-color.md). Not in the standard palette: it
+    /// falls back to `ProgressTextOnBg`.
+    ColoredBarText,
+    /// The halo round `ColoredBarText`. Not in the standard palette: it falls
+    /// back to `ProgressTextOnFg`.
+    ColoredBarHalo,
+    /// The colour a task row gives its bar: the `n`th distinct colour of the
+    /// chart's rows, added at the end of the palette as the chart is built.
+    /// Never a key of `palette`. Added last, so the ids before it keep their
+    /// place in every serialised form.
+    Row(u16),
 }
 
+/// The number of `ColorId::Row` colours a chart can hold. `MAX_ROWS` keeps the
+/// Wasm entry points well under it; a native caller with more distinct colours
+/// draws the rest as rows without one.
+pub const MAX_ROW_COLORS: usize = (u16::MAX - ROW_COLOR_TAG_BASE) as usize;
+
+/// The canvas tag of `ColorId::Row(0)`. The tags below it are the named ids and
+/// 255, the text drawn with no colour of its own.
+pub const ROW_COLOR_TAG_BASE: u16 = 256;
+
 impl ColorId {
+    /// The number the canvas and native command lists carry for this id, and
+    /// the order ids added to a palette are kept in. A named id's number is its
+    /// place in the enum; `Row(n)` is `ROW_COLOR_TAG_BASE + n`.
+    pub fn tag(self) -> u16 {
+        match self {
+            ColorId::BarBg => 0,
+            ColorId::TierLow => 1,
+            ColorId::TierMid => 2,
+            ColorId::TierHigh => 3,
+            ColorId::TierDone => 4,
+            ColorId::Dep => 5,
+            ColorId::Progress => 6,
+            ColorId::Grid => 7,
+            ColorId::Today => 8,
+            ColorId::HeaderBg => 9,
+            ColorId::GridLabel => 10,
+            ColorId::ProgressTextOnFg => 11,
+            ColorId::ProgressTextOnBg => 12,
+            ColorId::GroupRow => 13,
+            ColorId::Weekend => 14,
+            ColorId::BarStroke => 15,
+            ColorId::DoneBg => 16,
+            ColorId::DoneStroke => 17,
+            ColorId::WarnBg => 18,
+            ColorId::WarnStroke => 19,
+            ColorId::HardDeadline => 20,
+            ColorId::Note => 21,
+            ColorId::NoteBg => 22,
+            ColorId::ProgressLine => 23,
+            ColorId::DayNumber => 24,
+            ColorId::DepDone => 25,
+            ColorId::DepDelayed => 26,
+            ColorId::ColoredBarText => 27,
+            ColorId::ColoredBarHalo => 28,
+            ColorId::Row(n) => ROW_COLOR_TAG_BASE.saturating_add(n),
+        }
+    }
+
     /// The colour drawn for an id the palette has no entry for. Ids added after
     /// the standard palette was pinned are left out of it, so a chart that
     /// does not use them comes out as it did; each falls back to an id that is
@@ -75,6 +134,8 @@ impl ColorId {
             ColorId::NoteBg => Some(ColorId::HeaderBg),
             ColorId::ProgressLine => Some(ColorId::Progress),
             ColorId::DepDone | ColorId::DepDelayed => Some(ColorId::Dep),
+            ColorId::ColoredBarText => Some(ColorId::ProgressTextOnBg),
+            ColorId::ColoredBarHalo => Some(ColorId::ProgressTextOnFg),
             _ => None,
         }
     }
@@ -137,7 +198,7 @@ impl Palette {
                 },
             }
         }
-        added.sort_by_key(|(id, _)| *id as u8);
+        added.sort_by_key(|(id, _)| id.tag());
         self.colors.extend(added);
         self
     }
@@ -311,6 +372,35 @@ pub struct ChartOptions {
     pub view: Option<ViewRange>,
     /// How the progress line is drawn; `Shown` is the line as before.
     pub progress_line: ProgressLineMode,
+    /// How a bar a task row gives a colour shows its progress.
+    pub row_color_progress: RowColorProgress,
+    /// How a bar a task row gives a colour shows its percent label.
+    pub row_color_percent: RowColorPercent,
+}
+
+/// How a bar a task row gives a colour shows its progress. Only rows with a
+/// colour read it. See docs/design/row-bar-color.md (4.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RowColorProgress {
+    /// The colour over the progress, the same colour faint over the rest: the
+    /// way an uncoloured bar reads.
+    #[default]
+    Shade,
+    /// The whole bar in the colour, the progress as a thin line under it.
+    Line,
+}
+
+/// How a bar a task row gives a colour shows its percent label. Only rows with
+/// a colour read it. See docs/design/row-bar-color.md (4.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RowColorPercent {
+    /// The label inside the bar over a halo, so it reads on any colour.
+    #[default]
+    Halo,
+    /// No label on a row with a colour.
+    Hidden,
 }
 
 /// The days a chart shows, `from` through `to`, both included. A bar that runs
@@ -410,6 +500,16 @@ pub enum RectSemantic {
     NoteBackground,
     /// The band under the mark at an edge the view cuts a bar.
     OverflowBackground,
+    /// The groove under a bar a task row gives a colour, drawn
+    /// `RowColorProgress::Line`. Added last with the two after it, so the
+    /// variants before keep their place in every serialised form.
+    RowProgressTrack,
+    /// The progress in that groove.
+    RowProgress,
+    /// The part of a bar a task row gives a colour, drawn
+    /// `RowColorProgress::Shade`: the whole bar in the colour at
+    /// `ROW_COLOR_REST_OPACITY`, under the progress.
+    ColoredBarRest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -534,6 +634,11 @@ pub enum TextSemantic {
     BarNote,
     /// The mark of a task that runs on past the days a view shows.
     Overflow,
+    /// The percent label inside a bar a task row gives a colour, drawn over a
+    /// halo of `ColorId::ColoredBarHalo`, `ROW_COLOR_HALO_PX` wide. Added
+    /// last, so the variants before it keep their place in every serialised
+    /// form.
+    ColoredBarPercent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -21,6 +21,8 @@ export type {
   LegendMode,
   PaletteOverrides,
   ProgressLineMode,
+  RowColorPercent,
+  RowColorProgress,
   Scale,
   ViewRange,
 } from './options';

@@ -1,4 +1,5 @@
 mod backend;
+mod css_color;
 mod date_input;
 mod display_list;
 mod error;
@@ -21,8 +22,9 @@ pub use display_list::types::{
     BBox, BarAlign, ChartMetadata, ChartOptions, ColorId, Coord, GroupPrim, LabelMode, Layer,
     LayerKind, LegendMode, LinePrim, LineSemantic, Palette, PathPrim, PathSemantic, PolygonPrim,
     PolygonSemantic, PolylinePrim, PolylineSemantic, Primitive, ProgressLineMode, ProgressTier,
-    RectPrim, RectSemantic, RoundRectPrim, RoundRectSemantic, Scale, TaskBBox, TextAnchor,
-    TextBaseline, TextPrim, TextSemantic, ViewRange, Viewport, WeekendDays,
+    RectPrim, RectSemantic, RoundRectPrim, RoundRectSemantic, RowColorPercent, RowColorProgress,
+    Scale, TaskBBox, TextAnchor, TextBaseline, TextPrim, TextSemantic, ViewRange, Viewport,
+    WeekendDays,
 };
 pub use display_list::{
     build_display_list, build_display_list_with_rows, compute_row_window, DisplayList,

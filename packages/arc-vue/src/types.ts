@@ -31,6 +31,11 @@ export interface GanttTask {
  * - `hard_deadline` (YYYY-MM-DD): a diamond in the middle of that day.
  * - `state`: fills and outlines the bar (`normal`, `done`, `warn`).
  * - `note`: a line of text past the bar and the diamond (at most 200 characters).
+ * - `color`: a CSS colour (`#hex`, `rgb()`/`hsl()`/`oklch()`/`oklab()`, or
+ *   `var(--name)`, at most 100 characters) that fills the bar in place of the
+ *   state's fill; the bar always gets an outline in the state's colour. Any
+ *   other value refuses the chart. See `rowColorProgress` and
+ *   `rowColorPercent` on `GanttChart` for how it shows progress.
  * - `shape`: `point` draws a dot on the span's last day instead of a bar, with a
  *   line to the diamond when the deadline is later.
  */
@@ -43,6 +48,7 @@ export type GanttRow =
       state?: BarState | null;
       note?: string | null;
       shape?: BarShape;
+      color?: string | null;
     }
   | { kind: 'group'; height?: number };
 

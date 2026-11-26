@@ -19,29 +19,29 @@ pub enum DrawOp {
         y: f64,
         w: f64,
         h: f64,
-        color_id: u8,
+        color_id: u16,
         radius: f64,
     },
     StrokePath {
         d: String,
-        color_id: u8,
+        color_id: u16,
         width: f64,
     },
     StrokePolyline {
         points: Vec<(f64, f64)>,
-        color_id: u8,
+        color_id: u16,
         width: f64,
         dash: Option<String>,
     },
     FillPolygon {
         points: Vec<(f64, f64)>,
-        color_id: u8,
+        color_id: u16,
     },
     DrawText {
         x: f64,
         y: f64,
         text: String,
-        color_id: u8,
+        color_id: u16,
         anchor: u8,
         size: f64,
         weight: u16,
@@ -54,8 +54,34 @@ pub enum DrawOp {
     /// last, so the ops before it keep their place in every serialised form.
     StrokeDashedPath {
         d: String,
-        color_id: u8,
+        color_id: u16,
         width: f64,
         dash: String,
+    },
+    /// `FillRect` at an opacity below 1: the faint part of a bar a task row
+    /// gives a colour. Added after the ops before it, so they keep their place
+    /// in every serialised form.
+    FillRectAlpha {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        color_id: u16,
+        radius: f64,
+        alpha: f64,
+    },
+    /// `DrawText` over a halo: the band of `halo_color_id`, `halo_width` wide,
+    /// is stroked round the glyphs before they are filled. The percent label
+    /// inside a bar a task row gives a colour.
+    DrawHaloText {
+        x: f64,
+        y: f64,
+        text: String,
+        color_id: u16,
+        anchor: u8,
+        size: f64,
+        weight: u16,
+        halo_color_id: u16,
+        halo_width: f64,
     },
 }

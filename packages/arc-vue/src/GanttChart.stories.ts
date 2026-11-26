@@ -357,6 +357,49 @@ export const ProgressLineByRowCanvas: Story = {
   render: PaletteFromTokens.render,
 };
 
+// Bars in the colours a caller's rows give them, such as each task's status
+// colour: pale (white, yellow), dark (navy) and a token, one row warned. Each
+// bar keeps an outline in its state's colour, and the label inside reads over
+// a halo whatever the colour.
+const statusStyle = [tokenStyle, '--demo-status-doing: #0ea5e9'].join('; ');
+const coloredRows = [
+  { kind: 'task' as const, task_id: 't1', color: '#ffffff' },
+  { kind: 'task' as const, task_id: 't2', color: '#ffff00', state: 'warn' as const, note: '遅れ' },
+  { kind: 'task' as const, task_id: 't3', color: '#1e3a8a' },
+  { kind: 'task' as const, task_id: 't4', color: 'var(--demo-status-doing)' },
+];
+
+const statusRender: Story['render'] = (args) => ({
+  components: { GanttChart },
+  setup() {
+    return { args, statusStyle, onTaskClick: action('taskClick') };
+  },
+  template:
+    '<div :style="statusStyle"><GanttChart v-bind="args" @task-click="onTaskClick" /></div>',
+});
+
+export const RowColors: Story = {
+  args: { ...vrtArgs, tasks, deps, rows: coloredRows, today: '2026-06-06' },
+  render: statusRender,
+};
+
+export const RowColorsCanvas: Story = {
+  args: { ...RowColors.args, backend: 'canvas' },
+  render: statusRender,
+};
+
+// The same rows, the whole bar in the colour and the progress as a line under
+// it; no percent labels on the coloured rows.
+export const RowColorsLine: Story = {
+  args: { ...RowColors.args, rowColorProgress: 'line', rowColorPercent: 'hidden' },
+  render: statusRender,
+};
+
+export const RowColorsLineCanvas: Story = {
+  args: { ...RowColorsLine.args, backend: 'canvas' },
+  render: statusRender,
+};
+
 export const MonthScale: Story = {
   args: { ...vrtArgs, tasks, deps, today: '2026-06-06', scale: 'month', pxPerDay: 8 },
   render: Default.render,
